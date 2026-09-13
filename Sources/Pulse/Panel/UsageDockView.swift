@@ -61,9 +61,9 @@ enum DockLayout {
     /// Agent Wallet inverts that so the week sits as a quieter halo and the
     /// five-hour window is the one you read first. The gap between strokes is
     /// the whole point: equal widths collapse into one fat ring.
-    static var outerRingLineWidth: CGFloat { 2.25 * PanelMetrics.scale }
-    static var innerRingDiameter: CGFloat { 24 * PanelMetrics.scale }
-    static var innerRingLineWidth: CGFloat { 4.25 * PanelMetrics.scale }
+    static var outerRingLineWidth: CGFloat { 2.0 * PanelMetrics.scale }
+    static var innerRingDiameter: CGFloat { 26.0 * PanelMetrics.scale }
+    static var innerRingLineWidth: CGFloat { 2.8 * PanelMetrics.scale }
     /// Kept as aliases so older call sites that named Pulse's inner thin ring
     /// still compile; they now mean the **outer** long stroke.
     static var secondRingDiameter: CGFloat { innerRingDiameter }

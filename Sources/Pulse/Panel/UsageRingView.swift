@@ -75,11 +75,14 @@ struct UsageRingView: View {
     @State private var refreshSpinning = false
 
     /// Gap between the progress ring and the dark disc it encircles.
-    private static let centreGap: CGFloat = 4
-    /// The icon's share of that dark disc. Sizing the icon from the disc
-    /// rather than from the full diameter keeps the margin around it steady
-    /// even if the ring's stroke gets thicker or thinner.
-    private static let iconScale: CGFloat = 0.8
+    /// Dual ring uses a tighter clearance to maximise center logo size.
+    private var centreGap: CGFloat {
+        (isDual ? 2.6 : 4.0) * PanelMetrics.scale
+    }
+    /// The icon's share of that dark disc.
+    private var iconScale: CGFloat {
+        isDual ? 0.88 : 0.8
+    }
 
     private var isDual: Bool { secondFraction != nil }
 
@@ -93,13 +96,13 @@ struct UsageRingView: View {
     }
 
     private var centreDiameter: CGFloat {
-        max(primaryDiameter - (primaryLineWidth + Self.centreGap) * 2, 0)
+        max(primaryDiameter - (primaryLineWidth + centreGap) * 2, 0)
     }
 
     /// The busy arc rides the empty ring between the icon's disc and the
     /// usage ring — halfway between the two, so it touches neither.
     private var busyDiameter: CGFloat {
-        max(centreDiameter + Self.centreGap, 0)
+        max(centreDiameter + centreGap, 0)
     }
 
     /// How much of the circle the arc covers. Short enough to read as a
@@ -209,7 +212,7 @@ struct UsageRingView: View {
             LobeIconView(
                 provider: provider,
                 resource: iconResource,
-                size: centreDiameter * Self.iconScale
+                size: centreDiameter * iconScale
             )
             // Dimmed while there is no reading, so the rail shows at a glance
             // which providers it actually has data for.
