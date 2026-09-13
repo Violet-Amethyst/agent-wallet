@@ -6,7 +6,7 @@ Provider routes, credentials, cookies, and extra-account OAuth belong in [provid
 
 ## App shell
 
-- `PulseApp.swift` — `@main`. Declares only a `MenuBarExtra` (Settings, Quit). Usage is shown solely in the floating panel.
+- `PulseApp.swift` — `@main`. No menu-bar status item. Settings and Quit are circular footer controls on the floating rail; reopening the application opens Settings even if the rail is hidden. An empty Settings scene retains standard app commands; the settings window is still owned by AppKit.
 - `AppDelegate.swift` — activation policy `.accessory` (no Dock icon). Owns `AppSettings`, `PanelPlacement`, `FloatingPanelController`, and the settings window. Ignores `SIGPIPE` process-wide so a helper (for example Codex app-server) exiting cannot take Pulse down with it (`Terminated due to signal 13`).
 - `FloatingPanelController.swift` — owns a custom `NSPanel` (`FloatingPanel`: borderless, non-activating, `canBecomeKey` / `canBecomeMain` both false) hosting SwiftUI through `NSHostingView`. **The AppKit controller computes and animates the panel frame.** SwiftUI has no say over outer size; expand/collapse is `NSAnimationContext` / `panel.animator()`, not a SwiftUI transition.
 - Full-screen Spaces: `AppSettings.hidesInFullScreen` selects `.fullScreenNone` (default) or `.fullScreenAuxiliary`. Both keep `.canJoinAllSpaces` for ordinary desktops. This is public window collection behaviour, not a guessed full-screen detector.

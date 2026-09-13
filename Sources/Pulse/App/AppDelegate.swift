@@ -74,7 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         store.start()
 
-        let controller = FloatingPanelController(store: store, settings: settings, placement: placement)
+        let controller = FloatingPanelController(
+            store: store,
+            settings: settings,
+            placement: placement,
+            onSettings: { [weak self] in self?.showSettings() },
+            onQuit: { NSApplication.shared.terminate(nil) }
+        )
         panelController = controller
 
         settings.onChange = { [weak self] in
@@ -97,6 +103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showSettings() {
         showSettings(link: nil)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettings()
+        return true
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

@@ -353,6 +353,10 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         /// The difference is one word, and it is the difference between an
         /// instruction and a puzzle.
         case notSignedIn
+        case deepSeekWebLoginRequired
+        case openAIWebLoginRequired
+        case openAIWebSessionExpired
+        case qoderLoginRequired
         /// Ollama has no quota API: the figures come from its signed-in
         /// settings page, so what it needs is a browser session rather than a
         /// key, and the three ways that can fail are worth telling apart.
@@ -411,6 +415,10 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             case .grokBotNotIncluded: .localized("This Cursor plan doesn't include Grok Bot.")
             case .signedOut: .localized("Sign in to this account again in Settings.")
             case .notSignedIn: .localized("Sign in from Settings to see usage.")
+            case .deepSeekWebLoginRequired: .localized("Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings.")
+            case .openAIWebLoginRequired: .localized("Add an OpenAI Platform session in Settings.")
+            case .openAIWebSessionExpired: .localized("The OpenAI Platform session was refused. Sign in again and add it.")
+            case .qoderLoginRequired: .localized("Open Qoder CN and sign in. Allow keychain access when prompted, then refresh.")
             case .ollamaSessionMissing: .localized("Add an Ollama session in Settings.")
             case .ollamaSessionExpired: .localized("The Ollama session expired. Sign in again and add it.")
             case .ollamaPageChanged: .localized("Ollama's page has changed and can no longer be read.")
@@ -440,7 +448,7 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
     /// being enough once one of them could be signed in to twice.
     let account: AccountKey
     /// Ordered as the provider reports them; the first one drives the ring.
-    let windows: [UsageWindow]
+    var windows: [UsageWindow]
     let observedAt: Date?
     let state: State
     /// Plan name, when the provider names one.
@@ -548,6 +556,17 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
 
     func headlineWindow(preferring id: String? = nil) -> UsageWindow? {
         if let id, let pinned = windows.first(where: { $0.id == id }) { return pinned }
+        // Codex reports one account-wide allowance plus optional model pools.
+        // The account-wide pool controls whether the account can continue to
+        // use other models, so it is the default headline. Model-specific
+        // pools remain available through the existing "Ring shows" picker.
+        if provider == .codex {
+            let general = windows.filter { $0.scope == nil }
+            if let weekly = general.filter({ $0.kind == .weekly }).max(by: { $0.usedFraction < $1.usedFraction }) {
+                return weekly
+            }
+            if let fullest = general.max(by: { $0.usedFraction < $1.usedFraction }) { return fullest }
+        }
         return windows.max { $0.usedFraction < $1.usedFraction }
     }
 
@@ -581,6 +600,9 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
 
         let rest = windows.filter { $0.id != headline.id }
         let sameGroup = rest.filter { $0.scope == headline.scope }
+        if provider == .codex, headline.scope == nil {
+            return rest.filter { $0.scope == nil }.max { $0.usedFraction < $1.usedFraction }
+        }
         // `max(by:)` keeps the first of equals, so a rail of untouched windows
         // stays in the provider's own order rather than shuffling between
         // passes.

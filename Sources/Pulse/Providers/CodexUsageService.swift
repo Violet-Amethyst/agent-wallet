@@ -396,4 +396,14 @@ struct CodexUsageService: Sendable {
     private static func number(_ value: Any?) -> Double? {
         (value as? Double) ?? (value as? Int).map(Double.init) ?? (value as? NSNumber)?.doubleValue
     }
+
+    private static func isSparkLimit(_ value: [String: Any]) -> Bool {
+        let labels = [
+            value["limit_name"] as? String,
+            value["limitName"] as? String,
+            value["metered_feature"] as? String,
+            value["meteredFeature"] as? String
+        ].compactMap { $0?.lowercased() }
+        return labels.contains { $0.contains("spark") }
+    }
 }

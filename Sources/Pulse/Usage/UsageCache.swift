@@ -148,7 +148,6 @@ actor UsageCache {
 
         // Drop what has since reset — see the note above.
         let windows = stored.windows.filter { ($0.resetsAt ?? .distantFuture) > now }
-
         // **Not `!windows.isEmpty`.** `reconciled` was taught that a balance
         // with no limits is a complete answer, and this — the *read* path —
         // was missed, so a banked DeepSeek "balance only" reading could be

@@ -12,7 +12,15 @@ Unlike [command-code.md](command-code.md), this one was. `GET /user/balance` was
 
 ## The route
 
-One route, and it is **documented** — it sits in DeepSeek's own API reference beside chat completions, not in the undocumented account endpoints most of this directory reads.
+Two routes: a saved API key takes priority; otherwise Agent Wallet reads the
+existing Chrome login for `https://platform.deepseek.com`, key `userToken`, using
+SweetCookieKit's origin-scoped LevelDB reader. The platform route calls
+`GET https://platform.deepseek.com/api/v0/users/get_user_summary` and maps
+`data.biz_data.normal_wallets` plus `bonus_wallets`, separately per currency.
+Multiple distinct Chrome sessions require an explicit API key to avoid choosing
+the wrong account. Tokens are never printed or persisted by Agent Wallet.
+
+The API-key route is documented:
 
 ```
 GET https://api.deepseek.com/user/balance
@@ -32,7 +40,9 @@ Status handling is the ordinary one: `401`/`403` → `.apiKeyRefused`, `429` →
 
 ## Credential
 
-A key pasted into Settings, kept encrypted on this Mac by `APIKeyStore`. There is nothing to borrow — DeepSeek's key lives on its web console and no CLI on this Mac stores one — so `canReportWithoutSetup` is false and the provider stays off until a key is entered.
+Chrome's existing platform login works without creating an API key. A key pasted
+into Settings is an optional alternative, kept encrypted by `APIKeyStore`.
+The displayed diagnostic source distinguishes the web session from the API.
 
 ## There is no allowance, so the ring has no denominator
 

@@ -6,6 +6,8 @@ struct FloatingUsagePanelView: View {
     /// Where the panel is docked. Shared with `FloatingPanelController`, and
     /// written by the drag handle, so the content mirrors as the panel moves.
     let placement: PanelPlacement
+    var onSettings: () -> Void = {}
+    var onQuit: () -> Void = {}
 
     /// Which **ring** the card belongs to, not which account: one account
      /// can now own two of them. `RailSlot.id` is the account's own id for
@@ -19,6 +21,10 @@ struct FloatingUsagePanelView: View {
     /// Whether the pointer is on the panel. The rail is drawn out only while
     /// it is; the rest of the time a sliver stands in for it.
     @State private var isHovered = false
+    /// Which footer action the pointer is currently over. This uses the same
+    /// tracking source as the rest of the rail, so hover works without making
+    /// the non-activating panel steal keyboard focus.
+    @State private var hoveredAction: Int?
     /// A moment's grace before hiding, so clipping a corner of the panel on
     /// the way somewhere else doesn't make it flinch.
     @State private var hideAfterDelay: Task<Void, Never>?
@@ -78,8 +84,16 @@ struct FloatingUsagePanelView: View {
                     alert: alertTint,
                     usesGlass: settings.usesGlass,
                     onEnter: select,
-                    onRefresh: store.refresh,
+                    onRefresh: { account in
+                        #if DEBUG
+                        if WalletFixtures.isFixture(account) { return }
+                        #endif
+                        store.refresh(account)
+                    },
                     onOpen: show
+                    , onSettings: onSettings
+                    , onQuit: onQuit
+                    , hoveredAction: hoveredAction
                 )
                 .fixedSize()
                 .overlay(alignment: placement.edge.cardAlignment) {
@@ -89,9 +103,10 @@ struct FloatingUsagePanelView: View {
                             usage: selected,
                             title: selectedTitle ?? "",
                             edge: placement.edge,
-                            showsRemaining: settings.showsRemaining,
+                            showsRemaining: true,
                             showsForecast: settings.showsForecast,
-                            pointerCenter: pointerCentre(for: index)
+                            pointerCenter: pointerCentre(for: index),
+                            wallet: selectedWallet
                         )
                         .fixedSize()
                         .background(
@@ -206,15 +221,16 @@ struct FloatingUsagePanelView: View {
     private var alertTint: Color? {
         let worst = entries.compactMap(\.headline).max { $0.usedFraction < $1.usedFraction }
         guard let worst,
-              worst.isExhausted || worst.usedFraction >= UsageTint.warningThreshold
+              worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
         else { return nil }
         return worst.tint
     }
 
     /// Only the providers switched on in settings, so the rail shrinks when
-    /// one is turned off.
+    /// one is turned off. DEBUG builds prepend labelled fixtures so Dual Ring
+    /// / money modes can be checked without a live account.
     private var entries: [RailEntry] {
-        RailSlot.rail(
+        let live = RailSlot.rail(
             for: settings.shownAccounts,
             isSplit: settings.isSplit,
             groups: { RailSlot.modelGroups(of: store.usage(for: $0)) }
@@ -225,7 +241,34 @@ struct FloatingUsagePanelView: View {
                 usage: slot.group.map { Self.usage(usage, keeping: $0) } ?? usage
             )
         }
+        #if DEBUG
+        return WalletFixtures.isEnabled ? fixtureEntries + live : live
+        #else
+        return live
+        #endif
     }
+
+    #if DEBUG
+    private var fixtureEntries: [RailEntry] {
+        zip(WalletFixtures.usages, WalletFixtures.snapshots).map { usage, wallet in
+            fixtureEntry(usage: usage, wallet: wallet)
+        }
+    }
+
+    private func fixtureEntry(usage: ProviderUsage, wallet: WalletSnapshot) -> RailEntry {
+        let headline = wallet.shortQuota ?? wallet.singleQuota
+        return RailEntry(
+            usage: usage,
+            headline: headline,
+            slot: RailSlot(usage.account),
+            title: wallet.displayName,
+            figure: wallet.mode == .dualQuota || wallet.singleQuota != nil ? nil : wallet.railCaption,
+            second: wallet.longQuota,
+            showsRemaining: wallet.showsRemainingOnRing,
+            wallet: wallet
+        )
+    }
+    #endif
 
     /// The same reading with only one group's limits in it, so every figure
     /// downstream — the ring, the card, the second ring — is about that group
@@ -245,18 +288,18 @@ struct FloatingUsagePanelView: View {
         let account = slot.account
         let label = settings.label(for: account)
         let pinned = settings.pinnedWindow(for: account)
-        let headline = usage.headlineWindow(preferring: pinned)
+        let title = slot.group.map { "\(label) · \($0)" } ?? label
+        let wallet = WalletAdapter.snapshot(from: usage, title: title, pinnedWindow: pinned)
+        let headline = wallet.shortQuota ?? wallet.singleQuota ?? usage.headlineWindow(preferring: pinned)
 
         // The money, but only where there is a reading and deliberately no
         // window to draw — which today is DeepSeek on "balance only". An
         // unavailable reading has nothing to say, and putting a remembered
         // figure on the rail there would show it as though it were current.
-        let figure: String? = if headline == nil, case .unavailable = usage.state {
+        let figure: String? = if !wallet.hasReading, case .unavailable = usage.state {
             nil
-        } else if headline == nil {
-            // The short form: the exact figure is on the card and in Settings,
-            // and it does not fit in a ring.
-            usage.creditRemaining?.railText() ?? usage.creditBalance
+        } else if wallet.innerUsedFraction == nil {
+            wallet.railCaption == "—" ? nil : wallet.railCaption
         } else {
             nil
         }
@@ -273,13 +316,14 @@ struct FloatingUsagePanelView: View {
             slot: slot,
             // The group after the name, so two rings of one provider are told
             // apart by the one thing that differs between them.
-            title: slot.group.map { "\(label) · \($0)" } ?? label,
+            title: title,
             // Nil unless it is switched on *and* the window says enough to
             // work it out — a reset time on its own is not enough.
             elapsed: settings.showsWindowClock ? headline?.elapsedFraction(at: minute) : nil,
             figure: figure,
-            second: settings.showsSecondRing ? usage.secondWindow(preferring: pinned) : nil,
-            showsRemaining: settings.showsRemaining
+            second: wallet.longQuota,
+            showsRemaining: wallet.showsRemainingOnRing,
+            wallet: wallet
         )
     }
 
@@ -323,6 +367,10 @@ struct FloatingUsagePanelView: View {
     /// two cards of one provider are told apart.
     private var selectedTitle: String? {
         entries.first { $0.id == selectedSlot }?.title
+    }
+
+    private var selectedWallet: WalletSnapshot? {
+        entries.first { $0.id == selectedSlot }?.resolvedWallet
     }
 
     private var selectedIndex: Int? {
@@ -439,6 +487,7 @@ struct FloatingUsagePanelView: View {
     /// no longer on either.
     private func pointerMoved(_ point: CGPoint?) {
         if let point, isOverContent(point) {
+            hoveredAction = action(at: point)
             hideAfterDelay?.cancel()
             hideAfterDelay = nil
 
@@ -456,8 +505,29 @@ struct FloatingUsagePanelView: View {
             return
         }
 
+        hoveredAction = nil
         deselect()
         scheduleHide()
+    }
+
+    /// Resolves the footer controls using the same centres and diameter as
+    /// drawing and AppKit click handling. Keeping those three in lockstep is
+    /// what lets the visual affordance and the actual hit target agree.
+    private func action(at point: CGPoint) -> Int? {
+        guard isExpanded else { return nil }
+        let edge = placement.edge
+        let rail = PanelHitArea.rail(edge: edge, railSize: railSize, railTop: railTop, railLeading: railLeading)
+
+        for index in 0..<2 {
+            let along = DockLayout.actionCentre(index, itemCount: entries.count, axis: edge.axis, docked: placement.isDocked)
+            let centre = edge.isVertical
+                ? CGPoint(x: rail.midX, y: rail.minY + along)
+                : CGPoint(x: rail.minX + along, y: rail.midY)
+            if hypot(point.x - centre.x, point.y - centre.y) <= DockLayout.actionDiameter / 2 {
+                return index
+            }
+        }
+        return nil
     }
 
     private func scheduleHide() {
@@ -470,6 +540,7 @@ struct FloatingUsagePanelView: View {
             // Never mid-drag: the pointer is far from the panel by design
             // while it is being carried across the screen.
             guard !placement.isDragging else { return }
+            hoveredAction = nil
             isHovered = false
         }
     }

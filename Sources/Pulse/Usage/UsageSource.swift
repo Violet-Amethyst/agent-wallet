@@ -102,6 +102,8 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
         case (.desktopApp, .volcengine):
             // Never shown: `options(for:)` offers it to Claude Code alone.
             .localized("Use the endpoint when possible, the other route when not.")
+        case (_, .openAI):
+            .localized("Reads your OpenAI API Platform costs with the Admin Key you entered.")
         case (_, .openCodeGo), (_, .kimiCode), (_, .zai), (_, .glmCoding),
              (_, .minimax), (_, .minimaxCN), (_, .copilot), (_, .commandCode), (_, .deepSeek):
             // Never shown either — one route, and it needs a key.
@@ -110,6 +112,8 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
             // Never shown: one route, and it borrows the login Cursor stored,
             // since Grok Bot is billed against that account.
             .localized("Reads your account's limits with the login Cursor saved.")
+        case (_, .qoderCN):
+            .localized("Qoder CN's own login")
         case (_, .grok):
             // Never shown: one route, and it borrows the login Grok's own CLI
             // stored, exactly as Cursor's does.

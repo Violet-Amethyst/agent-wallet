@@ -1,9 +1,17 @@
 /* 菜单栏 */
 "Settings…" = "设置…";
 "Quit Pulse" = "退出 Pulse";
+"Agent Wallet" = "Agent Wallet";
+"Agent Wallet Settings" = "Agent Wallet 设置";
+"Quit Agent Wallet" = "退出 Agent Wallet";
+"Agent Wallet %@ is available" = "Agent Wallet %@ 可更新";
 
 /* 设置窗口 */
 "Pulse Settings" = "Pulse 设置";
+"Balance display" = "余额显示";
+"DeepSeek connection" = "DeepSeek 连接";
+"Official API balance" = "官方 API 余额";
+"Reads your prepaid API balance. This does not read usage from the signed-in DeepSeek website." = "读取 DeepSeek API 的预付余额；不会读取已登录网页上的用量或消费记录。";
 "Panel" = "面板";
 "Application" = "应用";
 "General" = "通用";
@@ -146,6 +154,17 @@
 "Reading may be out of date" = "数据可能不是最新的";
 "%@ Used" = "已用 %@";
 "%@ Left" = "剩余 %@";
+"%@ remaining" = "剩余 %@";
+"%@ spent" = "已用 %@";
+"Credits remaining" = "剩余积分";
+"Monthly spend" = "本月花费";
+"Monthly budget" = "月度预算";
+"Remaining budget" = "剩余额度";
+"of %@ monthly budget" = "月度预算 %@";
+"Seven-day spend" = "近七日花费";
+"Tokens" = "Tokens";
+"Requests" = "请求数";
+"Subscription cycle" = "订阅周期";
 "Codex isn't installed." = "未检测到 Codex。";
 "Couldn't start the Codex helper." = "无法启动 Codex 辅助进程。";
 "Sign in to Claude Code to see usage." = "登录 Claude Code 后才能查看用量。";
@@ -266,6 +285,7 @@
 "Couldn't reach the update feed." = "连不上更新源。";
 "Uses the key you entered." = "使用你填入的 key。";
 "API key" = "API key";
+"Admin Key" = "Admin Key";
 "Session cookie" = "登录 Cookie";
 "Read from browser" = "从浏览器读取";
 "Only %@." = "只从 %@ 读取。";
@@ -277,9 +297,12 @@
 "No browser cookie store was found." = "没有找到任何浏览器的 Cookie 存储。";
 "Read from %@." = "已从 %@ 读取。";
 "No Ollama session found. Sign in at ollama.com first." = "没找到 Ollama 的登录信息，请先在 ollama.com 登录。";
+"No OpenAI Platform session found. Sign in at platform.openai.com first." = "没找到 OpenAI Platform 的登录信息，请先在 platform.openai.com 登录。";
 "Copied from your browser. Stored encrypted on this Mac." = "从浏览器复制。加密保存在本机。";
 "Add an Ollama session in Settings." = "请在设置中添加 Ollama 的登录信息。";
 "The Ollama session expired. Sign in again and add it." = "Ollama 的登录已过期，请重新登录后再添加。";
+"Add an OpenAI Platform session in Settings." = "请在设置中添加 OpenAI Platform 的登录信息。";
+"The OpenAI Platform session was refused. Sign in again and add it." = "OpenAI Platform 的登录信息被拒绝，请重新登录后再添加。";
 "Ollama's page has changed and can no longer be read." = "Ollama 的页面变了，已经读不出来了。";
 "Reads your quota from Ollama's own settings page." = "从 Ollama 自己的设置页面读取额度。";
 "Save" = "保存";
@@ -421,6 +444,29 @@
 "The money left, with no ring. DeepSeek reports no allowance." = "只显示余额，不画环。DeepSeek 不报告任何额度。";
 "How much of the figure you set is gone." = "你设定的金额用掉了多少。";
 "From platform.deepseek.com. Stored encrypted on this Mac." = "在 platform.deepseek.com 获取。加密保存在本机。";
+"From platform.deepseek.com. Reads the prepaid API balance only — website usage and consumption are not imported. Stored encrypted on this Mac." = "在 platform.deepseek.com 获取。只读取 API 预付余额，不会导入网页用量或消费记录；加密保存在本机。";
 "Balance" = "余额";
 "Warn below" = "余额提醒线";
 "Notify once when the balance falls under this. Blank for never." = "余额跌破这个数时提醒一次。留空则不提醒。";
+"Read balance from" = "余额来源";
+"Uses your DeepSeek Platform login saved in Chrome. An API key is optional and takes priority when saved." = "自动读取 Chrome 中已登录的 DeepSeek 开放平台。API Key 为可选项，保存后优先使用。";
+"API key (optional)" = "API Key（可选）";
+"Qoder CN's own login" = "Qoder CN 本机登录";
+"Reads Qoder CN's saved login. macOS may ask for keychain access." = "复用 Qoder CN 本机登录。启动和自动刷新不会弹出密码请求。";
+"Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings." = "请在一个 Chrome 用户中登录 DeepSeek 开放平台，或在设置中填写 API Key。";
+"Open Qoder CN and sign in. Allow keychain access when prompted, then refresh." = "请先登录 Qoder CN，再到设置中点“连接 Qoder CN”。需要时系统会请求一次授权。";
+
+"Qoder connection" = "账号连接";
+"Connect Qoder CN" = "连接 Qoder CN";
+"Connect once to reuse this session after restarting. Automatic refresh never asks for a password." = "连接后会保存当前会话，退出重开可复用。自动刷新不会要求输入密码。";
+"Optional alternative to Chrome login. Create at platform.deepseek.com; stored encrypted on this Mac." = "可选，可替代 Chrome 登录。在 platform.deepseek.com 创建，加密保存在本机。";
+"Show Codex Spark limits" = "显示 Codex Spark 额度";
+"Off by default. General weekly usage always appears first." = "默认关闭。通用每周额度始终排在第一条。";
+"Reads your OpenAI API Platform costs with the Admin Key you entered." = "用你填写的 Admin Key 读取 OpenAI API 平台费用。";
+"From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac." = "来自 OpenAI Platform 的 Admin Key。只用于读取 API 账单费用，并加密保存在本机。";
+"Billing" = "账单";
+"Billing total" = "账单总额";
+"From Billing history. Agent Wallet subtracts current API spend from this number; blank uses $100." = "填写账单总额后，圆环显示“剩余额度”；不填则按每月 $100 计算，并显示本月花费。";
+"100" = "100";
+"Reads your OpenAI API Platform credit balance with the key you entered." = "用你填写的 key 读取 OpenAI API 平台余额。";
+"Reads your OpenAI API Platform credit balance with the web session you saved." = "用已保存的网页登录信息读取 OpenAI API 平台余额。";

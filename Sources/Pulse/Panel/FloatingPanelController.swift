@@ -77,7 +77,8 @@ final class FloatingPanelController {
     /// Watches which display the pointer is on, while that is switched on.
     private let displayFollower = ActiveDisplayFollower()
 
-    init(store: UsageStore, settings: AppSettings, placement: PanelPlacement) {
+    init(store: UsageStore, settings: AppSettings, placement: PanelPlacement,
+         onSettings: @escaping () -> Void = {}, onQuit: @escaping () -> Void = {}) {
         self.store = store
         self.settings = settings
         self.placement = placement
@@ -107,7 +108,8 @@ final class FloatingPanelController {
         configurePanel()
 
         let hostingView = NSHostingView(
-            rootView: FloatingUsagePanelView(store: store, settings: settings, placement: placement)
+            rootView: FloatingUsagePanelView(store: store, settings: settings, placement: placement,
+                                             onSettings: onSettings, onQuit: onQuit)
         )
         hostingView.sizingOptions = []
         hostingView.frame = NSRect(x: 0, y: 0, width: initialSize.width, height: initialSize.height)
@@ -196,6 +198,20 @@ final class FloatingPanelController {
                 isSplit: settings.isSplit,
                 groups: { RailSlot.modelGroups(of: store.usage(for: $0)) }
             )
+            let railSize = DockLayout.size(for: slots.count, on: placement.edge.axis, docked: placement.isDocked)
+            let rail = PanelHitArea.rail(edge: placement.edge, railSize: railSize,
+                                         railTop: placement.railTop, railLeading: placement.railLeading)
+            for index in 0..<2 {
+                let along = DockLayout.actionCentre(index, itemCount: slots.count,
+                                                     axis: placement.edge.axis, docked: placement.isDocked)
+                let centre = placement.edge.isVertical
+                    ? CGPoint(x: rail.midX, y: rail.minY + along)
+                    : CGPoint(x: rail.minX + along, y: rail.midY)
+                if hypot(point.x - centre.x, point.y - centre.y) <= DockLayout.actionDiameter / 2 {
+                    if index == 0 { onSettings() } else { onQuit() }
+                    return
+                }
+            }
             guard let slot = PanelHitArea.slot(
                 at: point,
                 edge: placement.edge,

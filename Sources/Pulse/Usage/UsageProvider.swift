@@ -8,6 +8,7 @@ import Foundation
 enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     case claudeCode
     case codex
+    case openAI
     case antigravity
     case cursor
     case openCodeGo
@@ -23,6 +24,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     case volcengine
     case commandCode
     case deepSeek
+    case qoderCN
 
     var id: String { rawValue }
 
@@ -31,6 +33,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .claudeCode: "Claude Code"
         case .codex: "Codex"
+        case .openAI: "OpenAI"
         case .antigravity: "Antigravity"
         case .cursor: "Cursor"
         case .openCodeGo: "OpenCode Go"
@@ -73,6 +76,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // The shop, not the model family: the balance belongs to the account
         // and is spent across whatever the key is pointed at.
         case .deepSeek: "DeepSeek"
+        case .qoderCN: "Qoder"
         }
     }
 
@@ -82,6 +86,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .claudeCode: "claude"
         case .codex: "openai"
+        case .openAI: "openai"
         case .antigravity: "antigravity"
         case .cursor: "cursor"
         case .openCodeGo: "opencode"
@@ -108,6 +113,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // smudge, and this is the mark the product is recognised by anyway.
         case .commandCode: "commandcode"
         case .deepSeek: "deepseek"
+        case .qoderCN: "qoder"
         }
     }
 
@@ -128,9 +134,9 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // its own store rather than the JSONL both CLIs above write, so the
         // ledger cannot read it yet. False here means "no history shown",
         // which is true today and better than a column of zeroes.
-        case .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-             .volcengine, .commandCode, .deepSeek: false
+             .volcengine, .commandCode, .deepSeek, .qoderCN: false
         }
     }
 
@@ -175,9 +181,9 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     var hasSourceChoice: Bool {
         switch self {
         case .claudeCode, .codex, .volcengine: true
-        case .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-             .commandCode, .deepSeek: false
+             .commandCode, .deepSeek, .qoderCN: false
         }
     }
 
@@ -200,6 +206,9 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .cursor:
             (String.localized("Cursor's own login"),
              String.localized("Uses the login Cursor already saved."))
+        case .qoderCN:
+            (String.localized("Qoder CN's own login"),
+             String.localized("Reads Qoder CN's saved login. macOS may ask for keychain access."))
         case .grok:
             (String.localized("Grok's own login"),
              String.localized("Uses the login Grok's CLI already saved."))
@@ -211,7 +220,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
              String.localized("Grok Bot is billed to your Cursor account."))
         // Either a choice of routes, or a key the user pastes: both are asked
         // about elsewhere, so there is nothing here to state.
-        case .claudeCode, .codex, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .claudeCode, .codex, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
              .commandCode, .deepSeek:
             nil
@@ -224,7 +233,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// and that is the route taken first — but a key can also be pasted in for
     /// anyone on the plan who doesn't run the CLI on this Mac.
     var usesAPIKey: Bool {
-        [.openCodeGo, .kimiCode, .ollamaCloud, .zai, .glmCoding, .minimax, .minimaxCN, .volcengine,
+        [.openAI, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax, .minimaxCN, .volcengine,
          .commandCode, .deepSeek].contains(self)
     }
 
@@ -260,7 +269,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// signed-in settings page — so a session is the only credential there is,
     /// and calling it an API key in Settings would send people looking for one
     /// that does not exist.
-    var usesSessionCookie: Bool { self == .ollamaCloud }
+    var usesSessionCookie: Bool { [.ollamaCloud].contains(self) }
 
     /// Whether this provider can report anything at all without being set up.
     ///
@@ -281,7 +290,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// and reading `usesAPIKey` where the *storage* was meant is what left a
     /// signed-in account reporting "sign in again": the token was saved and
     /// then never loaded back for the fetch.
-    var keepsOwnCredential: Bool { usesAPIKey || self == .copilot }
+    var keepsOwnCredential: Bool { usesAPIKey || usesSessionCookie || self == .copilot }
 
     var canReportWithoutSetup: Bool {
         guard keepsOwnCredential else { return borrowsAnExistingLogin }
@@ -297,6 +306,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // signed in, so its presence is evidence the CLI ran here and none at
         // all that there is an account to report on.
         case .commandCode: CommandCodeUsageService.storedKey() != nil
+        case .deepSeek: DeepSeekWebLogin.tokens().count == 1
         default: false
         }
     }
@@ -322,6 +332,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         return switch self {
         case .grok: FileManager.default.fileExists(atPath: home.appending(path: ".grok").path)
         case .grokBot: CursorAppLogin.hasStoredLogin()
+        case .qoderCN: QoderCNUsageService.isInstalled
         default: true
         }
     }

@@ -72,6 +72,18 @@ final class AppSettings {
         }
     }
 
+    /// OpenAI's Costs API reports what has been spent, but the dashboard's
+    /// billing history is the human source for how much was bought or budgeted.
+    /// The rail uses this as the full ring for the OpenAI account; nil falls
+    /// back to the product default.
+    var openAIBillingTotal: Double? {
+        didSet {
+            guard openAIBillingTotal != oldValue else { return }
+            UserDefaults.standard.set(openAIBillingTotal, forKey: Key.openAIBillingTotal)
+            onChange?()
+        }
+    }
+
     /// Which currency the ring follows when the account holds more than one.
     /// Nil takes the first the reply lists with money in it.
     var deepSeekCurrency: String? {
@@ -150,7 +162,17 @@ final class AppSettings {
     var orderedAccounts: [AccountKey] {
         let known = allAccounts
         let stored = providerOrder.compactMap(AccountKey.init(id:)).filter(known.contains)
-        return stored + known.filter { !stored.contains($0) }.sorted(by: byName)
+        var ordered = stored + known.filter { !stored.contains($0) }.sorted(by: byName)
+        // Insert this newly supported account beside OpenCode Go. An order
+        // that already mentions it is the user's own and takes precedence.
+        let qoder = AccountKey(.qoderCN)
+        if !stored.contains(qoder), let position = ordered.firstIndex(of: qoder) {
+            ordered.remove(at: position)
+            if let openCode = ordered.firstIndex(of: AccountKey(.openCodeGo)) {
+                ordered.insert(qoder, at: openCode + 1)
+            } else { ordered.append(qoder) }
+        }
+        return ordered
     }
 
     /// The order accounts fall into before anybody has arranged them: **by the
@@ -282,6 +304,14 @@ final class AppSettings {
         didSet {
             guard pinnedWindows != oldValue else { return }
             UserDefaults.standard.set(pinnedWindows, forKey: Key.pinnedWindows)
+            onChange?()
+        }
+    }
+
+    /// Optional model-specific quotas are hidden on both fresh and cached readings.
+    var showsCodexSpark: Bool = false {
+        didSet {
+            UserDefaults.standard.set(showsCodexSpark, forKey: "settings.showsCodexSpark")
             onChange?()
         }
     }
@@ -616,9 +646,10 @@ final class AppSettings {
     /// can produce rather than the groups a reading happens to carry, so the
     /// budget does not move when a provider answers with one group short.
     var railSlotCount: Int {
-        allAccounts.reduce(0) { total, account in
+        let base = allAccounts.reduce(0) { total, account in
             total + (isSplit(account) ? account.provider.modelGroupCount : 1)
         }
+        return base + WalletFixtures.count
     }
 
     /// Called after any change that the AppKit side has to react to — showing
@@ -631,6 +662,7 @@ final class AppSettings {
         followsActiveDisplay: Bool = false,
         deepSeekBasis: DeepSeekBasis = .default,
         deepSeekBudget: Double? = nil,
+        openAIBillingTotal: Double? = nil,
         deepSeekCurrency: String? = nil,
         lowBalanceAlerts: [String: Double] = [:],
         enabledAccounts: Set<String> = Set(Provider.allCases.map(\.rawValue)),
@@ -663,6 +695,7 @@ final class AppSettings {
         self.followsActiveDisplay = followsActiveDisplay
         self.deepSeekBasis = deepSeekBasis
         self.deepSeekBudget = deepSeekBudget
+        self.openAIBillingTotal = openAIBillingTotal
         self.deepSeekCurrency = deepSeekCurrency
         self.lowBalanceAlerts = lowBalanceAlerts
         self.enabledAccounts = enabledAccounts
@@ -670,6 +703,7 @@ final class AppSettings {
         self.providerOrder = providerOrder
         self.language = language
         self.pinnedWindows = pinnedWindows
+        self.showsCodexSpark = UserDefaults.standard.bool(forKey: "settings.showsCodexSpark")
         self.sources = sources
         self.sessionBrowsers = sessionBrowsers
         self.ringTints = ringTints
@@ -908,6 +942,7 @@ final class AppSettings {
             deepSeekBasis: defaults.string(forKey: Key.deepSeekBasis)
                 .flatMap(DeepSeekBasis.init(rawValue:)) ?? .default,
             deepSeekBudget: defaults.object(forKey: Key.deepSeekBudget) as? Double,
+            openAIBillingTotal: defaults.object(forKey: Key.openAIBillingTotal) as? Double,
             deepSeekCurrency: defaults.string(forKey: Key.deepSeekCurrency),
             lowBalanceAlerts: defaults.dictionary(forKey: Key.lowBalanceAlerts) as? [String: Double] ?? [:],
             enabledAccounts: accounts,
@@ -940,6 +975,11 @@ final class AppSettings {
             alertsOnFailure: defaults.object(forKey: Key.alertsOnFailure) as? Bool ?? false
         )
         settings.applyLanguage()
+        if defaults.object(forKey: Key.walletV0Applied) == nil {
+            settings.showsRemaining = true
+            settings.showsSecondRing = true
+            defaults.set(true, forKey: Key.walletV0Applied)
+        }
         PanelMetrics.use(settings.panelSize)
         PanelMetrics.use(settings.railSpacing)
         PanelMetrics.showTopPercentages(settings.topRailShowsPercentages)
@@ -1014,6 +1054,7 @@ final class AppSettings {
         static let followsActiveDisplay = "settings.followsActiveDisplay"
         static let deepSeekBasis = "settings.deepSeekBasis"
         static let deepSeekBudget = "settings.deepSeekBudget"
+        static let openAIBillingTotal = "settings.openAIBillingTotal"
         static let deepSeekCurrency = "settings.deepSeekCurrency"
         static let lowBalanceAlerts = "settings.lowBalanceAlerts"
         static let enabledProviders = "settings.enabledProviders"
@@ -1038,6 +1079,7 @@ final class AppSettings {
         static let showsRemaining = "settings.showsRemaining"
         static let showsForecast = "settings.showsForecast"
         static let showsSecondRing = "settings.showsSecondRing"
+        static let walletV0Applied = "settings.walletV0Applied"
         static let splitAccounts = "settings.splitAccounts"
         static let alertThreshold = "settings.alertThreshold"
         static let alertsOnReset = "settings.alertsOnReset"

@@ -70,8 +70,9 @@ enum LoginItem {
     static func applyDefaultOnFirstRun() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: Key.decided) else { return }
-        defaults.set(true, forKey: Key.decided)
-        setEnabled(true)
+        if setEnabled(true) {
+            defaults.set(true, forKey: Key.decided)
+        }
     }
 
     /// Hands a launch agent over to the supported route once there is a bundle

@@ -29,6 +29,9 @@ enum ConnectionRemedy: Equatable {
         case .antigravityNotRunning, .antigravityNotAnswering: return .openApp("Antigravity")
         case .notSignedIn, .signedOut: return .signIn
         case .apiKeyMissing, .apiKeyRefused: return .editCredential
+        case .deepSeekWebLoginRequired: return .editCredential
+        case .openAIWebLoginRequired, .openAIWebSessionExpired: return .readBrowser
+        case .qoderLoginRequired: return .openApp("Qoder CN")
         case .ollamaSessionMissing, .ollamaSessionExpired: return .readBrowser
         case .claudeDesktopKeyRefused, .unreachable, .rateLimited, .serverError,
              .codexServerFailed: return .retry
@@ -52,9 +55,11 @@ enum ConnectionRemedy: Equatable {
     }
 
     static func helpURL(for provider: Provider) -> URL {
+        if provider == .qoderCN { return URL(string: "https://qoder.com.cn")! }
         let page: String = switch provider {
         case .claudeCode: "claude-code"
         case .codex: "codex"
+        case .openAI: "openai"
         case .antigravity: "antigravity"
         case .cursor: "cursor"
         case .openCodeGo: "opencode-go"
@@ -68,6 +73,7 @@ enum ConnectionRemedy: Equatable {
         case .volcengine: "volcengine"
         case .commandCode: "command-code"
         case .deepSeek: "deepseek"
+        case .qoderCN: "qoder"
         }
         return URL(string: "https://github.com/qunqin24/Pulse/blob/main/Docs/providers/\(page).md")!
     }

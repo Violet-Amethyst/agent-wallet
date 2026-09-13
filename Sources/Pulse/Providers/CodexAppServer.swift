@@ -106,6 +106,15 @@ actor CodexAppServer {
         let home = NSHomeDirectory()
         var candidates: [String] = []
 
+        // Finder-launched applications do not inherit the terminal's PATH.
+        // Prefer the desktop app's client, which shares its current login.
+        candidates += [
+            "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "/Applications/Codex.app/Contents/Resources/codex",
+            "\(home)/Applications/ChatGPT.app/Contents/Resources/codex",
+            "\(home)/Applications/Codex.app/Contents/Resources/codex"
+        ]
+
         if let path = ProcessInfo.processInfo.environment["PATH"] {
             candidates += path.split(separator: ":").map { "\($0)/codex" }
         }

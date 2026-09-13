@@ -1,0 +1,17 @@
+Agent Wallet
+Copyright 2026 Violet-Amethyst (Agent Wallet modifications)
+
+Derived from Pulse by qunqin24 and contributors:
+https://github.com/qunqin24/Pulse
+The original Apache License 2.0 is retained in LICENSE.
+Agent Wallet modifications are also provided under Apache License 2.0.
+
+Provider parsing and tests include adaptations and references to CodexBar
+by Peter Steinberger and contributors (MIT): https://github.com/steipete/CodexBar
+See THIRD_PARTY_NOTICES.md for its copyright and full permission notice.
+This is not a complete integration of CodexBarCore.
+
+Changes include wallet quota/balance presentation, OpenAI API billing,
+account connections, Codex quota selection, ring status rules, and controls.
+This is an independently maintained derivative, not an official release of
+Pulse, CodexBar, or any supported provider. Existing third-party rights remain.

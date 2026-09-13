@@ -8,6 +8,8 @@ History and the two bugs that taught this: [../decisions/panel-frame.md](../deci
 
 ## Overlay and height
 
+The rail includes a compact action footer on both axes (28pt circles, 8pt gap, 21pt leading inset, scaled through `PanelMetrics`). `DockLayout.actionAreaLength` is included in placement and hit bounds; `actionCentre` positions physical click targets. Provider spacing does not propagate into the footer.
+
 - Apply the rail’s vertical offset (`.padding(.top, railTop)`) **after** the card overlay, never before. Padding first anchors the card to the panel top and slices it `railTop` too high. That shipped once; it is invisible while the rail is centred.
 - The frame must be tall/wide enough for the **tallest card**, not just the rail (`max(DockLayout.maximum…, DetailCardLayout.maximumHeight)`). A card taller than the window is sliced flat against the edge.
 - The rail is centred in the panel (`PanelEdge.railAlignment`). `railTop` / `railLeading` convert rail-relative card positions (may be negative) to panel space. The pointer is panel-relative.

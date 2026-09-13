@@ -1,3 +1,15 @@
+# Agent Wallet
+
+由 [Violet-Amethyst](https://github.com/Violet-Amethyst/agent-wallet) 维护的个人 macOS 额度与余额监视器。
+
+本项目基于 Pulse（Apache 2.0），保留上游历史；部分服务解析参考或改编自 CodexBar（MIT），尚未完整接入 CodexBarCore。来源和许可见 [NOTICE](NOTICE) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+新增剩余额度圆环、统一状态颜色、蓝色金额显示、独立 OpenAI API 账单、Codex 配额选择、账号连接及底部操作按钮。
+
+运行 `./Scripts/bundle.sh` 构建 `build.noindex/Agent Wallet.app`。当前发布源码，包名、应用身份、数据目录和自动更新配置仍继承 Pulse，独立二进制发行前需要迁移。下方保留上游文档，其中下载链接指向 Pulse，不是 Agent Wallet。
+
+---
+
 <p align="center">
   <img src="AppIcon/pulse-icon-1024.png" width="112" alt="Pulse">
 </p>

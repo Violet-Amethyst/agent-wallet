@@ -78,7 +78,9 @@ struct DeepSeekParsingTests {
     /// $10 is not a comparison, so nothing here picks a "main" one by size.
     @Test("The ring follows the currency with money in it, then the user's choice")
     func currencySelection() throws {
-        let held = try Self.purse("deepseek-two-currencies")
+        let reply = try Self.reply("deepseek-two-currencies")
+        let purses = DeepSeekUsageService.purses(from: reply)
+        let held = try #require(DeepSeekUsageService.purse(from: purses, preferring: nil))
         let chosen = try Self.purse("deepseek-two-currencies", currency: "USD")
         // A choice for a currency this account does not hold is not honoured
         // over one it does.
@@ -87,6 +89,8 @@ struct DeepSeekParsingTests {
         #expect(held.currency == "CNY")
         #expect(chosen.currency == "USD")
         #expect(absent.currency == "CNY")
+        #expect(purses.count == 2)
+        #expect(DeepSeekUsageService.balance(purses).split(separator: " · ").count == 2)
     }
 
     // MARK: - Where the denominator comes from

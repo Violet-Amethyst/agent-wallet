@@ -44,19 +44,30 @@ enum DockLayout {
     /// and the rail grows or shrinks around them, which is a different wish
     /// from wanting the whole panel bigger.
     static var itemSpacing: CGFloat { 30 * PanelMetrics.scale * PanelMetrics.spacing }
+    /// Footer controls deliberately match the visual weight of a usage ring.
+    /// They are persistent controls, not tiny utility glyphs hidden at the
+    /// end of the rail.
+    static var actionDiameter: CGFloat { 40 * PanelMetrics.scale }
+    static var actionGap: CGFloat { 10 * PanelMetrics.scale }
+    static var actionInset: CGFloat { 18 * PanelMetrics.scale }
+    /// A compact footer, included in drawing, placement and click geometry.
+    static var actionAreaLength: CGFloat {
+        actionInset + actionDiameter * 2 + actionGap
+    }
 
-    /// The second ring's own geometry, all of it measured off the first so
-    /// the two cannot drift apart.
+    /// Dual-ring geometry: outer = long quota (thin), inner = short quota (thick).
     ///
-    /// **Everything inside the ring has to move for this**, which is why it is
-    /// here and not a constant in the view. At standard scale the band between
-    /// the icon's disc and the ring's inner edge is six points wide, and the
-    /// activity mark already rides the middle of it — the one place a second
-    /// arc wants. So when this is on the mark moves inward and the disc gives
-    /// up two points; the ring itself, the rail's width and the ring centres
-    /// are all unchanged, so nothing outside this circle notices.
-    static var secondRingDiameter: CGFloat { 26 * PanelMetrics.scale }
-    static var secondRingLineWidth: CGFloat { 2.5 * PanelMetrics.scale }
+    /// Pulse used the opposite weights — tightest limit on a thick outer ring.
+    /// Agent Wallet inverts that so the week sits as a quieter halo and the
+    /// five-hour window is the one you read first. The gap between strokes is
+    /// the whole point: equal widths collapse into one fat ring.
+    static var outerRingLineWidth: CGFloat { 2.25 * PanelMetrics.scale }
+    static var innerRingDiameter: CGFloat { 24 * PanelMetrics.scale }
+    static var innerRingLineWidth: CGFloat { 4.25 * PanelMetrics.scale }
+    /// Kept as aliases so older call sites that named Pulse's inner thin ring
+    /// still compile; they now mean the **outer** long stroke.
+    static var secondRingDiameter: CGFloat { innerRingDiameter }
+    static var secondRingLineWidth: CGFloat { outerRingLineWidth }
 
     /// Reach of the two convex corners on the rail's inner side. They are
     /// drawn as superellipse ("squircle") corners rather than circular arcs —
@@ -146,7 +157,16 @@ enum DockLayout {
     /// settings, so this is not a constant.
     static func length(for itemCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
         let count = CGFloat(max(itemCount, 1))
-        return endPadding(docked: docked) * 2 + itemLength(on: axis) * count + itemSpacing * (count - 1)
+        let providerLength = endPadding(docked: docked) * 2
+            + itemLength(on: axis) * count
+            + itemSpacing * (count - 1)
+        return providerLength + actionAreaLength
+    }
+
+    static func actionCentre(_ index: Int, itemCount: Int, axis: PanelEdge.Axis, docked: Bool) -> CGFloat {
+        endPadding(docked: docked) + CGFloat(itemCount) * itemLength(on: axis)
+            + CGFloat(max(0, itemCount - 1)) * itemSpacing + actionInset
+            + actionDiameter / 2 + CGFloat(index) * (actionDiameter + actionGap)
     }
 
     /// The rail's full size, laid the way `edge` lays it.
@@ -275,8 +295,14 @@ struct RailEntry: Identifiable, Equatable {
     /// together. Carried on the entry like the tint, because the item is built
     /// from this and doesn't otherwise see the settings.
     var showsRemaining: Bool = false
+    /// Wallet layout for this ring. Nil falls back to adapting `usage`.
+    var wallet: WalletSnapshot? = nil
 
     var id: String { slot.id }
+
+    var resolvedWallet: WalletSnapshot {
+        wallet ?? WalletAdapter.snapshot(from: usage, title: title)
+    }
 }
 
 /// The rail, in whatever state it is currently in — full, collapsed to a
@@ -310,6 +336,11 @@ struct UsageDockView: View {
     var onRefresh: (AccountKey) -> Void = { _ in }
     /// Called as the pointer arrives on the collapsed sliver.
     var onOpen: () -> Void = {}
+    var onSettings: () -> Void = {}
+    var onQuit: () -> Void = {}
+    /// Supplied by the panel's AppKit-safe pointer sampler. `onHover` is not
+    /// dependable inside this non-activating panel.
+    var hoveredAction: Int? = nil
 
     private var railSize: CGSize { DockLayout.size(for: entries.count, on: edge.axis, docked: isDocked) }
     private var currentSize: CGSize {
@@ -387,7 +418,11 @@ struct UsageDockView: View {
             ? AnyLayout(VStackLayout(spacing: DockLayout.itemSpacing))
             : AnyLayout(HStackLayout(spacing: DockLayout.itemSpacing))
 
-        return stack {
+        let outer = edge.isVertical
+            ? AnyLayout(VStackLayout(spacing: 0))
+            : AnyLayout(HStackLayout(spacing: 0))
+        return outer {
+          stack {
             ForEach(entries) { entry in
                 UsageDockItem(
                     entry: entry,
@@ -410,6 +445,15 @@ struct UsageDockView: View {
                     height: edge.isVertical ? DockLayout.itemLength(on: .vertical) : nil
                 )
             }
+          }
+          let actions = edge.isVertical
+              ? AnyLayout(VStackLayout(spacing: DockLayout.actionGap))
+              : AnyLayout(HStackLayout(spacing: DockLayout.actionGap))
+          actions {
+                railButton(systemName: "gearshape.fill", label: String.localized("Settings…"), isHovered: hoveredAction == 0, action: onSettings)
+                railButton(systemName: "power", label: String.localized("Quit Agent Wallet"), isHovered: hoveredAction == 1, action: onQuit)
+          }
+          .padding(edge.isVertical ? .top : .leading, DockLayout.actionInset)
         }
         // The padding follows the run too: the generous end padding is what
         // the flare needs room inside, and the flare is at the rail's ends
@@ -417,6 +461,23 @@ struct UsageDockView: View {
         .padding(edge.isVertical ? .vertical : .horizontal, DockLayout.endPadding(docked: isDocked))
         .padding(edge.isVertical ? .horizontal : .vertical, DockLayout.horizontalPadding)
         .frame(width: railSize.width, height: railSize.height)
+    }
+
+    private func railButton(systemName: String, label: String, isHovered: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 19 * PanelMetrics.scale, weight: .semibold))
+                .rotationEffect(.degrees(systemName == "gearshape.fill" && isHovered ? 360 : 0))
+                .frame(width: DockLayout.actionDiameter, height: DockLayout.actionDiameter)
+                .background(Circle().fill(isHovered ? .white.opacity(0.18) : .black.opacity(0.72)))
+                .overlay(Circle().stroke(isHovered ? .white.opacity(0.72) : .white.opacity(0.22), lineWidth: isHovered ? 1.5 : 1))
+                .scaleEffect(isHovered ? 1.12 : 1)
+                .animation(.spring(response: 0.26, dampingFraction: 0.62), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(systemName == "power" && isHovered ? .red : .white.opacity(0.9))
+        .animation(.easeOut(duration: 0.16), value: isHovered)
+        .accessibilityLabel(label)
     }
 }
 
@@ -465,23 +526,26 @@ private struct UsageDockItem: View {
     /// Lifted out of `body` because the initializer has enough arguments that
     /// type-checking it inline exceeded the compiler's budget.
     private var ring: some View {
-        UsageRingView(
+        let wallet = entry.resolvedWallet
+        let ringTint = wallet.prefersMoneyRingTint
+            ? Color.pulseMoney
+            : entry.tint
+        return UsageRingView(
             provider: usage.provider,
-            usedFraction: headline?.usedFraction,
-            // A ring showing money instead of a percentage has a reading; only
-            // one showing an em dash does not.
-            hasReading: headline != nil || entry.figure != nil,
-            chosenTint: entry.tint,
-            isSpent: UsageTint.isSpent(headline),
-            showsRemaining: entry.showsRemaining,
+            iconResource: wallet.iconResource,
+            usedFraction: wallet.innerUsedFraction,
+            hasReading: wallet.hasReading || entry.figure != nil,
+            chosenTint: ringTint,
+            isSpent: wallet.innerIsSpent,
+            showsRemaining: wallet.showsRemainingOnRing,
             diameter: DockLayout.ringDiameter,
             lineWidth: DockLayout.ringLineWidth,
             isBusy: entry.isRunning,
             isRefreshing: entry.isRefreshing,
             highlight: isSelected,
             elapsedFraction: entry.elapsed,
-            secondFraction: entry.second?.usedFraction,
-            secondIsSpent: UsageTint.isSpent(entry.second)
+            secondFraction: wallet.outerUsedFraction,
+            secondIsSpent: wallet.outerIsSpent
         )
         .scaleEffect(isSelected ? 1.06 : 1)
     }
@@ -492,7 +556,7 @@ private struct UsageDockItem: View {
     @ViewBuilder
     private var percentLabel: some View {
         if showsPercentage {
-            Text(headline?.percentText(remaining: entry.showsRemaining) ?? entry.figure ?? "—")
+            Text(entry.resolvedWallet.railCaption)
                 .font(.system(size: DockLayout.percentFontSize, weight: .medium, design: .rounded))
                 // Money is longer than a percentage and its length is not
                 // bounded by anything — "¥9.40" fits where "$1,234.56" does
@@ -503,9 +567,11 @@ private struct UsageDockItem: View {
                 // A spent limit colours the figure too. At ring size a fourth
                 // hue on the stroke alone would read as the third.
                 .foregroundStyle(
-                    UsageTint.isSpent(headline)
+                    entry.resolvedWallet.innerIsSpent
                         ? Color.pulseExhausted
-                        : .primary.opacity(headline == nil && entry.figure == nil ? 0.4 : 1)
+                        : entry.resolvedWallet.prefersMoneyRingTint
+                        ? Color.pulseMoney
+                        : .primary.opacity(entry.resolvedWallet.hasReading ? 1 : 0.4)
                 )
                 .monospacedDigit()
                 // Dimmed with the arc, so the whole ring goes quiet together
@@ -517,13 +583,13 @@ private struct UsageDockItem: View {
                 .contentTransition(.numericText())
                 .animation(
                     .spring(response: 0.5, dampingFraction: 0.85),
-                    value: headline?.percentText(remaining: entry.showsRemaining) ?? entry.figure
+                    value: entry.resolvedWallet.railCaption
                 )
         }
     }
 
     private var accessibilityValue: String {
-        let reading = headline.map { window in
+        let reading = moneyAccessibilityValue ?? headline.map { window in
             entry.showsRemaining
                 ? String.localized("\(window.percentText(remaining: true)) left, \(window.name)")
                 : String.localized("\(window.percentText) used, \(window.name)")
@@ -531,6 +597,12 @@ private struct UsageDockItem: View {
         return entry.isRefreshing
             ? "\(reading). \(String.localized("Refreshing…"))"
             : reading
+    }
+
+    private var moneyAccessibilityValue: String? {
+        let wallet = entry.resolvedWallet
+        guard wallet.prefersMoneyRingTint, wallet.hasReading else { return nil }
+        return String.localized("\(wallet.railCaption) remaining")
     }
 }
 

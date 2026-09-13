@@ -1,3 +1,15 @@
+# Agent Wallet
+
+Personal macOS quota and balance monitor maintained by [Violet-Amethyst](https://github.com/Violet-Amethyst/agent-wallet).
+
+An Apache-2.0 derivative of [Pulse](https://github.com/qunqin24/Pulse), retaining its history. Selected provider parsing follows [CodexBar](https://github.com/steipete/CodexBar) (MIT); the complete CodexBarCore library is not integrated. See [NOTICE](NOTICE) and [third-party licenses](THIRD_PARTY_NOTICES.md).
+
+Agent Wallet adds remaining-quota rings (green at 50% or above, yellow below 50%, red when exhausted), blue money rings, separate OpenAI API billing, Codex quota selection, account connections, and wallet controls.
+
+Build with `./Scripts/bundle.sh` to produce `build.noindex/Agent Wallet.app`. The package/executable is still named `Pulse`. This is a source release: application identity, data paths, and Sparkle update configuration still inherit Pulse and need migration before a standalone binary release. The documentation below describes upstream Pulse; its release/download links are not Agent Wallet downloads.
+
+---
+
 <p align="center">
   <img src="AppIcon/pulse-icon-1024.png" width="112" alt="Pulse">
 </p>

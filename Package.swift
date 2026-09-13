@@ -17,13 +17,15 @@ let package = Package(
         // bundle, which Scripts/bundle.sh does — a bare `swift run` build
         // links against it but has nowhere to put it, so the updater is
         // inert there. See AppUpdate.swift.
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+        .package(url: "https://github.com/steipete/SweetCookieKit", exact: "0.5.2")
     ],
     targets: [
         .executableTarget(
             name: "Pulse",
             dependencies: [
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "SweetCookieKit", package: "SweetCookieKit")
             ],
             path: "Sources/Pulse",
             resources: [

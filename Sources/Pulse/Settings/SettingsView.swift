@@ -35,12 +35,16 @@ struct SettingsView: View {
     @State private var historyReads: [Provider: ZaiUsageService.HistoryRead] = [:]
     @State private var codexAccount: CodexAccountUsage?
     @State private var loadingHistory: Provider?
+    @State private var connectingQoder = false
     /// The key field's contents. Seeded from the store when the pane opens;
     /// the store is a file, not something SwiftUI can observe.
     @State private var apiKey = ""
     /// The budget being typed, kept as text so a half-entered number is not
     /// read as a denominator on every keystroke.
     @State private var deepSeekBudget = ""
+    /// The OpenAI billing total being typed. It is the denominator for API
+    /// spend, not a secret, and defaults to 100 when left blank.
+    @State private var openAIBillingTotal = ""
     /// The low-balance figure being typed, kept as text for the same reason.
     @State private var lowBalance = ""
     @State private var savedKey = ""
@@ -800,8 +804,17 @@ struct SettingsView: View {
             // the keychain, and the settings window should not freeze while it
             // does.
             let found = await Task.detached(priority: .userInitiated) {
-                BrowserCookies.session(forHost: "ollama.com", allowing: browsers) {
-                    try? OllamaSessionCookie.normalize($0)
+                let host = switch account.provider {
+                case .openAI: "openai.com"
+                case .ollamaCloud: "ollama.com"
+                default: ""
+                }
+                return BrowserCookies.session(forHost: host, allowing: browsers) {
+                    switch account.provider {
+                    case .openAI: try? OpenAIPlatformSession.normalize($0)
+                    case .ollamaCloud: try? OllamaSessionCookie.normalize($0)
+                    default: nil
+                    }
                 }
             }.value
 
@@ -819,7 +832,9 @@ struct SettingsView: View {
             }
 
             if pane == .account(account) {
-                sessionMessage = String.localized("No Ollama session found. Sign in at ollama.com first.")
+                sessionMessage = account.provider == .openAI
+                    ? String.localized("No OpenAI Platform session found. Sign in at platform.openai.com first.")
+                    : String.localized("No Ollama session found. Sign in at ollama.com first.")
             }
         }
     }
@@ -859,9 +874,32 @@ struct SettingsView: View {
                     .disabled(settings.isEnabled(account) && settings.enabledAccounts.count == 1)
                 }
 
+                // DeepSeek reports prepaid money rather than a provider quota.
+                // Its inferred display choice belongs here, but the generic
+                // "which limit" picker would be a duplicate and misleading.
                 SettingsRowDivider()
 
-                ringWindowRow(for: account)
+                if provider == .deepSeek {
+                    deepSeekBalanceDisplayRow
+                    if settings.deepSeekBasis == .budget {
+                        SettingsRowDivider()
+                        deepSeekBudgetRow
+                    }
+                } else {
+                    ringWindowRow(for: account)
+                }
+
+                // Only where there is more than one budget to split. Every
+                if provider == .codex {
+                    SettingsRowDivider()
+                    SettingsRow(String.localized("Show Codex Spark limits"),
+                                subtitle: String.localized("Off by default. General weekly usage always appears first.")) {
+                        Toggle("", isOn: Binding(get: { settings.showsCodexSpark },
+                                                 set: { settings.showsCodexSpark = $0 }))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+                }
 
                 // Only where there is more than one budget to split. Every
                 // other provider reports one pool, and a switch that promises
@@ -928,6 +966,10 @@ struct SettingsView: View {
             connection(for: account)
                 .id("connection")
 
+            if provider == .openAI {
+                openAIBillingGroup(for: account)
+            }
+
             ConnectionDiagnosticsView(
                 account: account, store: store, settings: settings,
                 isSigningIn: signingIn != nil || githubTask != nil,
@@ -975,6 +1017,9 @@ struct SettingsView: View {
             // beside a ring that is measuring against it.
             if shown == .deepSeek {
                 deepSeekBudget = settings.deepSeekBudget.map { String($0) } ?? ""
+            }
+            if shown == .openAI {
+                openAIBillingTotal = Self.text(settings.openAIBillingTotal)
             }
             if shown.reportsSpendableBalance {
                 lowBalance = settings.lowBalanceAlert(for: AccountKey(shown)).map { String($0) } ?? ""
@@ -1234,9 +1279,9 @@ struct SettingsView: View {
     /// DeepSeek reports money and no allowance, so the ring has no denominator
     /// until one is chosen. Three modes because there are exactly three places
     /// one can come from — see `DeepSeekBasis`.
-    private var deepSeekBasisRow: some View {
+    private var deepSeekBalanceDisplayRow: some View {
         SettingsRow(
-            String.localized("Ring shows"),
+            String.localized("Balance display"),
             subtitle: Self.deepSeekBasisSubtitle(settings.deepSeekBasis)
         ) {
             Picker("", selection: Binding(
@@ -1274,6 +1319,30 @@ struct SettingsView: View {
     private func saveDeepSeekBudget() {
         settings.deepSeekBudget = Self.money(deepSeekBudget)
         deepSeekBudget = Self.text(settings.deepSeekBudget)
+    }
+
+    private func openAIBillingGroup(for account: AccountKey) -> some View {
+        SettingsGroup(String.localized("Billing")) {
+            SettingsRow(
+                String.localized("Billing total"),
+                subtitle: String.localized("From Billing history. Agent Wallet subtracts current API spend from this number; blank uses $100.")
+            ) {
+                HStack(spacing: 8) {
+                    TextField(String.localized("100"), text: $openAIBillingTotal)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: SettingsLayout.controlWidth - 70)
+                        .onSubmit { saveOpenAIBillingTotal(for: account) }
+
+                    Button(String.localized("Save")) { saveOpenAIBillingTotal(for: account) }
+                }
+            }
+        }
+    }
+
+    private func saveOpenAIBillingTotal(for account: AccountKey) {
+        settings.openAIBillingTotal = Self.money(openAIBillingTotal)
+        openAIBillingTotal = Self.text(settings.openAIBillingTotal)
+        store.refresh(account)
     }
 
     /// A figure typed into a settings field, or nil for anything that is not
@@ -1383,7 +1452,9 @@ struct SettingsView: View {
         case .commandCode:
             .localized("From commandcode.ai. Optional — Pulse can use the login Command Code saved. Stored encrypted on this Mac.")
         case .deepSeek:
-            .localized("From platform.deepseek.com. Stored encrypted on this Mac.")
+            .localized("Optional alternative to Chrome login. Create at platform.deepseek.com; stored encrypted on this Mac.")
+        case .openAI:
+            .localized("From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac.")
         default:
             .localized("Stored encrypted on this Mac.")
         }
@@ -1402,7 +1473,23 @@ struct SettingsView: View {
         let source = settings.source(for: account)
 
         if hasConnectionControls(for: account) {
-        SettingsGroup(String.localized("Connection")) {
+        SettingsGroup(
+            account.provider == .deepSeek
+                ? String.localized("DeepSeek connection")
+                : String.localized("Connection")
+        ) {
+            if account.provider == .deepSeek {
+                SettingsRow(
+                    String.localized("Read balance from"),
+                    subtitle: String.localized("Uses your DeepSeek Platform login saved in Chrome. An API key is optional and takes priority when saved.")
+                ) {
+                    Button(String.localized("Open page")) {
+                        NSWorkspace.shared.open(URL(string: "https://platform.deepseek.com/usage")!)
+                    }
+                }
+
+                SettingsRowDivider()
+            }
             // A account.provider with a single route gets told, not asked. A picker
             // with one entry is a control that cannot do anything.
             if account.isPrimary, account.provider.hasSourceChoice {
@@ -1487,11 +1574,11 @@ struct SettingsView: View {
             // field was never drawn at all, so the endpoint route it belongs to
             // could not be configured from Settings by any means. A divider
             // where both are shown, and none where the picker was not.
-            if account.provider.hasSourceChoice, account.provider.usesAPIKey {
+            if account.provider.hasSourceChoice, account.provider.keepsOwnCredential {
                 SettingsRowDivider()
             }
 
-            if account.provider.usesAPIKey {
+            if account.provider.keepsOwnCredential, account.provider != .copilot {
                 // Takes precedence over the key OpenCode saved for itself —
                 // see OpenCodeGoUsageService for why that way round.
                 // What this provider wants is not always a key. Ollama has no
@@ -1504,7 +1591,11 @@ struct SettingsView: View {
                         ? String.localized("Session cookie")
                         : account.provider.usesKeyPair
                             ? String.localized("Access keys")
-                            : String.localized("API key"),
+                            : account.provider == .deepSeek
+                                ? String.localized("API key (optional)")
+                                : account.provider == .openAI
+                                    ? String.localized("Admin Key")
+                                    : String.localized("API key"),
                     subtitle: Self.keySubtitle(for: account.provider)
                 ) {
                     HStack(spacing: 8) {
@@ -1577,15 +1668,23 @@ struct SettingsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: SettingsLayout.controlWidth, alignment: .trailing)
                     }
-                }
-            }
-
-            if account.provider == .deepSeek {
-                SettingsRowDivider()
-                deepSeekBasisRow
-                if settings.deepSeekBasis == .budget {
-                    SettingsRowDivider()
-                    deepSeekBudgetRow
+                    if account.provider == .qoderCN {
+                        SettingsRowDivider()
+                        SettingsRow(String.localized("Qoder connection"),
+                            subtitle: String.localized("Connect once to reuse this session after restarting. Automatic refresh never asks for a password.")) {
+                            Button(String.localized("Connect Qoder CN")) {
+                                connectingQoder = true
+                                Task {
+                                    _ = await Task.detached {
+                                        QoderCNSession().token(allowInteraction: true) != nil
+                                    }.value
+                                    connectingQoder = false
+                                    store.refresh(account)
+                                }
+                            }
+                            .disabled(connectingQoder)
+                        }
+                    }
                 }
             }
 
@@ -1606,7 +1705,7 @@ struct SettingsView: View {
         guard account.isPrimary else { return false }
         if account.provider.hasSourceChoice { return true }
         if account.provider == .copilot { return true }
-        if account.provider.usesAPIKey { return true }
+        if account.provider.keepsOwnCredential { return true }
         return account.isPrimary && account.provider.soleRoute != nil
     }
 
@@ -1954,7 +2053,7 @@ struct SettingsView: View {
 
             SettingsRowDivider()
 
-            if usage.windows.isEmpty {
+            if !usage.reportsSomething {
                 SettingsRow(
                     String.localized("No reading"),
                     subtitle: {
@@ -1986,7 +2085,7 @@ struct SettingsView: View {
             }
 
             if let credit = usage.creditBalance {
-                SettingsRowDivider()
+                if !usage.windows.isEmpty || usage.plan != nil { SettingsRowDivider() }
                 SettingsRow(String.localized("Credit balance")) {
                     Text(credit)
                         .font(.system(size: 13))

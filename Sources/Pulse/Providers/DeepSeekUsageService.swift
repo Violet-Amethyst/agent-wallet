@@ -2,11 +2,9 @@ import Foundation
 
 /// DeepSeek's prepaid balance.
 ///
-/// One documented route, `GET https://api.deepseek.com/user/balance`, reached
-/// with a key the user pastes into Settings and kept encrypted on this Mac.
-/// Unlike most of this directory it is not an undocumented account endpoint
-/// borrowed from a product's own UI — it is in DeepSeek's published API
-/// reference, alongside chat completions.
+/// A saved API key uses the official balance API. Without one, the platform's
+/// user-summary endpoint uses the existing Chrome login, like its usage page.
+/// Both routes preserve currencies separately and report their actual source.
 ///
 /// ```json
 /// { "is_available": true,
@@ -16,7 +14,7 @@ import Foundation
 /// ```
 ///
 /// **There is no allowance, no window, no reset and no spend history** — not in
-/// this reply and not anywhere else in the API. Every other provider Pulse
+/// the public balance reply. Every other provider Pulse
 /// carries reports at least one percentage; this one reports money and stops.
 /// So the denominator behind the ring has to come from somewhere, and
 /// `DeepSeekBasis` is the enumeration of the only three places it can:
@@ -42,7 +40,7 @@ struct DeepSeekUsageService: Sendable {
 
     func fetch() async -> ProviderUsage {
         guard let key = enteredKey.flatMap({ $0.isEmpty ? nil : $0 }) else {
-            return .unavailable(.deepSeek, reason: .apiKeyMissing)
+            return await fetchWebBalance()
         }
 
         var request = URLRequest(url: Self.endpoint)
@@ -65,7 +63,61 @@ struct DeepSeekUsageService: Sendable {
             return .unavailable(.deepSeek, reason: .unreadableReply)
         }
 
-        guard let purse = Self.purse(from: reply, preferring: currency) else {
+        return reading(purses: Self.purses(from: reply), isAvailable: reply.isAvailable).recording(.endpoint)
+    }
+
+    private func fetchWebBalance() async -> ProviderUsage {
+        let tokens = DeepSeekWebLogin.tokens()
+        guard tokens.count == 1, let token = tokens.first else {
+            return .unavailable(.deepSeek, reason: .deepSeekWebLoginRequired).recording(.webSession)
+        }
+        var request = URLRequest(url: URL(string: "https://platform.deepseek.com/api/v0/users/get_user_summary")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+        guard let (data, response) = try? await URLSession.shared.data(for: request) else {
+            return .unavailable(.deepSeek, reason: .unreachable).recording(.webSession)
+        }
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200: break
+        case 401, 403: return .unavailable(.deepSeek, reason: .deepSeekWebLoginRequired).recording(.webSession)
+        case 429: return .unavailable(.deepSeek, reason: .rateLimited).recording(.webSession)
+        default: return .unavailable(.deepSeek, reason: .serverError).recording(.webSession)
+        }
+        guard let purses = Self.platformPurses(data) else {
+            return .unavailable(.deepSeek, reason: .unreadableReply).recording(.webSession)
+        }
+        return reading(purses: purses, isAvailable: nil).recording(.webSession)
+    }
+
+    static func platformPurses(_ data: Data) -> [Purse]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (root["code"] as? Int) == 0,
+              let envelope = root["data"] as? [String: Any],
+              (envelope["biz_code"] as? Int) == 0,
+              let body = envelope["biz_data"] as? [String: Any],
+              let normal = body["normal_wallets"] as? [[String: Any]],
+              let bonus = body["bonus_wallets"] as? [[String: Any]] else { return nil }
+        var paid: [String: Double] = [:]
+        var granted: [String: Double] = [:]
+        for (wallets, isBonus) in [(normal, false), (bonus, true)] {
+            for wallet in wallets {
+                guard let currency = wallet["currency"] as? String, !currency.isEmpty,
+                      let raw = wallet["balance"],
+                      let amount = Double(String(describing: raw)), amount.isFinite else { return nil }
+                // Platform amounts are in currency units, not cents.
+                if isBonus { granted[currency, default: 0] += amount }
+                else { paid[currency, default: 0] += amount }
+            }
+        }
+        return Set(paid.keys).union(granted.keys).sorted().map { currency in
+            Purse(currency: currency, total: (paid[currency] ?? 0) + (granted[currency] ?? 0),
+                  granted: granted[currency], toppedUp: paid[currency])
+        }
+    }
+
+    private func reading(purses: [Purse], isAvailable: Bool?) -> ProviderUsage {
+        guard let purse = Self.purse(from: purses, preferring: currency) else {
             return .unavailable(.deepSeek, reason: .noLimitsReported)
         }
 
@@ -86,12 +138,15 @@ struct DeepSeekUsageService: Sendable {
             account: AccountKey(.deepSeek),
             windows: Self.windows(
                 purse: purse, basis: basis, budget: budget, peak: mark.peak,
-                since: mark.setAt, isAvailable: reply.isAvailable
+                since: mark.setAt, isAvailable: isAvailable
             ),
             observedAt: Date(),
             state: .live,
             plan: nil,
-            creditBalance: Self.balance(purse),
+            // Keep every provider-reported currency visible on the card. The
+            // selected purse still drives the rail and the optional inferred
+            // denominator; currencies are never converted or added together.
+            creditBalance: Self.balance(purses),
             creditRemaining: .init(amount: purse.total, currency: purse.currency)
         )
     }
@@ -132,6 +187,11 @@ struct DeepSeekUsageService: Sendable {
         let toppedUp: Double?
     }
 
+    /// All valid purses in the order DeepSeek returned them.
+    static func purses(from reply: Reply) -> [Purse] {
+        (reply.balanceInfos ?? []).compactMap(purse(from:))
+    }
+
     /// Which currency the ring follows.
     ///
     /// **The reply is an array**, and an account can hold both CNY and USD.
@@ -141,7 +201,10 @@ struct DeepSeekUsageService: Sendable {
     /// entry with money in it, else the first entry at all. The card lists
     /// every currency regardless of which one the ring follows.
     static func purse(from reply: Reply, preferring currency: String?) -> Purse? {
-        let purses = (reply.balanceInfos ?? []).compactMap(purse(from:))
+        purse(from: purses(from: reply), preferring: currency)
+    }
+
+    static func purse(from purses: [Purse], preferring currency: String?) -> Purse? {
         guard !purses.isEmpty else { return nil }
 
         if let currency, let chosen = purses.first(where: { $0.currency == currency }) {
@@ -240,7 +303,14 @@ struct DeepSeekUsageService: Sendable {
         ]
     }
 
-    /// What is left, in the currency the account is priced in.
+    /// What is left, preserving each provider-reported currency separately.
+    /// There is deliberately no exchange-rate lookup and no addition across
+    /// currencies.
+    static func balance(_ purses: [Purse]) -> String {
+        purses.map(balance(_:)).joined(separator: " · ")
+    }
+
+    /// What is left, in one provider-reported currency.
     static func balance(_ purse: Purse) -> String {
         purse.total.formatted(
             .currency(code: purse.currency)

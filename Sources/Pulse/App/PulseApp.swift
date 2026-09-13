@@ -47,15 +47,13 @@ struct PulseApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // A plain menu rather than a popover: everything Pulse has to say
-        // about usage it says in the floating panel, so this is only a way in
-        // to settings and out of the app.
-        MenuBarExtra("Pulse", systemImage: "chart.pie.fill") {
-            MenuBarContent(
-                settings: appDelegate.settings,
-                update: appDelegate.update,
-                openSettings: appDelegate.showSettings
-            )
+        // The floating rail owns Settings and Quit. No status-bar item.
+        Settings { EmptyView() }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button(String.localized("Settings…")) { appDelegate.showSettings() }
+                    .keyboardShortcut(",")
+            }
         }
     }
 }
@@ -72,7 +70,7 @@ private struct MenuBarContent: View {
             // needs it can find it; the check runs on its own daily, and the
             // manual one lives in Settings.
             if let newer = update.newer {
-                Button(String.localized("Pulse \(newer.version) is available")) {
+                Button(String.localized("Agent Wallet \(newer.version) is available")) {
                     update.check()
                 }
 
@@ -84,7 +82,7 @@ private struct MenuBarContent: View {
 
             Divider()
 
-            Button(String.localized("Quit Pulse")) {
+            Button(String.localized("Quit Agent Wallet")) {
                 NSApplication.shared.terminate(nil)
             }
             .keyboardShortcut("q")

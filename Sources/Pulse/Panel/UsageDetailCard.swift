@@ -98,14 +98,15 @@ struct UsageDetailCard: View {
     /// at the card's centre — it has to be placed independently to keep aiming
     /// at the selected ring.
     let pointerCenter: CGFloat
+    /// Wallet layout, when the rail built one. Drives remaining-first dual
+    /// rows and money / spend copy so the card matches the ring.
+    var wallet: WalletSnapshot? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: DetailCardLayout.contentSpacing) {
             header
 
-            // However many limits the provider reports — one account-wide
-            // window for some plans, several once per-model limits apply.
-            ForEach(usage.windows) { window in
+            ForEach(cardWindows) { window in
                 ProgressMetricRow(
                     title: window.name,
                     resetDescription: Self.resetText(window),
@@ -114,11 +115,50 @@ struct UsageDetailCard: View {
                     percentageText: window.percentText(remaining: showsRemaining),
                     isSpent: UsageTint.isSpent(window),
                     showsRemaining: showsRemaining,
-                    // Every provider, not a chosen few: what this needs is a
-                    // percentage, a reset and a length the provider actually
-                    // stated, and `BurnRate` refuses the windows that lack one
-                    // rather than being told in advance which they are.
                     burn: showsForecast ? BurnRate.reading(for: window) : nil
+                )
+            }
+
+            if let spend = wallet?.periodSpend {
+                ValueRow(
+                    title: String.localized("Monthly spend"),
+                    value: String.localized("\(spend.spentText) spent"),
+                    valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
+                )
+                ValueRow(
+                    title: String.localized("Monthly budget"),
+                    value: String.localized("of \(spend.budgetText) monthly budget"),
+                    valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
+                )
+                ValueRow(
+                    title: String.localized("Remaining budget"),
+                    value: String.localized("\(spend.remainingText) remaining"),
+                    valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
+                )
+                if let secondary = spend.secondarySpent, let title = spend.secondaryTitle {
+                    ValueRow(
+                        title: title,
+                        value: ProviderUsage.CreditAmount(amount: secondary, currency: spend.currency).railText(),
+                        valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
+                    )
+                }
+            }
+
+            if let extras = wallet?.extras, !extras.isEmpty {
+                ForEach(extras, id: \.title) { extra in
+                    ValueRow(
+                        title: extra.title,
+                        value: extra.value,
+                        valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
+                    )
+                }
+            }
+
+            if let count = wallet?.creditCount {
+                ValueRow(
+                    title: String.localized("Credits remaining"),
+                    value: "\(count) cr",
+                    valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
                 )
             }
 
@@ -128,8 +168,15 @@ struct UsageDetailCard: View {
             // and the message below covered it. DeepSeek on "balance only"
             // reports money and no limits *by design*, and the money is then
             // the whole reading — so it is what the card says.
-            if usage.windows.isEmpty, let balance = usage.creditBalance {
-                ValueRow(title: String.localized("Credit balance"), value: balance)
+            if usage.windows.isEmpty,
+               wallet?.creditCount == nil,
+               wallet?.periodSpend == nil,
+               let balance = usage.creditBalance {
+                ValueRow(
+                    title: String.localized("Credit balance"),
+                    value: balance,
+                    valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
+                )
             }
 
             // The same rule for the other way a body can come out empty: a
@@ -186,13 +233,46 @@ struct UsageDetailCard: View {
         }
     }
 
+    /// Short then long when the wallet has dual quotas; otherwise the
+    /// provider's own order, minus windows already shown as money.
+    private var cardWindows: [UsageWindow] {
+        // Codex reports the account-wide quota together with model-specific
+        // Spark quotas. The account-wide quota is the useful default summary;
+        // keep Spark available, but never let it displace the general limit.
+        let orderedUsageWindows: [UsageWindow] = {
+            guard usage.provider == .codex,
+                  let general = usage.windows.first(where: { $0.scope == nil })
+            else { return usage.windows }
+            return [general] + usage.windows.filter { $0.id != general.id }
+        }()
+        if usage.provider == .codex { return orderedUsageWindows }
+        if let wallet, !wallet.primaryWindows.isEmpty {
+            let ids = Set(wallet.primaryWindows.map(\.id))
+            let rest = orderedUsageWindows.filter { !ids.contains($0.id) }
+            return wallet.primaryWindows + rest
+        }
+        if case .money = wallet?.mode {
+            return orderedUsageWindows.filter {
+                if case .spend = $0.kind { return false }
+                if case .balance = $0.kind { return false }
+                return true
+            }
+        }
+        return orderedUsageWindows
+    }
+
     /// Whether the body would otherwise be nothing but the header.
     ///
     /// An unavailable reading is excluded because its own message is about to
     /// say something better than "no limits reported" — which route failed,
     /// or what to sign in to.
     private var saysNothing: Bool {
-        guard usage.windows.isEmpty, usage.creditBalance == nil else { return false }
+        guard cardWindows.isEmpty,
+              usage.creditBalance == nil,
+              wallet?.periodSpend == nil,
+              wallet?.creditCount == nil,
+              wallet?.extras.isEmpty != false
+        else { return false }
         if case .unavailable = usage.state { return false }
         return true
     }
@@ -238,7 +318,11 @@ struct UsageDetailCard: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            LobeIconView(provider: usage.provider, size: DetailCardLayout.headerIconSize)
+            LobeIconView(
+                provider: usage.provider,
+                resource: wallet?.iconResource,
+                size: DetailCardLayout.headerIconSize
+            )
                 .foregroundStyle(.primary)
 
             Text(localized: "\(title ?? usage.provider.displayName) Usage")
@@ -267,6 +351,7 @@ struct UsageDetailCard: View {
 private struct ValueRow: View {
     let title: String
     let value: String
+    let valueColor: Color?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -278,7 +363,7 @@ private struct ValueRow: View {
 
             Text(value)
                 .font(.system(size: DetailCardLayout.rowFontSize, weight: .medium, design: .rounded))
-                .foregroundStyle(.primary.opacity(0.9))
+                .foregroundStyle(valueColor ?? .primary.opacity(0.9))
                 .lineLimit(1)
                 .layoutPriority(1)
         }
@@ -304,7 +389,7 @@ private struct ProgressMetricRow: View {
     /// "88% Used", or "12% Left" when the figure is counted the other way.
     private var figureLabel: String {
         showsRemaining
-            ? .localized("\(percentageText) Left")
+            ? .localized("\(percentageText) remaining")
             : .localized("\(percentageText) Used")
     }
 

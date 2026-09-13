@@ -1,6 +1,7 @@
 import AppKit
 import CommonCrypto
 import Foundation
+import LocalAuthentication
 import SQLite3
 
 /// Reading one site's session cookie out of the browser the user signed in
@@ -274,7 +275,8 @@ enum BrowserCookies {
     /// under "Microsoft Edge Safe Storage", and building the name from the
     /// display name found nothing, failed silently, and fell through to the
     /// next browser.
-    static func safeStorageKey(service: String) -> Data? {
+    static func safeStorageKey(service: String, allowInteraction: Bool = true) -> Data? {
+        if let cached = keychainKeyCache.value(for: service) { return cached }
         var request: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -284,6 +286,12 @@ enum BrowserCookies {
         // Brave and Arc name the account differently from the service in some
         // versions, so the account is left unconstrained.
         request[kSecAttrAccount as String] = nil
+
+        if !allowInteraction {
+            let context = LAContext()
+            context.interactionNotAllowed = true
+            request[kSecUseAuthenticationContext as String] = context
+        }
 
         var item: CFTypeRef?
         guard
@@ -306,7 +314,26 @@ enum BrowserCookies {
                 )
             }
         }
-        return derived == kCCSuccess ? key : nil
+        guard derived == kCCSuccess else { return nil }
+        keychainKeyCache.insert(key, for: service)
+        return key
+    }
+
+    private static let keychainKeyCache = KeychainKeyCache()
+
+    private final class KeychainKeyCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: Data] = [:]
+
+        func value(for service: String) -> Data? {
+            lock.lock(); defer { lock.unlock() }
+            return values[service]
+        }
+
+        func insert(_ value: Data, for service: String) {
+            lock.lock(); defer { lock.unlock() }
+            values[service] = value
+        }
     }
 
     /// AES-128-CBC with an all-spaces IV, after the version prefix.

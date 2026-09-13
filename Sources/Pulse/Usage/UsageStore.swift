@@ -364,6 +364,7 @@ final class UsageStore {
         // Read here rather than inside the services, which stay free of
         // storage concerns.
         let openCode = OpenCodeGoUsageService(enteredKey: apiKeys[.openCodeGo])
+        let openAI = OpenAIUsageService(adminKey: apiKeys[.openAI], billingTotal: settings.openAIBillingTotal)
         let kimi = KimiCodeUsageService(enteredKey: apiKeys[.kimiCode])
         let ollama = OllamaCloudUsageService(cookie: apiKeys[.ollamaCloud])
         let zai = ZaiUsageService(provider: .zai, enteredKey: apiKeys[.zai])
@@ -420,6 +421,9 @@ final class UsageStore {
             async let openCodeUsage = wanted.contains(.openCodeGo)
                 ? await openCode.fetch()
                 : ProviderUsage.unavailable(.openCodeGo, reason: .loading)
+            async let openAIUsage = wanted.contains(.openAI)
+                ? await openAI.fetch()
+                : ProviderUsage.unavailable(.openAI, reason: .loading)
             async let ollamaUsage = wanted.contains(.ollamaCloud)
                 ? await ollama.fetch()
                 : ProviderUsage.unavailable(.ollamaCloud, reason: .loading)
@@ -456,15 +460,19 @@ final class UsageStore {
             async let deepSeekUsage = wanted.contains(.deepSeek)
                 ? await deepSeek.fetch()
                 : ProviderUsage.unavailable(.deepSeek, reason: .loading)
+            async let qoderUsage = wanted.contains(.qoderCN)
+                ? await QoderCNUsageService().fetch()
+                : ProviderUsage.unavailable(.qoderCN, reason: .loading)
 
-            let (rawCodex, rawClaude, rawAntigravity, rawOpenCode) =
-                await (codexUsage, claudeUsage, antigravityUsage, openCodeUsage)
+            let (rawCodex, rawClaude, rawAntigravity, rawOpenCode, rawOpenAI) =
+                await (codexUsage, claudeUsage, antigravityUsage, openCodeUsage, openAIUsage)
             let (rawKimi, rawCursor, rawOllama) = await (kimiUsage, cursorUsage, ollamaUsage)
             let (rawZai, rawGLM) = await (zaiUsage, glmUsage)
             let (rawMiniMax, rawMiniMaxCN) = await (minimaxUsage, minimaxCNUsage)
             let (rawCopilot, rawGrok, rawGrokBot) = await (copilotUsage, grokUsage, grokBotUsage)
             let (rawVolcengine, rawCommandCode) = await (volcengineUsage, commandCodeUsage)
             let rawDeepSeek = await deepSeekUsage
+            let rawQoder = await qoderUsage
 
             // **The disowning is checked before anything is written, not just
             // before the readings are handed to the panel.** `reconciled`
@@ -483,6 +491,7 @@ final class UsageStore {
             let fetchedClaude = await UsageCache.shared.reconciled(rawClaude)
             let fetchedAntigravity = await UsageCache.shared.reconciled(rawAntigravity)
             let fetchedOpenCode = await UsageCache.shared.reconciled(rawOpenCode)
+            let fetchedOpenAI = await UsageCache.shared.reconciled(rawOpenAI)
             let fetchedKimi = await UsageCache.shared.reconciled(rawKimi)
             let fetchedCursor = await UsageCache.shared.reconciled(rawCursor)
             let fetchedOllama = await UsageCache.shared.reconciled(rawOllama)
@@ -496,6 +505,7 @@ final class UsageStore {
             let fetchedVolcengine = await UsageCache.shared.reconciled(rawVolcengine)
             let fetchedCommandCode = await UsageCache.shared.reconciled(rawCommandCode)
             let fetchedDeepSeek = await UsageCache.shared.reconciled(rawDeepSeek)
+            let fetchedQoder = await UsageCache.shared.reconciled(rawQoder)
 
             // Accounts Pulse signed in to itself, read one at a time: each
             // may have to renew its token first, and they are few.
@@ -529,6 +539,7 @@ final class UsageStore {
                 (Provider.codex, fetchedCodex, rawCodex),
                 (.claudeCode, fetchedClaude, rawClaude),
                 (.antigravity, fetchedAntigravity, rawAntigravity),
+                (.openAI, fetchedOpenAI, rawOpenAI),
                 (.openCodeGo, fetchedOpenCode, rawOpenCode),
                 (.kimiCode, fetchedKimi, rawKimi),
                 (.cursor, fetchedCursor, rawCursor),
@@ -543,6 +554,7 @@ final class UsageStore {
                 (.volcengine, fetchedVolcengine, rawVolcengine),
                 (.commandCode, fetchedCommandCode, rawCommandCode),
                 (.deepSeek, fetchedDeepSeek, rawDeepSeek),
+                (.qoderCN, fetchedQoder, rawQoder),
             ] where wanted.contains(provider) {
                 self.commit(fetched, raw: raw, for: AccountKey(provider).id)
             }
@@ -562,6 +574,7 @@ final class UsageStore {
                 (Provider.codex, fetchedCodex),
                 (.claudeCode, fetchedClaude),
                 (.antigravity, fetchedAntigravity),
+                (.openAI, fetchedOpenAI),
                 (.openCodeGo, fetchedOpenCode),
                 (.kimiCode, fetchedKimi),
                 (.cursor, fetchedCursor),
@@ -576,6 +589,7 @@ final class UsageStore {
                 (.volcengine, fetchedVolcengine),
                 (.commandCode, fetchedCommandCode),
                 (.deepSeek, fetchedDeepSeek),
+                (.qoderCN, fetchedQoder),
             ].contains { provider, fetched in
                 wanted.contains(provider)
                     && previous[AccountKey(provider).id]?.windows != fetched.windows
@@ -619,6 +633,7 @@ final class UsageStore {
         // A provider's own pane in Settings is reachable while it is switched
         // off, so its key will not be in the launch-time cache.
         let key = provider.keepsOwnCredential ? (apiKeys[provider] ?? APIKeyStore.key(for: provider)) : nil
+        let openAI = OpenAIUsageService(adminKey: key, billingTotal: settings.openAIBillingTotal)
         let openCode = OpenCodeGoUsageService(enteredKey: key)
         let kimi = KimiCodeUsageService(enteredKey: key)
         let ollama = OllamaCloudUsageService(cookie: key)
@@ -647,6 +662,8 @@ final class UsageStore {
                 raw = await antigravity.fetch()
             case .cursor:
                 raw = await cursor.fetch()
+            case .openAI:
+                raw = await openAI.fetch()
             case .openCodeGo:
                 raw = await openCode.fetch()
             case .kimiCode:
@@ -669,6 +686,8 @@ final class UsageStore {
                 raw = await commandCode.fetch()
             case .deepSeek:
                 raw = await deepSeek.fetch()
+            case .qoderCN:
+                raw = await QoderCNUsageService().fetch()
             }
             }
 
@@ -739,9 +758,9 @@ final class UsageStore {
         case .grok: await grok.fetch(account: account, token: credentials.accessToken)
         case .grokBot: await grokBot.fetch(account: account, token: credentials.accessToken)
         // Nothing else can be signed in to, so nothing else gets here.
-        case .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
-             .commandCode, .deepSeek:
+             .commandCode, .deepSeek, .qoderCN:
             .unavailable(account, reason: .loading)
         }
     }
@@ -812,7 +831,8 @@ final class UsageStore {
     }
 
     func usage(for account: AccountKey) -> ProviderUsage {
-        usage[account.id] ?? .unavailable(account, reason: .loading)
+        CodexDisplay.reading(usage[account.id] ?? .unavailable(account, reason: .loading),
+                             showsSpark: settings.showsCodexSpark)
     }
 
     // MARK: - The loop

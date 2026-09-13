@@ -37,7 +37,7 @@ final class SettingsWindowController {
         if let link { navigation.open(link, accounts: settings.allAccounts) }
         let window = window ?? makeWindow()
         self.window = window
-        window.title = String.localized("Pulse Settings")
+        window.title = String.localized("Agent Wallet Settings")
 
         // The system may have taken the grant away since launch, and this
         // window is the only place Pulse reports it.
@@ -51,7 +51,7 @@ final class SettingsWindowController {
     /// Re-reads the title, which is set once at creation but has to follow a
     /// language change while the window is open.
     func refreshTitle() {
-        window?.title = String.localized("Pulse Settings")
+        window?.title = String.localized("Agent Wallet Settings")
     }
 
     private func makeWindow() -> NSWindow {

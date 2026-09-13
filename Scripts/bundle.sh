@@ -8,8 +8,8 @@
 # version number to compare against (so no update check), `SMAppService` cannot
 # register a login item, and there is nothing to hand anyone but a build folder.
 #
-#   ./Scripts/bundle.sh            → build.noindex/Pulse.app
-#   ./Scripts/bundle.sh --zip      → and build.noindex/Pulse-<version>.zip to attach
+#   ./Scripts/bundle.sh            → build.noindex/Agent Wallet.app
+#   ./Scripts/bundle.sh --zip      → and build.noindex/Agent-Wallet-<version>.zip to attach
 #                                    to the release
 #   ./Scripts/bundle.sh --open     → and reveal it in Finder
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
-APP="build.noindex/Pulse.app"
+APP="build.noindex/Agent Wallet.app"
 BUNDLE_ID="io.github.qunqin24.Pulse"
 FEED_URL="https://raw.githubusercontent.com/qunqin24/Pulse/main/appcast.xml"
 # Public half of the EdDSA key updates are signed with. Safe to commit — it is
@@ -30,7 +30,7 @@ FEED_URL="https://raw.githubusercontent.com/qunqin24/Pulse/main/appcast.xml"
 # private half. See Scripts/appcast.py.
 PUBLIC_KEY="$(tr -d '[:space:]' < Scripts/sparkle-public-key.txt)"
 
-echo "Building Pulse $VERSION (universal)…"
+echo "Building Agent Wallet $VERSION (universal)…"
 
 # Both architectures, so the same download runs on Apple Silicon and Intel.
 swift build -c release --arch arm64 --arch x86_64
@@ -82,8 +82,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Pulse</string>
-    <key>CFBundleDisplayName</key><string>Pulse</string>
+    <key>CFBundleName</key><string>Agent Wallet</string>
+    <key>CFBundleDisplayName</key><string>Agent Wallet</string>
     <key>CFBundleExecutable</key><string>Pulse</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -146,7 +146,7 @@ echo "→ $APP"
 # `ditto`, not `zip`: an app bundle carries symlinks and resource forks that a
 # plain zip quietly flattens, and the unzipped copy then refuses to launch.
 if [ "${1:-}" = "--zip" ]; then
-    ZIP="build.noindex/Pulse-$VERSION.zip"
+    ZIP="build.noindex/Agent-Wallet-$VERSION.zip"
     rm -f "$ZIP"
     ditto -c -k --keepParent "$APP" "$ZIP"
     echo "→ $ZIP"

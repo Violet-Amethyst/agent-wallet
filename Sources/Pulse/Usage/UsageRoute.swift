@@ -26,11 +26,11 @@ enum UsageRoute: String, Codable, Sendable {
     static func soleRoute(for account: AccountKey) -> UsageRoute? {
         if !account.isPrimary { return .endpoint }
         switch account.provider {
-        case .claudeCode, .codex, .volcengine: return nil
+        case .claudeCode, .codex, .volcengine, .deepSeek, .qoderCN: return nil
         case .antigravity: return .languageServer
         case .ollamaCloud: return .webSession
-        case .cursor, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax,
-             .minimaxCN, .copilot, .grok, .grokBot, .commandCode, .deepSeek:
+        case .cursor, .openAI, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax,
+             .minimaxCN, .copilot, .grok, .grokBot, .commandCode:
             return .endpoint
         }
     }

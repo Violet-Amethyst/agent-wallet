@@ -12,23 +12,22 @@ extension UsageWindow {
 }
 
 enum UsageTint {
-    /// Comfortable below this.
-    static let cautionThreshold = 0.5
-    /// Getting tight above this.
-    static let warningThreshold = 0.75
+    enum StatusThreshold {
+        /// Used below this is still comfortable.
+        static let comfortable: Double = 0.5
+        /// Everything at or above this is exhausted (red).
+        static let exhausted: Double = 1
+    }
 
     /// Spent is its own state, not just "more red". Being blocked and being
     /// nearly out call for different reactions, and at ring size a fourth hue
     /// would just read as the third — so this one is darker *and* the figure
     /// beside the ring changes colour too.
     static func color(for usedFraction: Double, isExhausted: Bool = false) -> Color {
-        if isExhausted || usedFraction >= 1 { return .pulseExhausted }
+        if isExhausted || usedFraction >= StatusThreshold.exhausted { return .pulseExhausted }
 
-        switch usedFraction {
-        case ..<cautionThreshold: return .pulseGood
-        case ..<warningThreshold: return .pulseCaution
-        default: return .pulseWarning
-        }
+        // At least 50% remaining is green; below 50% remaining is yellow.
+        return usedFraction <= StatusThreshold.comfortable ? .pulseGood : .pulseCaution
     }
 
     static func isSpent(_ window: UsageWindow?) -> Bool {
@@ -122,6 +121,8 @@ extension Color {
     static let pulseGood = Color(red: 0.00, green: 0.90, blue: 0.55)
     static let pulseCaution = Color(red: 1.00, green: 0.76, blue: 0.15)
     static let pulseWarning = Color(red: 1.00, green: 0.31, blue: 0.26)
+    /// Amount-style blue used for providers that report spend or balance figures.
+    static let pulseMoney = Color(red: 0.24, green: 0.57, blue: 1.0)
     /// Deeper and flatter than the warning red, so a spent limit doesn't just
     /// look like a slightly redder nearly-spent one.
     static let pulseExhausted = Color(red: 0.85, green: 0.09, blue: 0.13)

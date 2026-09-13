@@ -1,9 +1,17 @@
 /* Menu bar */
 "Settings…" = "Settings…";
 "Quit Pulse" = "Quit Pulse";
+"Agent Wallet" = "Agent Wallet";
+"Agent Wallet Settings" = "Agent Wallet Settings";
+"Quit Agent Wallet" = "Quit Agent Wallet";
+"Agent Wallet %@ is available" = "Agent Wallet %@ is available";
 
 /* Settings window */
 "Pulse Settings" = "Pulse Settings";
+"Balance display" = "Balance display";
+"DeepSeek connection" = "DeepSeek connection";
+"Official API balance" = "Official API balance";
+"Reads your prepaid API balance. This does not read usage from the signed-in DeepSeek website." = "Reads your prepaid API balance. This does not read usage from the signed-in DeepSeek website.";
 "Panel" = "Panel";
 "Application" = "Application";
 "General" = "General";
@@ -146,6 +154,17 @@
 "Reading may be out of date" = "Reading may be out of date";
 "%@ Used" = "%@ Used";
 "%@ Left" = "%@ Left";
+"%@ remaining" = "%@ remaining";
+"%@ spent" = "%@ spent";
+"Credits remaining" = "Credits remaining";
+"Monthly spend" = "Monthly spend";
+"Monthly budget" = "Monthly budget";
+"Remaining budget" = "Remaining budget";
+"of %@ monthly budget" = "of %@ monthly budget";
+"Seven-day spend" = "Seven-day spend";
+"Tokens" = "Tokens";
+"Requests" = "Requests";
+"Subscription cycle" = "Subscription cycle";
 "Codex isn't installed." = "Codex isn't installed.";
 "Couldn't start the Codex helper." = "Couldn't start the Codex helper.";
 "Sign in to Claude Code to see usage." = "Sign in to Claude Code to see usage.";
@@ -266,6 +285,7 @@
 "Couldn't reach the update feed." = "Couldn't reach the update feed.";
 "Uses the key you entered." = "Uses the key you entered.";
 "API key" = "API key";
+"Admin Key" = "Admin Key";
 "Session cookie" = "Session cookie";
 "Read from browser" = "Read from browser";
 "Only %@." = "Only %@.";
@@ -277,9 +297,12 @@
 "No browser cookie store was found." = "No browser cookie store was found.";
 "Read from %@." = "Read from %@.";
 "No Ollama session found. Sign in at ollama.com first." = "No Ollama session found. Sign in at ollama.com first.";
+"No OpenAI Platform session found. Sign in at platform.openai.com first." = "No OpenAI Platform session found. Sign in at platform.openai.com first.";
 "Copied from your browser. Stored encrypted on this Mac." = "Copied from your browser. Stored encrypted on this Mac.";
 "Add an Ollama session in Settings." = "Add an Ollama session in Settings.";
 "The Ollama session expired. Sign in again and add it." = "The Ollama session expired. Sign in again and add it.";
+"Add an OpenAI Platform session in Settings." = "Add an OpenAI Platform session in Settings.";
+"The OpenAI Platform session was refused. Sign in again and add it." = "The OpenAI Platform session was refused. Sign in again and add it.";
 "Ollama's page has changed and can no longer be read." = "Ollama's page has changed and can no longer be read.";
 "Reads your quota from Ollama's own settings page." = "Reads your quota from Ollama's own settings page.";
 "Save" = "Save";
@@ -421,6 +444,29 @@
 "The money left, with no ring. DeepSeek reports no allowance." = "The money left, with no ring. DeepSeek reports no allowance.";
 "How much of the figure you set is gone." = "How much of the figure you set is gone.";
 "From platform.deepseek.com. Stored encrypted on this Mac." = "From platform.deepseek.com. Stored encrypted on this Mac.";
+"From platform.deepseek.com. Reads the prepaid API balance only — website usage and consumption are not imported. Stored encrypted on this Mac." = "From platform.deepseek.com. Reads the prepaid API balance only — website usage and consumption are not imported. Stored encrypted on this Mac.";
 "Balance" = "Balance";
 "Warn below" = "Warn below";
 "Notify once when the balance falls under this. Blank for never." = "Notify once when the balance falls under this. Blank for never.";
+"Read balance from" = "Read balance from";
+"Uses your DeepSeek Platform login saved in Chrome. An API key is optional and takes priority when saved." = "Uses your DeepSeek Platform login saved in Chrome. An API key is optional and takes priority when saved.";
+"API key (optional)" = "API key (optional)";
+"Qoder CN's own login" = "Qoder CN's own login";
+"Reads Qoder CN's saved login. macOS may ask for keychain access." = "Reuses Qoder CN's saved login. Launch and automatic refresh never ask for a password.";
+"Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings." = "Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings.";
+"Open Qoder CN and sign in. Allow keychain access when prompted, then refresh." = "Sign in to Qoder CN, then choose Connect Qoder CN in Settings. macOS may ask for authorization once.";
+
+"Qoder connection" = "Account connection";
+"Connect Qoder CN" = "Connect Qoder CN";
+"Connect once to reuse this session after restarting. Automatic refresh never asks for a password." = "Connect once to reuse this session after restarting. Automatic refresh never asks for a password.";
+"Optional alternative to Chrome login. Create at platform.deepseek.com; stored encrypted on this Mac." = "Optional alternative to Chrome login. Create at platform.deepseek.com; stored encrypted on this Mac.";
+"Show Codex Spark limits" = "Show Codex Spark limits";
+"Off by default. General weekly usage always appears first." = "Off by default. General weekly usage always appears first.";
+"Reads your OpenAI API Platform costs with the Admin Key you entered." = "Reads your OpenAI API Platform costs with the Admin Key you entered.";
+"From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac." = "From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac.";
+"Billing" = "Billing";
+"Billing total" = "Billing total";
+"From Billing history. Agent Wallet subtracts current API spend from this number; blank uses $100." = "Fill your total billed amount to show remaining budget on the ring. Leave blank to use the monthly default budget of $100 and show monthly spend.";
+"100" = "100";
+"Reads your OpenAI API Platform credit balance with the key you entered." = "Reads your OpenAI API Platform credit balance with the key you entered.";
+"Reads your OpenAI API Platform credit balance with the web session you saved." = "Reads your OpenAI API Platform credit balance with the web session you saved.";
