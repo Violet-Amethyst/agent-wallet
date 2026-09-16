@@ -6,6 +6,72 @@
         <description>Updates for Pulse.</description>
         <language>en</language>
         <item>
+            <title>1.1.2</title>
+            <pubDate>Wed, 16 Sep 2026 07:14:08 -0000</pubDate>
+            <sparkle:version>1.1.2</sparkle:version>
+            <sparkle:shortVersionString>1.1.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <link>https://github.com/qunqin24/Pulse/releases/tag/v1.1.2</link>
+            <description><![CDATA[<style>
+  h2 { font-size: 1.05em; margin: 0 0 .5em; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin: .3em 0; }
+  p { margin: .8em 0 0; }
+</style><h2>Pulse 1.1.2</h2><p><strong>中文</strong></p><p><strong>新功能</strong></p><ul><li><strong>更多 Token 消耗来源。</strong> 新增 Gemini CLI、Cline、Roo Code、OpenClaw、GitHub Copilot 等本地记录读取，并支持 Cursor、Trae 等导出数据。部分来源需要先导出或捕获记录；可读格式及验证范围见<a href="https://github.com/qunqin24/Pulse/blob/main/Docs/token-spend-sources.md">来源说明</a>。</li><li><strong>模型用量详情。</strong> 点击模型可查看输入、输出、缓存读写、每日与每小时消耗，以及各 Agent 的贡献；明细表支持排序和分页。费用按公开 API 价格折算，不是订阅账单。</li><li><strong>图表悬停读数。</strong> 指向历史图表即可查看对应日期或小时的 token 数量，较短的柱形和零用量时段也能选中。</li><li><strong>浮动栏菜单与全局快捷键。</strong> 右键浮动栏即可打开设置；可自行设置快捷键，用于打开设置或显示、隐藏浮动栏。默认不绑定按键。</li><li><strong>繁体中文、日语和韩语。</strong> 界面与 README 新增三种语言，大数缩写使用各语言对应的单位。</li></ul><p><strong>改进与修复</strong></p><ul><li>补全仅由套餐商公布价格的模型计价，修复 Kilo CLI 的价格来源；日汇总、模型详情和会话金额保持一致。</li><li>Antigravity IDE 读取自身的会话存储；Devin 记录不再误标为仅来自 CLI，已匹配的数据库与 Desktop 捕获只统计一次。</li><li>跨天汇总记录只计入所选区间；Command Code 回退对话后仍保留已经发生的消耗，重复记录不会重复计数。</li><li>Token 消耗默认显示最近一周，并记住所选区间；缺失价格、不完整计数和不可用的小时明细会明确标注，旧缓存自动重读。</li><li>修复切换语言后设置侧栏变窄的问题，补充 Agent 图标并更新界面截图。</li></ul><p><strong>English</strong></p><p><strong>New</strong></p><ul><li><strong>More token-spend sources.</strong> Added local-record readers for Gemini CLI, Cline, Roo Code, OpenClaw, GitHub Copilot and more, plus exports from Cursor, Trae and others. Some sources require a prior export or capture. See <a href="https://github.com/qunqin24/Pulse/blob/main/Docs/token-spend-sources.md">sources and validation coverage</a> for supported formats.</li><li><strong>Model usage details.</strong> Open a model to inspect input, output, cache reads and writes, daily and hourly usage, and contributions by agent. Detail tables support sorting and paging. Costs use published API rates and are not a subscription bill.</li><li><strong>Chart hover values.</strong> Point at a history chart to see the token count for a date or hour, including short bars and periods with no usage.</li><li><strong>Rail menu and global shortcuts.</strong> Right-click the floating rail to open Settings. Optional shortcuts open Settings or show and hide the rail; both are unassigned by default.</li><li><strong>Traditional Chinese, Japanese and Korean.</strong> Added three interface and README translations, with large-number abbreviations using each language&#x27;s own units.</li></ul><p><strong>Changed and fixed</strong></p><ul><li>Added pricing for models listed only by their plan vendor and corrected Kilo CLI&#x27;s price source. Day, model and session amounts agree.</li><li>Antigravity IDE reads its own conversation store. Devin records are no longer labelled CLI-only, and matched database sessions and Desktop captures count once.</li><li>Cross-day aggregate records contribute only their in-range usage. Command Code rewinds retain consumption that already occurred, and replayed records are not counted twice.</li><li>Token spend defaults to the last week and remembers the selected span. Missing prices, incomplete counts and unavailable hourly detail are identified; older caches are reread automatically.</li><li>Fixed the Settings sidebar narrowing after a language change, added agent icons and updated screenshots.</li></ul><p><a href="https://github.com/qunqin24/Pulse/releases/tag/v1.1.2">Release notes on GitHub</a></p>]]></description>
+            <enclosure url="https://github.com/qunqin24/Pulse/releases/download/v1.1.2/Pulse-1.1.2.zip"
+                       length="7405119"
+                       type="application/octet-stream"
+                       sparkle:edSignature="iaG0Xhq+Usj71D1q50j21iOKihqNYk0pfxWR2jqCxv55qVan51mV+kEeuKNT5TtwHlifOp+zrlglSic+89ZaDg==" />
+        </item>
+        <item>
+            <title>1.1.1</title>
+            <pubDate>Mon, 14 Sep 2026 07:58:26 -0000</pubDate>
+            <sparkle:version>1.1.1</sparkle:version>
+            <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <link>https://github.com/qunqin24/Pulse/releases/tag/v1.1.1</link>
+            <description><![CDATA[<style>
+  h2 { font-size: 1.05em; margin: 0 0 .5em; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin: .3em 0; }
+  p { margin: .8em 0 0; }
+</style>
+<h2>Pulse 1.1.1</h2>
+<p><strong>中文</strong></p>
+<p><strong>新功能</strong></p>
+<ul><li><strong>Devin 成为第十八个服务商。</strong> 从 Chromium 浏览器会话读取每日、每周额度，无需钥匙串授权；无登录凭据时读取应用保存的带日期套餐。不同账户和组织的读数保持隔离。</li>
+<li><strong>Token 消耗统计。</strong> 汇总 Claude Code、Codex、OpenCode、Kilo CLI、Grok Build、Kimi CLI 和 Devin CLI 的本机会话，按区间、Agent、模型、项目、会话和 token 类型查看。费用按公开 API 价格折算，不是订阅账单。</li>
+<li><strong>开发者集成。</strong> 在设置中导出 Raycast 扩展及 tmux、sketchybar、终端脚本；<code>Pulse --json</code> 增加读数来源和账户设置链接。集成仅读取缓存。<a href="https://github.com/qunqin24/Pulse/blob/main/Docs/integrations.md">配置指南</a>。</li>
+<li><strong>连接诊断。</strong> 查看最近检查、读数来源、缓存和回退结果，按原因修复连接；额外账户可原位重新登录。可复制不含账户详情或凭据的诊断信息。</li>
+<li><strong>变红阈值可调。</strong> 可选 60%–90%，默认 75%；圆环、详情条和收起的胶囊保持一致，已耗尽状态仍优先。</li>
+</ul>
+<p><strong>改进与修复</strong></p>
+<ul><li>Claude Code 的 warning 不再被误判为额度耗尽；登录码、取消按钮和错误信息归属正确的服务商页面，切换页面不再串写凭据。</li>
+<li>修复详情卡片展开、收起时沿胶囊漂移的问题。</li>
+<li>跨天会话只计入所选区间；修正日志与数据库缓存更新、模型别名计价和自定义会话标题读取。</li>
+<li>Devin 旧快照按实际时间标注，过期窗口和超龄快照不再显示；额度变化纳入自适应刷新，异常浏览器存储长度不再导致崩溃。</li>
+</ul>
+<p><strong>English</strong></p>
+<p><strong>New</strong></p>
+<ul><li><strong>Devin is the eighteenth provider.</strong> Read daily and weekly quota from your Chromium browser session without a keychain prompt. With no credential, Pulse reads the app&#x27;s dated saved plan. Account and organization boundaries are preserved.</li>
+<li><strong>Token spend.</strong> Bring together local sessions from Claude Code, Codex, OpenCode, Kilo CLI, Grok Build, Kimi CLI and Devin CLI, grouped by span, agent, model, project, session and token kind. Costs use published API rates and are not a subscription bill.</li>
+<li><strong>Developer integrations.</strong> Export a Raycast extension and tmux, sketchybar and shell scripts from Settings. <code>Pulse --json</code> now includes reading sources and account links; integrations only read the cache. <a href="https://github.com/qunqin24/Pulse/blob/main/Docs/integrations.md">Setup guide</a>.</li>
+<li><strong>Connection diagnostics.</strong> Inspect checks, sources, cache use and fallback outcomes, with relevant repair actions and in-place reauthentication for added accounts. Copied diagnostics omit account details and credentials.</li>
+<li><strong>Configurable warning colour.</strong> Choose where rings turn red, from 60% to 90% (default 75%). Rings, detail bars and the collapsed rail agree; exhausted limits still take precedence.</li>
+</ul>
+<p><strong>Changed and fixed</strong></p>
+<ul><li>Claude Code warnings no longer mean exhausted. Device codes, Cancel and errors stay with their provider; switching panes no longer lets login completion overwrite another provider&#x27;s credential field.</li>
+<li>Fixed detail cards drifting along the rail as they open and close.</li>
+<li>Cross-midnight sessions count only their in-range work. Corrected log and database cache updates, model aliases and custom session titles.</li>
+<li>Devin snapshots retain their actual age; expired windows and over-age snapshots disappear. Quota changes participate in adaptive refresh, and malformed browser-storage lengths no longer crash Pulse.</li>
+</ul>
+<p><a href="https://github.com/qunqin24/Pulse/releases/tag/v1.1.1">Release notes on GitHub</a></p>]]></description>
+            <enclosure url="https://github.com/qunqin24/Pulse/releases/download/v1.1.1/Pulse-1.1.1.zip"
+                       length="6030495"
+                       type="application/octet-stream"
+                       sparkle:edSignature="EIJv8nmju7ZNlbchyWXXUXDho2lS1t0Mt192PfavU2oLozJZavfpBUn2+HKWWGnu2PTmVU0FKAUHNTobbCtqCw==" />
+        </item>
+        <item>
             <title>1.1.0</title>
             <pubDate>Thu, 10 Sep 2026 03:29:57 -0000</pubDate>
             <sparkle:version>1.1.0</sparkle:version>

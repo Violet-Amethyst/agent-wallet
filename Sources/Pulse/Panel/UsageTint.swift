@@ -1,14 +1,49 @@
 import AppKit
+import Foundation
 import SwiftUI
 
 extension UsageWindow {
-    /// Colour for how much of a limit is gone.
+    /// Tint colour for this limit.
     ///
-    /// Rings and bars used to be drawn in each provider's brand colour, which
+    /// Derived from the fractions rather than kept on the window so that
+    /// limits that were already tight when a run started don't go on being
+    /// drawn in the colour that was chosen for them. Provider-specific hues
     /// read as a status even though it never was one: Claude Code's orange-red
     /// looked like a warning at 3% used. Colour here means one thing only —
     /// how close this limit is to running out.
     var tint: Color { UsageTint.color(for: usedFraction, isExhausted: isExhausted) }
+
+    /// **No default for `warningAt`.** Where red begins is a setting now, and
+    /// a default here is how one ring on the panel comes to disagree with the
+    /// one beside it — silently, and only for whoever moved the figure.
+    func tint(warningAt: Double) -> Color {
+        UsageTint.color(for: usedFraction, isExhausted: isExhausted, warningAt: warningAt)
+    }
+}
+
+/// Where the ring turns red.
+///
+/// A short list rather than a slider: this is the one step in the colour
+/// language that means "pay attention", and a figure somebody nudged to 73 is
+/// not a clearer signal than one they picked. Every option sits above
+/// `UsageTint.cautionThreshold`, so moving this one never has to push the
+/// yellow step out of its way.
+enum WarningThreshold: Int, CaseIterable, Identifiable, Sendable {
+    case sixty = 60
+    case seventy = 70
+    case seventyFive = 75
+    case eighty = 80
+    case eightyFive = 85
+    case ninety = 90
+
+    static let `default` = WarningThreshold.seventyFive
+
+    var id: Int { rawValue }
+    var fraction: Double { Double(rawValue) / 100 }
+
+    /// Not run through `localized` — see `AlertThreshold.title` for why a bare
+    /// percentage is not a sentence.
+    var title: String { "\(rawValue)%" }
 }
 
 enum UsageTint {
@@ -19,20 +54,33 @@ enum UsageTint {
         static let exhausted: Double = 1
     }
 
+    /// Comfortable below this.
+    static let cautionThreshold = 0.5
+    /// Getting tight above this, unless somebody has moved it. The shipped
+    /// default, and the fallback anywhere the setting has not reached.
+    static let warningThreshold = WarningThreshold.default.fraction
+
     /// Spent is its own state, not just "more red". Being blocked and being
     /// nearly out call for different reactions, and at ring size a fourth hue
     /// would just read as the third — so this one is darker *and* the figure
     /// beside the ring changes colour too.
-    static func color(for usedFraction: Double, isExhausted: Bool = false) -> Color {
+    static func color(for usedFraction: Double, isExhausted: Bool = false, warningAt: Double = warningThreshold) -> Color {
         if isExhausted || usedFraction >= StatusThreshold.exhausted { return .pulseExhausted }
 
-        // At least 50% remaining is green; below 50% remaining is yellow.
-        return usedFraction <= StatusThreshold.comfortable ? .pulseGood : .pulseCaution
+        switch usedFraction {
+        case ..<cautionThreshold: return .pulseGood
+        case ..<warningAt: return .pulseCaution
+        default: return .pulseWarning
+        }
     }
 
     static func isSpent(_ window: UsageWindow?) -> Bool {
         guard let window else { return false }
         return window.isExhausted || window.usedFraction >= 1
+    }
+
+    static func iconOpacity(isExhausted: Bool) -> Double {
+        isExhausted ? 0.45 : 1.0
     }
 }
 
@@ -126,4 +174,16 @@ extension Color {
     /// Deeper and flatter than the warning red, so a spent limit doesn't just
     /// look like a slightly redder nearly-spent one.
     static let pulseExhausted = Color(red: 0.85, green: 0.09, blue: 0.13)
+}
+
+/// How full a limit has to be before the panel draws it in the warning colour.
+private struct UsageWarningThresholdKey: EnvironmentKey {
+    static let defaultValue = UsageTint.warningThreshold
+}
+
+extension EnvironmentValues {
+    var usageWarningThreshold: Double {
+        get { self[UsageWarningThresholdKey.self] }
+        set { self[UsageWarningThresholdKey.self] = newValue }
+    }
 }

@@ -9,6 +9,10 @@ struct SettingsView: View {
     let placement: PanelPlacement
     let update: AppUpdate
     let alerts: UsageAlerts
+    /// Not for reading settings — those are in `settings` — but for the one
+    /// thing only the monitor knows: whether the window server would take the
+    /// combination.
+    let shortcuts: GlobalShortcutMonitor
 
     @Bindable var navigation: SettingsNavigation
     private var pane: SettingsPane {
@@ -51,7 +55,7 @@ struct SettingsView: View {
     /// The provider a browser sign-in is currently open for, and what went
     /// wrong with the last one.
     @State private var signingIn: Provider?
-    @State private var signInError: String?
+    @State private var signInError: (provider: Provider, message: String)?
     /// Shown while a device-code sign-in is waiting: the code the provider
     /// gave, and where to type it.
     @State private var devicePrompt: OAuthLogin.DevicePrompt?
@@ -75,13 +79,50 @@ struct SettingsView: View {
     @FocusState private var credentialFocused: Bool
     @State private var repairMessages: [String: String] = [:]
     @State private var connectionFocusRequest = 0
+    /// Every agent's spending, for the pane that is not about one provider.
+    /// Its own state rather than something derived from `ledgers`, which is
+    /// filled one account at a time as their panes are opened.
+    @State private var spend = SpendSummary()
+    @State private var isScanningSpend = false
+    /// The agent the spend pane is looking at on its own, and that agent's own
+    /// figures. Kept beside the combined ones rather than derived on the fly:
+    /// both come out of the same ledgers and the same span, so they cannot
+    /// disagree about what a month is.
+    @State private var spendFocus: SpendAgent?
+    @State private var focusedSpend = SpendSummary()
+    @State private var spendLedgers: [SpendAgent: UsageLedger] = [:]
+    /// Present sources — installed, or captured/exported somewhere Pulse reads
+    /// — that produced no records at all. Named together at the foot of the
+    /// pane so a silent source is not mistaken for a zero reading. Not
+    /// span-dependent: "nothing was read" is the same answer over any span.
+    @State private var spendNoRecords: [SpendAgent] = []
+    /// Whether any present source held history a reader could not decode —
+    /// a compressed transcript, say. The pane shows a short generic status
+    /// rather than dropping those records silently; the readers' own English
+    /// diagnostics never reach the view.
+    @State private var spendHasReadLimitations = false
+    /// The model the spend pane has drilled into, and that model's own figures
+    /// over the same span — crossed with `spendFocus` when an agent is open, so
+    /// a model opened from an agent's list counts only that agent's work in it.
+    ///
+    /// **Not a setting.** Drilling in is a way of reading the page in front of
+    /// you, not a preference about the app, so it lives here and is dropped
+    /// when the agent changes rather than being written to `AppSettings`.
+    @State private var selectedModel: String?
+    @State private var modelSpend = ModelSpendSummary()
 
     var body: some View {
         NavigationSplitView {
             List(selection: $navigation.pane) {
-                if matches(.general) {
+                if matches(.general) || matches(.spend) {
                     Section(String.localized("Panel")) {
-                        row(.general)
+                        if matches(.general) { row(.general) }
+                        // Above the accounts, not below them. Eighteen
+                        // provider rows is more than a sidebar shows at once,
+                        // and a pane whose whole subject is "all of them
+                        // together" was landing under the fold — reachable
+                        // only by scrolling past the thing it summarises.
+                        if matches(.spend) { row(.spend) }
                     }
                 }
 
@@ -103,19 +144,41 @@ struct SettingsView: View {
                 }
             }
             .listStyle(.sidebar)
-            // Wide enough for the longest name the list can hold —
-            // "GitHub Copilot", with "Command Code" and "Ollama Cloud"
-            // behind it. At the old 170/180/220 every one of those truncated
-            // to an ellipsis, which on a list whose entire job is telling
-            // seventeen products apart is the one thing it must not do. These
-            // are brand names and are not translated, so the requirement does
-            // not move with the language.
+            // **The floor is this frame, not `navigationSplitViewColumnWidth`.**
             //
-            // **`min` is the half that matters**, not `ideal`. AppKit saves the
-            // divider position, so `ideal` is only ever read once per install
-            // and anybody who has already opened this window keeps whatever
-            // width they had; `min` is a clamp and applies to all of them.
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 320)
+            // `ideal:` is read once, when a column is first laid out. The whole
+            // split view carries `.id(settings.language)`, so picking a
+            // language — or launching into one, since `LocalizationSource.use`
+            // runs after the first render — throws the column away and builds a
+            // new one, and the new one does not get its `ideal` back. Measured
+            // on the committed screenshots: 213pt in English, about 150pt in
+            // Chinese, from the same code. `min:` does not rescue it either;
+            // it bounds what a drag may do, it does not widen a column that was
+            // already laid out narrow.
+            //
+            // A `minWidth` on the content is a layout constraint, so it is
+            // re-applied on every rebuild, which is the property this needs.
+            //
+            // 200 is measured, not guessed. Scanning the committed English
+            // screenshot for the rightmost ink in the list puts the longest
+            // label — `GitHub Copilot` — at **150.5pt**, so this leaves about
+            // 50pt of trailing air. 240 was tried first and read as baggy:
+            // 90pt of empty column beside every row.
+            //
+            // **The brand names are the constraint, not the translated rows.**
+            // That is worth writing down because it is the opposite of what it
+            // looks like: "Token 消耗" reaches about 112pt and "开发者集成"
+            // less, both short of the latin names, and CJK being twice the
+            // width per glyph does not make up the difference over so few
+            // characters. So this number does not move with the language — it
+            // moves when a provider with a longer name is added, which is how
+            // `GLM Coding Plan` quietly became the longest.
+            .frame(minWidth: 200)
+            // Still worth setting: these bound what dragging the divider may
+            // do. `ideal` matches the frame so first layout and every rebuild
+            // land on the same width; `max` keeps a stretched sidebar from
+            // eating the pane.
+            .navigationSplitViewColumnWidth(min: 200, ideal: 200, max: 320)
             // `.sidebar`, not `.automatic`: this window has no `NSToolbar` —
             // see `SettingsWindowController` on why the title bar is left to
             // AppKit — and automatic placement has nowhere to put the field.
@@ -125,7 +188,8 @@ struct SettingsView: View {
                 prompt: Text(localized: "Search")
             )
             .overlay {
-                if isSearching, matchingAccounts.isEmpty, !matches(.general), !matches(.about), !matches(.integrations) {
+                if isSearching, matchingAccounts.isEmpty, !matches(.general), !matches(.spend),
+                   !matches(.about), !matches(.integrations) {
                     Text(localized: "No matches")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -141,6 +205,22 @@ struct SettingsView: View {
                         switch pane {
                         case .general: general
                         case .account(let account): accountPane(account)
+                        case .spend:
+                            TokenSpendView(
+                                summary: spend,
+                                focus: $spendFocus,
+                                focused: focusedSpend,
+                                modelFocus: $selectedModel,
+                                modelSummary: modelSpend,
+                                noRecords: spendNoRecords,
+                                hasReadLimitations: spendHasReadLimitations,
+                                span: Binding(
+                                    get: { settings.spendSpan },
+                                    set: { settings.spendSpan = $0 }
+                                ),
+                                isLoading: isScanningSpend,
+                                refresh: { Task { await loadSpend(refresh: true) } }
+                            )
                         case .about: about
                         case .integrations: DeveloperIntegrationsView(settings: settings)
                         }
@@ -152,6 +232,29 @@ struct SettingsView: View {
                 // Keyed on the pane and enabled state, so enabling an account
                 // also reconsiders its history's empty-state explanation.
                 .task(id: historyKey) { await loadHistory() }
+                // Opening the pane reads; changing the span only re-adds up
+                // what has already been read, which is why the refresh is not
+                // forced here and is a button instead.
+                // **Two tasks, because they cost different things.** Reading
+                // every agent's store is seconds on a cold launch; adding the
+                // numbers up again for a different span is microseconds. Keyed
+                // together, changing the span put the spinner back on screen
+                // and made a cached read look like a rescan.
+                .task(id: spendLoadKey) { await loadSpend() }
+                .onChange(of: spendKey) { _, _ in recomputeSpend() }
+                // A model opened under one agent means nothing under another,
+                // so changing the agent drops back out of the model.
+                .onChange(of: spendFocus) { _, _ in selectedModel = nil }
+                .onChange(of: selectedModel) { old, new in
+                    // Entering the detail drops the reader to the top, or they
+                    // land in the middle of it when the model row was well down
+                    // the page. Returning puts them back at the model list.
+                    if new != nil {
+                        proxy.scrollTo("heading", anchor: .top)
+                    } else if old != nil {
+                        proxy.scrollTo("models", anchor: .top)
+                    }
+                }
                 .onChange(of: connectionFocusRequest) {
                     proxy.scrollTo("connection", anchor: .top)
                     credentialFocused = true
@@ -226,7 +329,7 @@ struct SettingsView: View {
             switch pane {
             case .account(let account):
                 LobeIconView(provider: account.provider, size: 14)
-            case .general, .about, .integrations:
+            case .general, .spend, .about, .integrations:
                 Image(systemName: pane.symbol)
             }
         }
@@ -478,6 +581,25 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                     .disabled(!settings.isPanelVisible)
                 }
+
+                SettingsRowDivider()
+
+                SettingsRow(
+                    String.localized("Turn red at"),
+                    subtitle: String.localized("Where a ring stops being amber. A spent limit is red whatever this says.")
+                ) {
+                    Picker(String.localized("Turn red at"), selection: Binding(
+                        get: { settings.warningThreshold },
+                        set: { settings.warningThreshold = $0 }
+                    )) {
+                        ForEach(WarningThreshold.allCases) { threshold in
+                            Text(threshold.title).tag(threshold)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: SettingsLayout.controlWidth, alignment: .trailing)
+                    .disabled(!settings.isPanelVisible)
+                }
             }
 
             SettingsGroup(String.localized("Notifications")) {
@@ -592,7 +714,7 @@ struct SettingsView: View {
                         // the arrow did nothing; saying so is kinder than
                         // hiding the row and renumbering everything.
                         subtitle: settings.isEnabled(account) ? nil : String.localized("Not shown"),
-                        icon: account.provider
+                        icon: account.provider.iconResource
                     ) {
                         HStack(spacing: 4) {
                             Button {
@@ -685,6 +807,36 @@ struct SettingsView: View {
                 }
             }
 
+            SettingsGroup(String.localized("Shortcuts")) {
+                SettingsRow(
+                    String.localized("Open settings"),
+                    subtitle: shortcutSubtitle(
+                        for: .openSettings,
+                        when: String.localized("Reaches this window with the menu bar icon out of sight.")
+                    )
+                ) {
+                    ShortcutField(shortcut: settings.openSettingsShortcut) { shortcut in
+                        settings.openSettingsShortcut = shortcut
+                        shortcuts.apply(settings)
+                    }
+                }
+
+                SettingsRowDivider()
+
+                SettingsRow(
+                    String.localized("Show or hide the panel"),
+                    subtitle: shortcutSubtitle(
+                        for: .togglePanel,
+                        when: String.localized("Draws the usage rail, or takes it away.")
+                    )
+                ) {
+                    ShortcutField(shortcut: settings.togglePanelShortcut) { shortcut in
+                        settings.togglePanelShortcut = shortcut
+                        shortcuts.apply(settings)
+                    }
+                }
+            }
+
             SettingsGroup(String.localized("Language")) {
                 SettingsRow(
                     String.localized("Interface language"),
@@ -703,6 +855,20 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// What a shortcut row says under its title.
+    ///
+    /// A combination the window server refused is one that will never fire, and
+    /// saying nothing would leave the reader to work that out by pressing it —
+    /// so the clash takes the line over while it lasts.
+    private func shortcutSubtitle(
+        for action: GlobalShortcutMonitor.Action,
+        when available: String
+    ) -> String {
+        shortcuts.unavailable.contains(action)
+            ? .localized("Another app is already using this combination.")
+            : available
     }
 
     /// The login item's state is the system's to hold, so this says what the
@@ -767,7 +933,17 @@ struct SettingsView: View {
     /// the way is discarded unseen.
     /// Names the browser about to be opened, and warns when opening it will
     /// ask for the keychain.
-    private static func browserHint(_ chosen: BrowserCookies.Browser?) -> String {
+    private static func browserHint(_ chosen: BrowserCookies.Browser?, for provider: Provider) -> String {
+        // A `localStorage` entry is not encrypted, so nothing is ever asked
+        // for and the hint must not say it might be.
+        guard provider.usesSessionCookie else {
+            if let chosen { return String.localized("Only \(chosen.name).") }
+            guard let first = ChromiumLocalStorage.present().first else {
+                return String.localized("Finds it in the browser you signed in with.")
+            }
+            return String.localized("Starts with \(first.name).")
+        }
+
         // Named, it is the only one opened — the rest are not tried, so a
         // failure is reported rather than answered from a browser the user
         // never signed in to. That is the same bargain `UsageSource` makes.
@@ -790,6 +966,14 @@ struct SettingsView: View {
     }
 
     private func readSession(for account: AccountKey) {
+        // Devin's credential is not a cookie and is not saved: the service
+        // reads it from the browser on every pass, so this button's job is to
+        // say whether there is one to read and where it was found.
+        guard account.provider.usesSessionCookie else {
+            readBrowserStorage(for: account)
+            return
+        }
+
         // Named, that one and no other. Left automatic, the default browser
         // leads and the rest follow.
         let browsers = settings.sessionBrowser(for: account).map { [$0] } ?? BrowserCookies.present()
@@ -836,6 +1020,36 @@ struct SettingsView: View {
                     ? String.localized("No OpenAI Platform session found. Sign in at platform.openai.com first.")
                     : String.localized("No Ollama session found. Sign in at ollama.com first.")
             }
+        }
+    }
+
+    /// Devin: look now, say what was found, and ask for a refresh.
+    ///
+    /// **Nothing is stored.** A saved copy would be a second place for the
+    /// session to go stale and the one that cannot renew itself; reading it
+    /// each pass costs about forty milliseconds and is always current.
+    private func readBrowserStorage(for account: AccountKey) {
+        let chosen = settings.sessionBrowser(for: account)
+        guard !(chosen.map { [$0] } ?? ChromiumLocalStorage.present()).isEmpty else {
+            sessionMessage = String.localized("No Chromium browser was found.")
+            return
+        }
+
+        Task {
+            // Off the main thread: it opens every table in a browser profile's
+            // storage, and the settings window should not freeze while it does.
+            let found = await Task.detached(priority: .userInitiated) {
+                DevinUsageService.fromBrowser(chosen)
+            }.value
+
+            guard pane == .account(account) else { return }
+            guard let found else {
+                sessionMessage = String.localized("No Devin session found. Sign in at app.devin.ai first.")
+                return
+            }
+
+            sessionMessage = String.localized("Read from \(found.browser.name).")
+            store.refresh(account)
         }
     }
 
@@ -1120,6 +1334,94 @@ struct SettingsView: View {
     private var historyKey: String {
         guard case .account(let account) = pane else { return "\(pane)" }
         return "\(account.id)|\(settings.isEnabled(account))"
+    }
+
+    /// What the combined figures depend on: the pane being open, and how far
+    /// back it is counting.
+    /// What a *read* depends on: only whether the pane is open.
+    private var spendLoadKey: String {
+        if case .spend = pane { return "spend" }
+        return "-"
+    }
+
+    /// What the *figures* depend on, which is read back out of what was loaded.
+    private var spendKey: String {
+        guard case .spend = pane else { return "-" }
+        return "\(settings.spendSpan.rawValue)|\(spendFocus?.rawValue ?? "")|\(selectedModel ?? "")"
+    }
+
+    /// Every agent's ledger, added up.
+    ///
+    /// **Rescanning is the button, not the default.** Going through a few
+    /// hundred megabytes of transcripts on every pane switch would make this
+    /// the slowest thing in the window; `UsageLedgerReader` already caches one
+    /// ledger per provider, and reusing them is arithmetic.
+    private func loadSpend(refresh: Bool = false) async {
+        guard case .spend = pane else { return }
+        // Nothing to say about a read that is already in hand: the actor's
+        // own cache answers, and flipping the spinner for it is what made a
+        // cached page look like a rescan.
+        let wasEmpty = spendLedgers.isEmpty
+        if wasEmpty || refresh { isScanningSpend = true }
+        defer { isScanningSpend = false }
+
+        // Every agent that has left a record on this Mac, which is a wider
+        // list than the providers with rings: `AgentLedgers` delegates the two
+        // Pulse already reads and parses the rest itself.
+        let ledgers = await AgentLedgers.shared.ledgers(refresh: refresh)
+        guard !Task.isCancelled else { return }
+
+        spendLedgers = ledgers
+        // A source that is present but produced no token records is named at
+        // the foot of the pane rather than drawn as an empty row or a token
+        // reading of zero. This is a zero-token list on purpose: a source that
+        // reports money but no tokens belongs here too, because it has no
+        // usage *records* to show. Ordered by the catalogue so the list is
+        // stable between reads.
+        spendNoRecords = SpendAgent.present.filter { agent in
+            guard let ledger = ledgers[agent] else { return false }
+            return ledger.allTime.tokens == 0
+        }
+        // Only a limitation on a source that actually exists counts; the
+        // presence test inside `readNotes` does that filtering.
+        let readNotes = await AgentLedgers.shared.readNotes()
+        spendHasReadLimitations = !readNotes.isEmpty
+        recomputeSpend()
+    }
+
+    /// The same function over the same ledgers, twice: once for everything and
+    /// once for the agent being looked at. Deriving the second from the first
+    /// would mean a second way of counting a span, and two ways of counting
+    /// one thing eventually disagree.
+    ///
+    /// A model is counted from the same ledgers too, **narrowed to the agent on
+    /// screen first where there is one** — so a model opened from an agent's
+    /// list reports that agent's work in it and never the other agents' same
+    /// model. Nothing here reads a store: it is arithmetic over what was
+    /// already loaded, which is why opening a model costs no spinner.
+    ///
+    /// **One `now` and one calendar for all three.** Asked separately, a recompute
+    /// that happens to straddle midnight can put the combined total on one day
+    /// and the model on the next, so the drill-down no longer adds up to the row
+    /// it was opened from.
+    private func recomputeSpend() {
+        let span = settings.spendSpan.days
+        let now = Date()
+        let calendar = Calendar.current
+        // The agent's ledgers, or all of them when no agent is open. Counted
+        // once and shared, so the agent summary and the model summary below
+        // cannot end up filtered differently.
+        let scoped = spendFocus.map { agent in
+            spendLedgers.filter { $0.key == agent }
+        } ?? spendLedgers
+
+        spend = SpendSummary.of(spendLedgers, overLast: span, now: now, calendar: calendar)
+        focusedSpend = spendFocus == nil
+            ? SpendSummary()
+            : SpendSummary.of(scoped, overLast: span, now: now, calendar: calendar)
+        modelSpend = selectedModel.map { name in
+            ModelSpendSummary.of(scoped, named: name, overLast: span, now: now, calendar: calendar)
+        } ?? ModelSpendSummary()
     }
 
     private func loadHistory() async {
@@ -1455,6 +1757,8 @@ struct SettingsView: View {
             .localized("Optional alternative to Chrome login. Create at platform.deepseek.com; stored encrypted on this Mac.")
         case .openAI:
             .localized("From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac.")
+        case .devin:
+            .localized("A Bearer token from app.devin.ai, then a space, then your organization. Optional — Pulse can read what Devin's app saved. Stored encrypted on this Mac.")
         default:
             .localized("Stored encrypted on this Mac.")
         }
@@ -1595,7 +1899,9 @@ struct SettingsView: View {
                                 ? String.localized("API key (optional)")
                                 : account.provider == .openAI
                                     ? String.localized("Admin Key")
-                                    : String.localized("API key"),
+                                    : account.provider == .devin
+                                        ? String.localized("Token and organization")
+                                        : String.localized("API key"),
                     subtitle: Self.keySubtitle(for: account.provider)
                 ) {
                     HStack(spacing: 8) {
@@ -1613,7 +1919,7 @@ struct SettingsView: View {
                 // Only where a browser session *is* the credential. Every
                 // other provider borrows a login its own tool stored, and none
                 // of them should be going through anybody's cookies to do it.
-                if account.provider.usesSessionCookie {
+                if account.provider.readsBrowserStorage {
                     SettingsRowDivider()
 
                     SettingsRow(
@@ -1622,7 +1928,8 @@ struct SettingsView: View {
                         // Chromium keeps its cookies under a key in the login
                         // keychain, and being told a second before the dialog
                         // appears is the difference between a step and a scare.
-                        subtitle: sessionMessage ?? Self.browserHint(settings.sessionBrowser(for: account))
+                        subtitle: sessionMessage
+                            ?? Self.browserHint(settings.sessionBrowser(for: account), for: account.provider)
                     ) {
                         HStack(spacing: 8) {
                             Picker("", selection: Binding(
@@ -1637,7 +1944,12 @@ struct SettingsView: View {
                                 // Only what is actually installed. A browser
                                 // that isn't there is a choice that can only
                                 // fail.
-                                ForEach(BrowserCookies.present()) { browser in
+                                // Devin's is in a LevelDB, which only the
+                                // Chromium browsers keep — offering Safari or
+                                // Firefox there is a choice that cannot work.
+                                ForEach(account.provider.usesSessionCookie
+                                    ? BrowserCookies.present()
+                                    : ChromiumLocalStorage.present()) { browser in
                                     Text(browser.name).tag(BrowserCookies.Browser?.some(browser))
                                 }
                             }
@@ -1727,24 +2039,29 @@ struct SettingsView: View {
                         // whose name is on the page that opens.
                         subtitle: String.localized("Opens the provider's own sign-in page.")
                     ) {
-                        if signingIn == nil {
-                            Button(String.localized("Sign in…")) {
-                                signIn(to: account.provider, replacing: account.isPrimary ? nil : account)
-                            }
-                        } else {
+                        // One sign-in at a time, and its Cancel, code and
+                        // error belong to the provider it was started for:
+                        // a Codex device code shown on the Claude Code pane
+                        // reads as Claude Code asking for it.
+                        if signingIn == account.provider {
                             Button(String.localized("Cancel")) {
                                 signInTask?.cancel()
                                 signInTask = nil
                                 signingIn = nil
                                 devicePrompt = nil
                             }
+                        } else {
+                            Button(String.localized("Sign in…")) {
+                                signIn(to: account.provider, replacing: account.isPrimary ? nil : account)
+                            }
+                            .disabled(signingIn != nil)
                         }
                     }
 
                     // While a device-code sign-in is waiting, the code is the
                     // whole interaction: it is typed on the provider's page,
                     // not here, and nothing comes back to this Mac.
-                    if let devicePrompt {
+                    if let devicePrompt, signingIn == account.provider {
                         SettingsRowDivider()
                         SettingsRow(
                             String.localized("Code"),
@@ -1774,9 +2091,9 @@ struct SettingsView: View {
                         }
                     }
 
-                    if let signInError {
+                    if let signInError, signInError.provider == account.provider {
                         SettingsRowDivider()
-                        SettingsRow(String.localized("Sign-in"), subtitle: signInError) { EmptyView() }
+                        SettingsRow(String.localized("Sign-in"), subtitle: signInError.message) { EmptyView() }
                     }
                 }
                 if !account.isPrimary {
@@ -1959,18 +2276,18 @@ struct SettingsView: View {
                 let added = existing ?? settings.addAccount(provider, label: Self.label(for: credentials, provider: provider, in: settings))
                 guard AccountCredentialStore.set(credentials, for: added) else {
                     if existing == nil { settings.removeAccount(added) }
-                    signInError = String.localized("Couldn't save the login on this Mac.")
+                    signInError = (provider, String.localized("Couldn't save the login on this Mac."))
                     return
                 }
                 store.refresh(added)
                 pane = .account(added)
             } catch let failure as OAuthLogin.Failure {
-                if !Task.isCancelled { signInError = failure.message }
+                if !Task.isCancelled { signInError = (provider, failure.message) }
             } catch is CancellationError {
                 // Cancelling is not a failure, and nothing about it belongs in
                 // a pane that may already be showing the next attempt.
             } catch {
-                if !Task.isCancelled { signInError = String.localized("Sign-in was cancelled.") }
+                if !Task.isCancelled { signInError = (provider, String.localized("Sign-in was cancelled.")) }
             }
         }
     }
@@ -2213,12 +2530,19 @@ struct SettingsView: View {
 enum SettingsPane: Hashable {
     case general
     case account(AccountKey)
+    /// Every agent's spending added up — a pane whose subject is not a
+    /// provider, which is why it sits outside the accounts rather than inside
+    /// one of them.
+    case spend
     case about
     case integrations
 
     var title: String {
         switch self {
         case .general: .localized("General")
+        // Not "Usage history", which is what a provider's own card is called.
+        // Two panes with one name is two places to look for one thing.
+        case .spend: .localized("Token spend")
         // Brand names, left as they are in every language.
         // A fallback: the view titles these from the account's own label.
         case .account(let account): account.provider.displayName
@@ -2232,6 +2556,7 @@ enum SettingsPane: Hashable {
     var symbol: String {
         switch self {
         case .general: "slider.horizontal.3"
+        case .spend: "chart.bar"
         case .account: "square.stack.3d.up"
         case .about: "info.circle"
         case .integrations: "terminal"
@@ -2246,6 +2571,7 @@ enum SettingsPane: Hashable {
         placement: PanelPlacement(),
         update: AppUpdate(),
         alerts: UsageAlerts(settings: AppSettings()),
+        shortcuts: GlobalShortcutMonitor(),
         navigation: SettingsNavigation()
     )
 }

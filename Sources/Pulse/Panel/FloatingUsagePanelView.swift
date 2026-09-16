@@ -117,8 +117,8 @@ struct FloatingUsagePanelView: View {
                             }
                         )
                         .padding(alongEdge, cardPadding(for: index))
-                        .offset(cardOffset)
                         .transition(cardReveal(for: index))
+                        .offset(cardOffset)
                     }
                 }
                 // **Inside the card's animation, before the rail is moved.**
@@ -190,6 +190,9 @@ struct FloatingUsagePanelView: View {
             // follow the appearance the material settled on. Forcing dark is
             // exactly what leaves white text sitting on bright glass.
             .environment(\.colorScheme, settings.usesGlass ? colorScheme : .dark)
+            // Where red begins, for every ring, bar and figure below here at
+            // once. Read off `settings` in one place so they cannot disagree.
+            .environment(\.usageWarningThreshold, settings.warningThreshold.fraction)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(String.localized("Pulse floating usage panel"))
             // Strings and layout constants are both read through plain
@@ -221,9 +224,9 @@ struct FloatingUsagePanelView: View {
     private var alertTint: Color? {
         let worst = entries.compactMap(\.headline).max { $0.usedFraction < $1.usedFraction }
         guard let worst,
-              worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
+worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
         else { return nil }
-        return worst.tint
+        return worst.tint(warningAt: settings.warningThreshold.fraction)
     }
 
     /// Only the providers switched on in settings, so the rail shrinks when
@@ -440,17 +443,32 @@ struct FloatingUsagePanelView: View {
         }
     }
 
-    /// How the card comes and goes: it grows out of the tip of its own
-    /// pointer, the way a system popover unfolds from its arrow.
+    /// How the card comes and goes: it grows out of the side the rail is on,
+    /// the way a system popover unfolds from its arrow.
     ///
     /// Sliding it in from the trailing edge instead — the obvious choice,
     /// since that is the side it appears on — reads as the card leaping out
     /// of the display's edge rather than out of the rail, because the trailing
     /// edge of this panel *is* the edge of the screen. Anchoring the growth on
-    /// the pointer tip ties the motion to the ring it belongs to.
+    /// the rail's side ties the motion to the ring it belongs to.
+    ///
+    /// **The anchor is in the padded box's space, not the card's.** A
+    /// transition applies to the whole view that is inserted or removed —
+    /// where `.transition` sits in the modifier chain does not change that —
+    /// and the view removed here is the card *plus* the gap that holds it
+    /// beside its ring. Scaling that box about its own centre therefore drags
+    /// the card along the rail by a fraction of the gap: measured at 28 points
+    /// for a gap of 466, and nothing at all for the first ring, whose gap is
+    /// negative. Which is exactly what "every card but the first slides up"
+    /// looks like.
+    ///
+    /// So the along-axis anchor is the card's own centre expressed in that
+    /// box's unit space. The scale then pivots on the card wherever the gap
+    /// has put it, and the box does not move.
     private func cardReveal(for index: Int) -> AnyTransition {
-        // The tip of the card's own pointer, in the card's unit space.
-        let along = cardAlong > 0 ? pointerCentre(for: index) / cardAlong : 0.5
+        let gap = cardPadding(for: index)
+        let box = gap + cardAlong
+        let along = box > 0 ? min(max((gap + cardAlong / 2) / box, 0), 1) : 0.5
         let across = placement.edge.cardRevealOrigin
         let anchor = placement.edge.isVertical
             ? UnitPoint(x: across, y: along)
@@ -538,8 +556,11 @@ struct FloatingUsagePanelView: View {
             guard !Task.isCancelled else { return }
             hideAfterDelay = nil
             // Never mid-drag: the pointer is far from the panel by design
-            // while it is being carried across the screen.
-            guard !placement.isDragging else { return }
+// while it is being carried across the screen. Nor while the
+            // panel's own menu is up, for the same reason — the pointer is on
+            // the menu, which is not the panel. Both re-arm: `hideAfterDelay`
+            // is already nil here, so the watcher's next tick asks again.
+            guard !placement.isDragging, !placement.isMenuOpen else { return }
             hoveredAction = nil
             isHovered = false
         }

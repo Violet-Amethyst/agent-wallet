@@ -6,9 +6,9 @@ import Testing
 @Suite("Wallet snapshot")
 struct WalletSnapshotTests {
     @Test("Quota colours follow remaining allowance, including the 50% boundary",
-          arguments: [0.0, 0.01, 0.02, 0.24, 0.5, 0.5001, 0.68, 1.0])
+          arguments: [0.0, 0.01, 0.02, 0.24, 0.49, 0.5, 0.5001, 0.68, 1.0])
     func remainingQuotaColour(used: Double) {
-        let expected: Color = used >= 1 ? .pulseExhausted : (used <= 0.5 ? .pulseGood : .pulseCaution)
+        let expected: Color = used >= 1 ? .pulseExhausted : (used < 0.5 ? .pulseGood : .pulseCaution)
         #expect(UsageTint.color(for: used) == expected)
         #expect(UsageTint.color(for: used, isExhausted: true) == .pulseExhausted)
     }

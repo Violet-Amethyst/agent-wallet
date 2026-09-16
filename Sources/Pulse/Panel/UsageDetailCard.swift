@@ -102,6 +102,9 @@ struct UsageDetailCard: View {
     /// rows and money / spend copy so the card matches the ring.
     var wallet: WalletSnapshot? = nil
 
+    /// Where red begins, so the card's bars agree with the rail's rings.
+    @Environment(\.usageWarningThreshold) private var warningThreshold
+
     var body: some View {
         VStack(alignment: .leading, spacing: DetailCardLayout.contentSpacing) {
             header
@@ -111,7 +114,7 @@ struct UsageDetailCard: View {
                     title: window.name,
                     resetDescription: Self.resetText(window),
                     progress: showsRemaining ? window.remainingFraction : window.usedFraction,
-                    accent: window.tint,
+                    accent: window.tint(warningAt: warningThreshold),
                     percentageText: window.percentText(remaining: showsRemaining),
                     isSpent: UsageTint.isSpent(window),
                     showsRemaining: showsRemaining,

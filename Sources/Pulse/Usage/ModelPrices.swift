@@ -33,10 +33,51 @@ actor ModelPrices {
     private var table: [String: ModelPrice]?
     private var inFlight: Task<[String: ModelPrice], Never>?
 
-    /// Providers whose models Pulse can see usage for. Model ids are unique
-    /// within a provider but not across all 200-odd of them, so the table is
-    /// built from these two only.
-    private static let providers = ["anthropic", "openai"]
+    /// Providers whose models Pulse can see usage for, **in priority order**.
+    ///
+    /// It was these two alone, which was right while only Claude Code and
+    /// Codex were read — and wrong the moment anything else was, because the
+    /// agents run whatever their plan sells. Four of the seven agents on this
+    /// machine came out at $0.00 for no better reason than that their vendor
+    /// was not in this list, and so did every third-party model the two CLIs
+    /// were pointed at.
+    ///
+    /// **Model ids are unique within a provider and not across all 213 of
+    /// them**, which is why this is a list rather than the whole document.
+    /// Across the fourteen here there are 22 collisions and 21 of them are
+    /// `github-copilot` re-listing somebody else's model — it is a reseller,
+    /// and Pulse reads no Copilot transcripts, so it is left out. The one real
+    /// collision is `glm-5.2`, sold by both Zhipu and Alibaba; the order below
+    /// settles it, and the rates are within a rounding error of each other
+    /// anyway.
+    private static let providers = [
+        "anthropic", "openai", "xai", "moonshotai", "zhipuai", "minimax",
+        "deepseek", "google", "xiaomi", "alibaba", "mistral", "meta",
+    ]
+
+    /// The plan vendors an agent can be priced against when **no first-party
+    /// provider publishes the model at all**, keyed by the models.dev id.
+    ///
+    /// This is not a second guess at the same number, it is a different
+    /// question. `deepseek-v4.1-flash` is real, it is what OpenCode Go sells,
+    /// and DeepSeek's own provider entry does not list it — so the choice is
+    /// between the rate the plan the tokens were actually bought on publishes,
+    /// and no figure at all. Resellers stay out of the first-party list for
+    /// the reason written there; they belong here, where they are only ever
+    /// consulted for the agent whose plan they are.
+    ///
+    /// Stored **namespaced** (`vendor|id`) so a vendor's price can never be
+    /// found by a lookup that did not ask for that vendor, and so adding one
+    /// cannot collide with a first-party id.
+    private static let vendors = ["opencode-go", "kilo", "cline-pass"]
+
+    /// Separates a vendor from a model id in the table. Not a character any
+    /// models.dev id uses.
+    static let vendorSeparator: Character = "|"
+
+    static func vendorKey(_ vendor: String, _ model: String) -> String {
+        "\(vendor)\(vendorSeparator)\(model)"
+    }
 
     private static let source = URL(string: "https://models.dev/api.json")!
     private static let refreshAfter: TimeInterval = 24 * 3600
@@ -59,7 +100,7 @@ actor ModelPrices {
             }
             // Offline: an old copy beats no prices at all, since list prices
             // barely move.
-            return Self.readCache()?.prices ?? [:]
+            return Self.readCache(allowPreviousVersion: true)?.prices ?? [:]
         }
         inFlight = task
 
@@ -85,6 +126,8 @@ actor ModelPrices {
         for provider in providers {
             let models = (root[provider] as? [String: Any])?["models"] as? [String: Any] ?? [:]
             for (id, model) in models {
+                // First provider in the list wins a shared id.
+                guard prices[id] == nil else { continue }
                 guard
                     let cost = (model as? [String: Any])?["cost"] as? [String: Any],
                     let input = number(cost["input"]),
@@ -101,6 +144,29 @@ actor ModelPrices {
             }
         }
 
+        // The plan vendors, namespaced, and only for ids the first-party
+        // providers did not already price: a vendor re-listing somebody else's
+        // model must not shadow that model's own rate.
+        for vendor in vendors {
+            let models = (root[vendor] as? [String: Any])?["models"] as? [String: Any] ?? [:]
+            for (id, model) in models {
+                guard prices[id] == nil else { continue }
+                guard
+                    let cost = (model as? [String: Any])?["cost"] as? [String: Any],
+                    let input = number(cost["input"]),
+                    let output = number(cost["output"])
+                else { continue }
+
+                prices[vendorKey(vendor, id)] = ModelPrice(
+                    input: input,
+                    output: output,
+                    cacheRead: number(cost["cache_read"]),
+                    cacheWrite: number(cost["cache_write"]),
+                    name: (model as? [String: Any])?["name"] as? String
+                )
+            }
+        }
+
         return prices.isEmpty ? nil : prices
     }
 
@@ -108,25 +174,132 @@ actor ModelPrices {
         (value as? Double) ?? (value as? Int).map(Double.init) ?? (value as? NSNumber)?.doubleValue
     }
 
+    // MARK: - Spelling
+
+    /// The price for a model id, allowing for the fact that the agents do not
+    /// all spell one the same way.
+    ///
+    /// **Aliases, not fuzzy matching.** Every rule here is one product's known
+    /// habit, written out, because the failure mode of a loose match is a
+    /// model priced at another model's rate — a wrong number that looks right.
+    /// A lookup that still misses is left unpriced, which is what the footnote
+    /// on the page counts.
+    static func price(
+        for model: String,
+        in table: [String: ModelPrice],
+        vendor: String? = nil
+    ) -> ModelPrice? {
+        if let price = firstParty(model, table) { return price }
+
+        // Only now, and only for the vendor asked about: the plan the tokens
+        // were bought on is the last word, never the first.
+        guard let vendor else { return nil }
+        if let exact = table[vendorKey(vendor, model)] { return exact }
+        let lowered = vendorKey(vendor, model).lowercased()
+        if let match = table.first(where: { $0.key.lowercased() == lowered })?.value { return match }
+        for candidate in aliases(for: model) {
+            if let match = table[vendorKey(vendor, candidate)] { return match }
+        }
+        return nil
+    }
+
+    private static func firstParty(_ model: String, _ table: [String: ModelPrice]) -> ModelPrice? {
+        if let exact = table[model] { return exact }
+
+        // MiniMax writes `MiniMax-M3` and the agents that call it write
+        // `minimax-m3`. Case is the only difference.
+        let lowered = model.lowercased()
+        if let match = table.first(where: { $0.key.lowercased() == lowered })?.value { return match }
+
+        for candidate in aliases(for: model) {
+            if let match = table[candidate] { return match }
+            let folded = candidate.lowercased()
+            if let match = table.first(where: { $0.key.lowercased() == folded })?.value { return match }
+        }
+
+        return nil
+    }
+
+    /// Spellings to try for one id, most specific first.
+    static func aliases(for model: String) -> [String] {
+        var candidates: [String] = []
+
+        // Grok Build tags its own build of a model: `grok-4.6-build` is
+        // xAI's `grok-4.6`, at xAI's rates.
+        if model.hasSuffix("-build"), model != "grok-build-0.1" {
+            candidates.append(String(model.dropLast("-build".count)))
+        }
+
+        // Devin's CLI writes the version with dashes and an effort on the end:
+        // `gpt-5-6-sol-medium` is OpenAI's `gpt-5.6-sol`.
+        for effort in ["-medium", "-high", "-low", "-minimal"] where model.hasSuffix(effort) {
+            let base = String(model.dropLast(effort.count))
+            candidates.append(base)
+            candidates.append(Self.dotted(base))
+        }
+        candidates.append(Self.dotted(model))
+
+        // A context window on the end is the same model with more room:
+        // `k3-256k` is `kimi-k3`, and it is billed at `k3`'s rates.
+        if let tag = model.range(of: "-[0-9]+[kKmM]$", options: .regularExpression) {
+            let base = String(model[model.startIndex..<tag.lowerBound])
+            candidates.append(base)
+            candidates.append(contentsOf: Self.aliases(for: base))
+        }
+
+        // Kimi's CLI abbreviates: `k2p6` is `kimi-k2.6`, `k3` is `kimi-k3`.
+        if model.first == "k", model.dropFirst().allSatisfy({ $0.isNumber || $0 == "p" }) {
+            candidates.append("kimi-" + model.replacingOccurrences(of: "p", with: "."))
+        }
+
+        return candidates.filter { $0 != model }
+    }
+
+    /// `gpt-5-6-sol` → `gpt-5.6-sol`: a digit, a dash, a digit is a version
+    /// number somebody spelled with the wrong separator. Two words joined by a
+    /// dash are left alone.
+    private static func dotted(_ model: String) -> String {
+        var out = ""
+        let characters = Array(model)
+        for (index, character) in characters.enumerated() {
+            if character == "-", index > 0, index + 1 < characters.count,
+               characters[index - 1].isNumber, characters[index + 1].isNumber {
+                out.append(".")
+            } else {
+                out.append(character)
+            }
+        }
+        return out
+    }
+
     // MARK: - Cache
 
-    private struct Cache: Codable {
+    // Internal for isolated upgrade-cache tests; no test reads the user's table.
+    struct Cache: Codable {
         let fetchedAt: Date
         let prices: [String: ModelPrice]
 
         var age: TimeInterval { Date().timeIntervalSince(fetchedAt) }
     }
 
-    /// The `2` is the stored shape. Model names were added to it, and a file
-    /// written before that decodes fine with every name missing — a cache
-    /// that is quietly a little bit wrong is worse than one that misses.
+    /// Version 4 includes namespaced plan-vendor rates. A version 3 table can
+    /// be fresh but cannot satisfy the new lookup, so it is only an offline
+    /// fallback and never suppresses a download on upgrade.
     private static var cacheFile: URL {
-        PulseStorage.directory.appending(path: "model-prices-2.json")
+        PulseStorage.directory.appending(path: "model-prices-4.json")
     }
 
-    private static func readCache() -> Cache? {
-        guard let data = try? Data(contentsOf: cacheFile) else { return nil }
-        return try? JSONDecoder().decode(Cache.self, from: data)
+    static func readCache(
+        in directory: URL = PulseStorage.directory,
+        allowPreviousVersion: Bool = false
+    ) -> Cache? {
+        let names = [cacheFile.lastPathComponent] + (allowPreviousVersion ? ["model-prices-3.json"] : [])
+        for name in names {
+            guard let data = try? Data(contentsOf: directory.appending(path: name)),
+                  let cached = try? JSONDecoder().decode(Cache.self, from: data) else { continue }
+            return cached
+        }
+        return nil
     }
 
     private static func writeCache(_ prices: [String: ModelPrice]) {

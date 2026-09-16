@@ -30,7 +30,7 @@ Build with `./Scripts/bundle.sh` to produce `build.noindex/Agent Wallet.app`. Th
 </p>
 
 <p align="center">
-  <sub><b>macOS 14 Sonoma or newer</b> · Apple Silicon & Intel Universal · <a href="README.zh-CN.md"><b>简体中文</b></a></sub>
+  <sub><b>macOS 14 Sonoma or newer</b> · Apple Silicon & Intel Universal · <b>English</b> · <a href="README.zh-CN.md"><b>简体中文</b></a> · <a href="README.zh-Hant.md"><b>繁體中文</b></a> · <a href="README.ja.md"><b>日本語</b></a> · <a href="README.ko.md"><b>한국어</b></a></sub>
 </p>
 
 <p align="center">
@@ -64,17 +64,35 @@ Pulse is an unobtrusive floating monitor that docks neatly along the edge of you
 
 ### Multi-Account & Local Ledger
 - **Multi-Account Support**: Monitor multiple subscriptions for the same provider (Claude Code, Codex, Grok, Grok Bot) side-by-side with custom labels.
-- **On-Device Spending History**: Reconstructs your historical token expenditures from local CLI session transcripts, calculated against published API prices.
-- **Seventeen Providers**: Claude Code, Codex, Antigravity, Cursor, GitHub Copilot, Grok, Grok Bot, OpenCode Go, Kimi Code, Ollama Cloud, z.ai, Zhipu, MiniMax (intl. and mainland), Volcengine, Command Code, and DeepSeek.
+- **Spending History**: Reconstructs your token spending from local records, databases and exports, priced at published API prices. Opens on the last 7 days, remembers your chosen span, and keeps each model's tokens and estimated amount.
+- **Eighteen Providers**: Claude Code, Codex, Antigravity, Cursor, GitHub Copilot, Grok, Grok Bot, OpenCode Go, Kimi Code, Ollama Cloud, z.ai, Zhipu, MiniMax (intl. and mainland), Volcengine, Command Code, DeepSeek, and Devin.
 - **Scriptable**: `Pulse --json` prints the last readings — plan, every limit, reset times, and how old the figures are — for tmux, sketchybar, Raycast, or a shell prompt. It reads the cache and never fetches, so polling it costs nothing.
 - **Developer Integrations**: Export a Raycast extension and ready-to-configure tmux, sketchybar and shell scripts from Settings. Account links open the right pane directly. [Setup guide](Docs/integrations.md).
 - **Connection Diagnostics**: See the actual reading source, cache use, latest check and fallback outcomes. Contextual actions help reconnect, sign in again or fix credentials; copy a diagnostic report without account details or secrets.
 - **Privacy First**: No Pulse servers, no Pulse account, and no telemetry. Requests go to the providers you already use (and follow macOS system proxy settings).
 
 <p align="center">
-  <img src="Docs/panel.png" height="300" alt="Detailed usage card beside rail">
+  <img src="Docs/panel.webp" height="300" alt="Detailed usage card beside rail">
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="Docs/settings.png" height="300" alt="Pulse Settings">
+  <img src="Docs/settings.webp" height="300" alt="Pulse Settings">
+</p>
+
+<p align="center">
+  <img src="Docs/account-claude-code.webp" height="290" alt="An account pane: every reported limit, the estimated value of what was used, and the local history">
+  &nbsp;&nbsp;
+  <img src="Docs/account-codex.webp" height="290" alt="Another account pane, with the plan, credit balance and limit reset credits it reports">
+</p>
+
+<p align="center">
+  <img src="Docs/spend.webp" height="290" alt="Token spend: total, tokens by kind, and the daily pattern">
+  &nbsp;&nbsp;
+  <img src="Docs/spend-history.webp" height="290" alt="Token spend day by day, by month and by agent">
+</p>
+
+<p align="center">
+  <img src="Docs/spend-agent.webp" height="290" alt="One agent's spending on its own">
+  &nbsp;&nbsp;
+  <img src="Docs/spend-model.webp" height="290" alt="One model's spending, priced by token kind">
 </p>
 
 ---
@@ -101,6 +119,7 @@ Pulse shows the figures each service reports. It never guesses percentages from 
 | **Volcengine** | `arkcli` login, else a pasted access-key pair (signed Top OpenAPI) | Ark Coding & Agent plans; on automatic it prefers pasted keys over the CLI |
 | **Command Code** | Pasted key, else the login `cmd auth login` already saved | Credit balance in dollars; monthly plan row marked **estimated** |
 | **DeepSeek** | Pasted key; documented `GET /user/balance` | Prepaid balance only — no allowance; you pick what the ring measures against |
+| **Devin** | Nothing to enter — reads your browser session, no keychain prompt | Daily and weekly quota reported by Devin. With no browser session or pasted credential, reads the app's dated saved plan. Endpoint failures use only matching endpoint cache, preserving account and organization boundaries ([Docs/providers/devin.md](Docs/providers/devin.md)) |
 
 ---
 
@@ -117,7 +136,7 @@ Pulse shows the figures each service reports. It never guesses percentages from 
 >   ```bash
 >   xattr -cr /Applications/Pulse.app
 >   ```
-> *(Subsequent updates via built-in Sparkle update smoothly without repeated prompts).*
+>   *(Subsequent updates via built-in Sparkle update smoothly without repeated prompts).*
 
 ---
 

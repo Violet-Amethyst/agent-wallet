@@ -74,6 +74,9 @@ struct UsageRingView: View {
     @State private var spinning = false
     @State private var refreshSpinning = false
 
+    /// Where red begins, as the panel has been set. See `WarningThreshold`.
+    @Environment(\.usageWarningThreshold) private var warningThreshold
+
     /// Gap between the progress ring and the dark disc it encircles.
     /// Dual ring uses a tighter clearance to maximise center logo size.
     private var centreGap: CGFloat {
@@ -137,7 +140,7 @@ struct UsageRingView: View {
         let spent = secondIsSpent || used >= 1
         let shown = showsRemaining && !spent ? 1 - used : used
         let colour = chosenTint.flatMap { spent ? nil : $0 }
-            ?? UsageTint.color(for: used, isExhausted: spent)
+            ?? UsageTint.color(for: used, isExhausted: spent, warningAt: warningThreshold)
         let stroke = DockLayout.outerRingLineWidth
 
         ZStack {
@@ -159,7 +162,7 @@ struct UsageRingView: View {
     /// What the arc and the halo are drawn in.
     private var arcColour: Color {
         let spent = isSpent || (usedFraction ?? 0) >= 1
-        let automatic = UsageTint.color(for: usedFraction ?? 0, isExhausted: spent)
+        let automatic = UsageTint.color(for: usedFraction ?? 0, isExhausted: spent, warningAt: warningThreshold)
 
         // Spent is the one state a chosen colour does not get to hide.
         guard let chosenTint, !spent else { return automatic }
@@ -379,13 +382,27 @@ struct UsageRingView: View {
 }
 
 struct LobeIconView: View {
-    let provider: Provider
-    var resource: String? = nil
+    let resource: String
     let size: CGFloat
+
+    init(provider: Provider, size: CGFloat) {
+        self.resource = provider.iconResource
+        self.size = size
+    }
+
+    init(provider: Provider, resource: String? = nil, size: CGFloat) {
+        self.resource = resource ?? provider.iconResource
+        self.size = size
+    }
+
+    init(resource: String, size: CGFloat) {
+        self.resource = resource
+        self.size = size
+    }
 
     var body: some View {
         Group {
-            if let image = LobeIconStore.image(for: resource ?? provider.iconResource) {
+            if let image = LobeIconStore.image(named: resource) {
                 Image(nsImage: image)
                     .resizable()
                     .renderingMode(.template)
@@ -413,31 +430,39 @@ struct LobeIconView: View {
 /// size up front. They are also marked as template images: the artwork is a
 /// solid `currentColor` fill, and only its alpha matters once
 /// `LobeIconView` tints it.
+///
+/// Not `private` so `AgentIconTests` can ask whether a named mark actually
+/// loads — a test's own `Bundle.module` is the test target's, so the only way
+/// to ask about Pulse's resources is through Pulse. Do not tidy it back.
 @MainActor
-private enum LobeIconStore {
+enum LobeIconStore {
     /// Comfortably above any size the app draws these at, so scaling only
     /// ever goes downwards.
     private static let renderSize = NSSize(width: 256, height: 256)
 
-    private static let images: [String: NSImage] = Dictionary(
-        uniqueKeysWithValues: Set(Provider.allCases.map(\.iconResource) + ["comfy"]).compactMap { resource in
-            guard
-                let url = Bundle.module.url(
-                    forResource: resource,
-                    withExtension: "svg"
-                ),
-                let image = NSImage(contentsOf: url)
-            else {
-                return nil
-            }
-            image.size = renderSize
-            image.isTemplate = true
-            return (resource, image)
+    /// Keyed by **resource name**, not by `Provider`.
+    private static var images: [String: NSImage] = [:]
+
+    static func image(named name: String) -> NSImage? {
+        if let cached = images[name] { return cached }
+        guard
+            let url = Bundle.module.url(forResource: name, withExtension: "svg"),
+            let image = NSImage(contentsOf: url)
+        else {
+            return nil
         }
-    )
+        image.size = renderSize
+        image.isTemplate = true
+        images[name] = image
+        return image
+    }
 
     static func image(for resource: String) -> NSImage? {
-        images[resource]
+        image(named: resource)
+    }
+
+    static func image(for provider: Provider) -> NSImage? {
+        image(named: provider.iconResource)
     }
 }
 

@@ -144,7 +144,7 @@ enum OAuthLogin {
                 )
             case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grokBot, .volcengine,
-             .commandCode, .deepSeek, .qoderCN:
+.commandCode, .deepSeek, .qoderCN, .devin:
                 nil
             }
         }
