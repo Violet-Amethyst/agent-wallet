@@ -270,7 +270,50 @@ enum WalletAdapter {
             }
         }
 
-        // Multi-scope/group provider (e.g. Antigravity with Gemini vs Claude/GPT):
+        // Antigravity: when unsplit and reporting both Gemini and Claude/GPT groups,
+        // map the two rings to the two models:
+        // - Inner ring: Gemini (weekly limit, or exhausted limit)
+        // - Outer ring: Claude and GPT (weekly limit, or exhausted limit)
+        if usage.provider == .antigravity, !isFixture {
+            let geminiQuotas = quotas.filter { $0.scope == "Gemini" }
+            let claudeQuotas = quotas.filter { $0.scope == "Claude and GPT" }
+
+            if !geminiQuotas.isEmpty && !claudeQuotas.isEmpty {
+                func effectiveWindow(for groupQuotas: [UsageWindow]) -> UsageWindow {
+                    if let exhausted = groupQuotas.first(where: { $0.isExhausted }) {
+                        return exhausted
+                    }
+                    return groupQuotas.first(where: { $0.kind == .weekly })
+                        ?? groupQuotas.max(by: { $0.usedFraction < $1.usedFraction })
+                        ?? groupQuotas[0]
+                }
+
+                let geminiWindow = effectiveWindow(for: geminiQuotas)
+                let claudeWindow = effectiveWindow(for: claudeQuotas)
+
+                let isClaudePinned = pinnedWindow.map { id in claudeQuotas.contains { $0.id == id } } ?? false
+                let primary = isClaudePinned ? claudeWindow : geminiWindow
+                let secondary = isClaudePinned ? geminiWindow : claudeWindow
+
+                return WalletSnapshot(
+                    mode: .dualQuota,
+                    displayName: title,
+                    iconResource: nil,
+                    shortQuota: primary,
+                    longQuota: secondary,
+                    singleQuota: nil,
+                    prepaid: usage.creditRemaining,
+                    creditCount: nil,
+                    periodSpend: nil,
+                    extras: [],
+                    updatedAt: usage.observedAt,
+                    periodSpendShowsRemaining: false,
+                    isFixture: isFixture
+                )
+            }
+        }
+
+        // Multi-scope/group provider:
         // Follow the pinned window if set, otherwise follow the busiest group (highest usedFraction).
         let activeScope: String? = {
             if let pinnedWindow, let pinned = quotas.first(where: { $0.id == pinnedWindow }) {

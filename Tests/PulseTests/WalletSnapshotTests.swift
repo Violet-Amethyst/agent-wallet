@@ -179,44 +179,46 @@ struct WalletSnapshotTests {
         #expect(snapshot.longQuota?.id == "cursorModels")
     }
 
-    @Test("Antigravity tracks the busier group (highest usedFraction) when unsplit")
-    func antigravityTracksBusierGroup() {
+    @Test("Antigravity maps Gemini to inner ring and Claude/GPT to outer ring with weekly/exhausted quotas")
+    func antigravityDualModelRings() {
         let usage = Self.usage(
             .antigravity,
             windows: [
-                UsageWindow(id: "gemini-5h", kind: .fiveHour, scope: "Gemini", usedFraction: 0.0, windowSeconds: 5 * 3_600, resetsAt: nil),
-                UsageWindow(id: "gemini-weekly", kind: .weekly, scope: "Gemini", usedFraction: 0.0, windowSeconds: 7 * 86_400, resetsAt: nil),
-                UsageWindow(id: "3p-5h", kind: .fiveHour, scope: "Claude and GPT", usedFraction: 0.4, windowSeconds: 5 * 3_600, resetsAt: nil),
-                UsageWindow(id: "3p-weekly", kind: .weekly, scope: "Claude and GPT", usedFraction: 0.2, windowSeconds: 7 * 86_400, resetsAt: nil)
+                UsageWindow(id: "gemini-5h", kind: .fiveHour, scope: "Gemini", usedFraction: 0.19, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "gemini-weekly", kind: .weekly, scope: "Gemini", usedFraction: 0.26, windowSeconds: 7 * 86_400, resetsAt: nil),
+                UsageWindow(id: "3p-5h", kind: .fiveHour, scope: "Claude and GPT", usedFraction: 0.0, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "3p-weekly", kind: .weekly, scope: "Claude and GPT", usedFraction: 1.0, windowSeconds: 7 * 86_400, resetsAt: nil, isExhausted: true)
             ]
         )
         let snapshot = WalletAdapter.snapshot(from: usage, title: "Antigravity")
         #expect(snapshot.mode == .dualQuota)
-        #expect(snapshot.shortQuota?.id == "3p-5h")
+        #expect(snapshot.shortQuota?.id == "gemini-weekly")
         #expect(snapshot.longQuota?.id == "3p-weekly")
-        #expect(snapshot.innerUsedFraction == 0.4)
-        #expect(snapshot.outerUsedFraction == 0.2)
-        #expect(snapshot.railCaption == "60%")
+        #expect(snapshot.innerUsedFraction == 0.26)
+        #expect(snapshot.outerUsedFraction == 1.0)
+        #expect(snapshot.outerIsSpent == true)
+        #expect(snapshot.railCaption == "74%")
     }
 
-    @Test("Antigravity respects pinned window to track Claude/3P even if Gemini is busier")
+    @Test("Antigravity respects pinned window to set Claude/3P as inner ring")
     func antigravityPinnedWindow() {
         let usage = Self.usage(
             .antigravity,
             windows: [
-                UsageWindow(id: "gemini-5h", kind: .fiveHour, scope: "Gemini", usedFraction: 0.8, windowSeconds: 5 * 3_600, resetsAt: nil),
-                UsageWindow(id: "gemini-weekly", kind: .weekly, scope: "Gemini", usedFraction: 0.5, windowSeconds: 7 * 86_400, resetsAt: nil),
-                UsageWindow(id: "3p-5h", kind: .fiveHour, scope: "Claude and GPT", usedFraction: 0.1, windowSeconds: 5 * 3_600, resetsAt: nil),
-                UsageWindow(id: "3p-weekly", kind: .weekly, scope: "Claude and GPT", usedFraction: 0.05, windowSeconds: 7 * 86_400, resetsAt: nil)
+                UsageWindow(id: "gemini-5h", kind: .fiveHour, scope: "Gemini", usedFraction: 0.19, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "gemini-weekly", kind: .weekly, scope: "Gemini", usedFraction: 0.26, windowSeconds: 7 * 86_400, resetsAt: nil),
+                UsageWindow(id: "3p-5h", kind: .fiveHour, scope: "Claude and GPT", usedFraction: 0.0, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "3p-weekly", kind: .weekly, scope: "Claude and GPT", usedFraction: 1.0, windowSeconds: 7 * 86_400, resetsAt: nil, isExhausted: true)
             ]
         )
-        let snapshot = WalletAdapter.snapshot(from: usage, title: "Antigravity", pinnedWindow: "3p-5h")
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "Antigravity", pinnedWindow: "3p-weekly")
         #expect(snapshot.mode == .dualQuota)
-        #expect(snapshot.shortQuota?.id == "3p-5h")
-        #expect(snapshot.longQuota?.id == "3p-weekly")
-        #expect(snapshot.innerUsedFraction == 0.1)
-        #expect(snapshot.outerUsedFraction == 0.05)
-        #expect(snapshot.railCaption == "90%")
+        #expect(snapshot.shortQuota?.id == "3p-weekly")
+        #expect(snapshot.longQuota?.id == "gemini-weekly")
+        #expect(snapshot.innerUsedFraction == 1.0)
+        #expect(snapshot.outerUsedFraction == 0.26)
+        #expect(snapshot.innerIsSpent == true)
+        #expect(snapshot.railCaption == "0%")
     }
 }
 
