@@ -142,6 +142,82 @@ struct WalletSnapshotTests {
         #expect(snapshot.mode == .singleQuota)
         #expect(snapshot.railCaption == "60%")
     }
+
+    @Test("Cursor with cursorModels and otherModels maps inner ring to Cursor Models and outer ring to Other Models")
+    func cursorDualModelRings() {
+        let usage = Self.usage(
+            .cursor,
+            windows: [
+                UsageWindow(id: "cursorModels", kind: .monthly, scope: "Cursor Models", usedFraction: 0.08, windowSeconds: 30 * 86_400, resetsAt: nil),
+                UsageWindow(id: "otherModels", kind: .monthly, scope: "Other Models", usedFraction: 0.62, windowSeconds: 30 * 86_400, resetsAt: nil)
+            ]
+        )
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "Cursor")
+        #expect(snapshot.mode == .dualQuota)
+        #expect(snapshot.innerUsedFraction == 0.08)
+        #expect(snapshot.outerUsedFraction == 0.62)
+        #expect(snapshot.railCaption == "92%")
+        #expect(snapshot.shortQuota?.id == "cursorModels")
+        #expect(snapshot.longQuota?.id == "otherModels")
+    }
+
+    @Test("Cursor respects pinned window for inner ring")
+    func cursorPinnedWindow() {
+        let usage = Self.usage(
+            .cursor,
+            windows: [
+                UsageWindow(id: "cursorModels", kind: .monthly, scope: "Cursor Models", usedFraction: 0.08, windowSeconds: 30 * 86_400, resetsAt: nil),
+                UsageWindow(id: "otherModels", kind: .monthly, scope: "Other Models", usedFraction: 0.62, windowSeconds: 30 * 86_400, resetsAt: nil)
+            ]
+        )
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "Cursor", pinnedWindow: "otherModels")
+        #expect(snapshot.mode == .dualQuota)
+        #expect(snapshot.innerUsedFraction == 0.62)
+        #expect(snapshot.outerUsedFraction == 0.08)
+        #expect(snapshot.railCaption == "38%")
+        #expect(snapshot.shortQuota?.id == "otherModels")
+        #expect(snapshot.longQuota?.id == "cursorModels")
+    }
+
+    @Test("Antigravity tracks the busier group (highest usedFraction) when unsplit")
+    func antigravityTracksBusierGroup() {
+        let usage = Self.usage(
+            .antigravity,
+            windows: [
+                UsageWindow(id: "gemini-5h", kind: .fiveHour, scope: "Gemini", usedFraction: 0.0, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "gemini-weekly", kind: .weekly, scope: "Gemini", usedFraction: 0.0, windowSeconds: 7 * 86_400, resetsAt: nil),
+                UsageWindow(id: "3p-5h", kind: .fiveHour, scope: "Claude and GPT", usedFraction: 0.4, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "3p-weekly", kind: .weekly, scope: "Claude and GPT", usedFraction: 0.2, windowSeconds: 7 * 86_400, resetsAt: nil)
+            ]
+        )
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "Antigravity")
+        #expect(snapshot.mode == .dualQuota)
+        #expect(snapshot.shortQuota?.id == "3p-5h")
+        #expect(snapshot.longQuota?.id == "3p-weekly")
+        #expect(snapshot.innerUsedFraction == 0.4)
+        #expect(snapshot.outerUsedFraction == 0.2)
+        #expect(snapshot.railCaption == "60%")
+    }
+
+    @Test("Antigravity respects pinned window to track Claude/3P even if Gemini is busier")
+    func antigravityPinnedWindow() {
+        let usage = Self.usage(
+            .antigravity,
+            windows: [
+                UsageWindow(id: "gemini-5h", kind: .fiveHour, scope: "Gemini", usedFraction: 0.8, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "gemini-weekly", kind: .weekly, scope: "Gemini", usedFraction: 0.5, windowSeconds: 7 * 86_400, resetsAt: nil),
+                UsageWindow(id: "3p-5h", kind: .fiveHour, scope: "Claude and GPT", usedFraction: 0.1, windowSeconds: 5 * 3_600, resetsAt: nil),
+                UsageWindow(id: "3p-weekly", kind: .weekly, scope: "Claude and GPT", usedFraction: 0.05, windowSeconds: 7 * 86_400, resetsAt: nil)
+            ]
+        )
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "Antigravity", pinnedWindow: "3p-5h")
+        #expect(snapshot.mode == .dualQuota)
+        #expect(snapshot.shortQuota?.id == "3p-5h")
+        #expect(snapshot.longQuota?.id == "3p-weekly")
+        #expect(snapshot.innerUsedFraction == 0.1)
+        #expect(snapshot.outerUsedFraction == 0.05)
+        #expect(snapshot.railCaption == "90%")
+    }
 }
 
 #if DEBUG

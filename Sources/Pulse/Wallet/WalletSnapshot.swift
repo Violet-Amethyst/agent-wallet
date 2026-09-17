@@ -240,17 +240,65 @@ enum WalletAdapter {
             )
         }
         let quotas = usage.windows.filter(isQuota)
-        let short = quotas.filter(isShort).min { $0.windowSeconds < $1.windowSeconds }
-        let long = quotas.filter(isLong).max { $0.windowSeconds < $1.windowSeconds }
         let spendWindows = usage.windows.filter { if case .spend = $0.kind { true } else { false } }
 
+        // Cursor: reports two monthly pools ("cursorModels" & "otherModels").
+        // Deterministically map inner ring to Cursor Models, outer ring to Other Models.
+        if usage.provider == .cursor, !isFixture {
+            let cursorPool = quotas.first { $0.id == "cursorModels" }
+            let otherPool = quotas.first { $0.id == "otherModels" }
+            if let cursorPool, let otherPool {
+                let isOtherPinned = pinnedWindow == otherPool.id
+                let primary = isOtherPinned ? otherPool : cursorPool
+                let secondary = isOtherPinned ? cursorPool : otherPool
+
+                return WalletSnapshot(
+                    mode: .dualQuota,
+                    displayName: title,
+                    iconResource: nil,
+                    shortQuota: primary,
+                    longQuota: secondary,
+                    singleQuota: nil,
+                    prepaid: usage.creditRemaining,
+                    creditCount: nil,
+                    periodSpend: nil,
+                    extras: [],
+                    updatedAt: usage.observedAt,
+                    periodSpendShowsRemaining: false,
+                    isFixture: isFixture
+                )
+            }
+        }
+
+        // Multi-scope/group provider (e.g. Antigravity with Gemini vs Claude/GPT):
+        // Follow the pinned window if set, otherwise follow the busiest group (highest usedFraction).
+        let activeScope: String? = {
+            if let pinnedWindow, let pinned = quotas.first(where: { $0.id == pinnedWindow }) {
+                return pinned.scope
+            }
+            return quotas.max(by: { $0.usedFraction < $1.usedFraction })?.scope
+        }()
+
+        let scopedQuotas = activeScope != nil ? quotas.filter { $0.scope == activeScope } : quotas
+        let candidateQuotas = scopedQuotas.isEmpty ? quotas : scopedQuotas
+
+        let short = candidateQuotas.filter(isShort).min { $0.windowSeconds < $1.windowSeconds }
+        let long = candidateQuotas.filter(isLong).max { $0.windowSeconds < $1.windowSeconds }
+
         if let short, let long, short.id != long.id {
+            let (primary, secondary): (UsageWindow, UsageWindow) = {
+                if let pinnedWindow, pinnedWindow == long.id {
+                    return (long, short)
+                }
+                return (short, long)
+            }()
+
             return WalletSnapshot(
                 mode: .dualQuota,
                 displayName: title,
                 iconResource: nil,
-                shortQuota: short,
-                longQuota: long,
+                shortQuota: primary,
+                longQuota: secondary,
                 singleQuota: nil,
                 prepaid: usage.creditRemaining,
                 creditCount: nil,
@@ -262,7 +310,8 @@ enum WalletAdapter {
             )
         }
 
-        if let quota = short ?? long ?? quotas.first {
+        let preferredSingle = pinnedWindow.flatMap { id in quotas.first { $0.id == id } }
+        if let quota = preferredSingle ?? short ?? long ?? candidateQuotas.first ?? quotas.first {
             return WalletSnapshot(
                 mode: .singleQuota,
                 displayName: title,
