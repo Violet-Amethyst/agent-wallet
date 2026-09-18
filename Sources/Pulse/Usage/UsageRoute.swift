@@ -35,6 +35,10 @@ enum UsageRoute: String, Codable, Sendable {
         case .ollamaCloud: return .webSession
         case .cursor, .openAI, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax,
              .minimaxCN, .copilot, .grok, .grokBot, .commandCode:
+        // Both read a signed-in browser session rather than a key.
+        case .ollamaCloud, .xiaomiMiMo: return .webSession
+        case .cursor, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax,
+             .minimaxCN, .copilot, .grok, .grokBot, .commandCode, .deepSeek:
             return .endpoint
         }
     }

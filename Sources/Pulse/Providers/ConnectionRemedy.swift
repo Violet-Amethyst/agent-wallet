@@ -37,10 +37,14 @@ case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCred
         case .openAIWebLoginRequired, .openAIWebSessionExpired: return .readBrowser
         case .qoderLoginRequired: return .openApp("Qoder CN")
         case .ollamaSessionMissing, .ollamaSessionExpired: return .readBrowser
+        case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCredential
+        case .ollamaSessionMissing, .ollamaSessionExpired,
+             .xiaomiSessionMissing, .xiaomiSessionExpired: return .readBrowser
         case .claudeDesktopKeyRefused, .unreachable, .rateLimited, .serverError,
              .codexServerFailed: return .retry
         case .codexNotInstalled, .volcengineCLIMissing, .noLimitsReported,
-             .grokBotNotIncluded, .zaiNoCodingPlan, .ollamaPageChanged, .unreadableReply:
+             .grokBotNotIncluded, .zaiNoCodingPlan, .xiaomiNoCodingPlan,
+             .ollamaPageChanged, .unreadableReply:
             return .help
         }
     }
@@ -69,6 +73,7 @@ case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCred
         case .openCodeGo: "opencode-go"
         case .kimiCode: "kimi-code"
         case .ollamaCloud: "ollama-cloud"
+        case .xiaomiMiMo: "xiaomi-coding-plan"
         case .zai, .glmCoding: "zai"
         case .minimax, .minimaxCN: "minimax"
         case .copilot: "copilot"

@@ -176,7 +176,7 @@ enum AgentActivity {
 
             case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-.volcengine, .commandCode, .deepSeek, .qoderCN, .devin:
+             .volcengine, .commandCode, .deepSeek, .qoderCN, .devin, .xiaomiMiMo:
                 // None of these leaves transcripts Pulse reads, so nothing
                 // ever gets this far.
                 return .finished
@@ -278,7 +278,7 @@ enum AgentActivity {
         case .codex: home.appending(path: ".codex/sessions")
         case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-.volcengine, .commandCode, .deepSeek, .qoderCN, .devin: nil
+             .volcengine, .commandCode, .deepSeek, .qoderCN, .devin, .xiaomiMiMo: nil
         }
     }
 }

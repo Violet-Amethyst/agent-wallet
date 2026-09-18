@@ -388,6 +388,7 @@ struct AlertMemory: Codable, Sendable, Equatable {
         case .claudeLoginExpired, .claudeDesktopKeyRefused, .claudeDesktopSessionExpired,
              .cursorLoginExpired, .grokLoginExpired, .signedOut, .apiKeyRefused,
              .openAIWebSessionExpired, .ollamaSessionExpired, .ollamaPageChanged,
+             .ollamaSessionExpired, .ollamaPageChanged, .xiaomiSessionExpired,
              .unreachable, .unreadableReply, .rateLimited, .serverError,
              .codexServerFailed:
             .failure
@@ -402,7 +403,10 @@ struct AlertMemory: Codable, Sendable, Equatable {
              // for the life of the record and the *next* real outage said
              // nothing — the exact failure the three-way split exists to
              // prevent.
-             .zaiNoCodingPlan:
+             .zaiNoCodingPlan,
+             // And the same again for Xiaomi: the session worked and the
+             // account simply has no plan on it.
+             .xiaomiNoCodingPlan:
             .answered
 
         // Never set up, never signed in, or an app that simply is not
@@ -412,7 +416,8 @@ struct AlertMemory: Codable, Sendable, Equatable {
              .signInRequired, .claudeSignInRequired, .claudeDesktopNotSignedIn,
              .codexNotInstalled, .antigravityNotRunning, .antigravityNotAnswering,
              .cursorSignInRequired, .grokSignInRequired, .notSignedIn,
-             .ollamaSessionMissing, .apiKeyMissing, .volcengineCLIMissing,
+             .ollamaSessionMissing, .xiaomiSessionMissing,
+             .apiKeyMissing, .volcengineCLIMissing,
              .volcengineSignInRequired,
              // An app that was never installed or never signed in, which is
              // the same standing as a CLI that is not there: true until
