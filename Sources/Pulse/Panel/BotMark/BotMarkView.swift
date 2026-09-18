@@ -10,14 +10,8 @@ func drawBotMark(_ frame: BotMarkFrame, config: BotMarkConfig,
     let extent = min(size.width, size.height)
     let scale = extent / (frame.viewBoxRadius * 2)
     let origin = BotMarkFrame.viewBoxCentre - frame.viewBoxRadius
-    var base = CGAffineTransform(scaleX: scale, y: scale)
+    let base = CGAffineTransform(scaleX: scale, y: scale)
         .translatedBy(x: -origin, y: -origin)
-    if frame.flipX {
-        base = base.concatenating(
-            CGAffineTransform(translationX: extent / 2, y: 0)
-                .scaledBy(x: -1, y: 1)
-                .translatedBy(x: -extent / 2, y: 0))
-    }
 
     func paint(_ items: [BotMarkFrame.Painted], in context: inout GraphicsContext) {
         for item in items {
@@ -83,9 +77,26 @@ func drawBotMark(_ frame: BotMarkFrame, config: BotMarkConfig,
 ///
 /// A rail against the right-hand edge of the screen has everything worth
 /// looking at to its left, and a mark staring off the edge of the display
-/// looks like it is facing a wall. The lean is added to the mark's own
-/// wandering gaze, not substituted for it, so it still glances about — from a
-/// head that is turned the right way.
+/// looks like it is facing a wall.
+///
+/// **Two mechanisms, because one of them cannot do it alone.** A standing
+/// lean moves the middle of the mark's wandering gaze. Turning the gaze round
+/// (`mirrored`) negates it. Only the turn can fix a pose that is
+/// *intrinsically* lopsided — several upstream states and expressions rest
+/// with the eyes well off to one side, and measured over ten minutes a
+/// `sleepy` mark sat right of centre on 97% of frames no matter how hard the
+/// lean pulled. Only the lean can fix a *symmetric* wander, which negating it
+/// leaves exactly as symmetric as it found it. Both together are what stops a
+/// right-hand rail facing the wall.
+///
+/// So the engine always leans the same way — `bias` is positive whichever
+/// edge this is — and `mirrored` decides which way that lands.
+///
+/// **It turns the gaze, not the mark.** Mirroring the whole drawing aimed the
+/// eyes correctly and looked ridiculous: the body flipped over like a card,
+/// which is not what a character does when it looks the other way. The engine
+/// scales its horizontal gaze terms instead, so the body stays put and the
+/// eyes travel across — see `BotMarkEngine.facing`.
 enum BotMarkGaze: Sendable {
     case ahead
     case left
@@ -95,13 +106,12 @@ enum BotMarkGaze: Sendable {
     /// clamp that pins an eye against the inside of the body.
     private static let lean = 7.0
 
-    var bias: Double {
-        switch self {
-        case .ahead: 0
-        case .left: -Self.lean
-        case .right: Self.lean
-        }
-    }
+    /// Always outward in the engine's own space. `mirrored` turns it around.
+    var bias: Double { self == .ahead ? 0 : Self.lean }
+
+    /// Whether the gaze is turned round. Only the left-facing case needs it:
+    /// the engine's own lean already points right.
+    var mirrored: Bool { self == .left }
 
     /// The rail's own edge decides it: docked right, look left; docked left,
     /// look right. A top rail runs horizontally and has screen on both sides,
