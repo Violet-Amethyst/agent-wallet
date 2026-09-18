@@ -1146,6 +1146,8 @@ final class BotMarkEngine {
             BotMarkGeometry.lerpRing(expressionFrom[1], expressionTo[1], amount),
         ]
         let centres = eyeRings.map(BotMarkGeometry.centroid)
+        // Where the expression itself is looking, before anything is added.
+        let pairOffset = (centres[0].x + centres[1].x) / 2 - headCentre
         var scanTop = top
         var scanBottom = bottom
         if abs(turnAngle) > 0.001 {
@@ -1230,15 +1232,7 @@ final class BotMarkEngine {
             // turning the look without turning the badge would have it
             // staring past the thing.
             driftX = (driftX + aimX.value * autonomousGazeWeight + directGazeX
-                      + config.gazeBias * autonomousGazeWeight) * facingValue
-
-            // The expression's own glance is in the artwork rather than in a
-            // number, so the only way to let it give way is to take it back
-            // out. Most of it, not all: a `sad` mark being pointed at should
-            // still look sad, and straightening the pair completely would
-            // make every expression's eyes sit in the same place.
-            driftX -= pairOffset * (1 - autonomousGazeWeight)
-            driftX += pointerX
+                      + config.gazeBias) * facingValue + pointerX
 
             // **The gaze rides inside the face; it does not push past it.**
             // The expression is already looking somewhere — up to `eyeReach`
