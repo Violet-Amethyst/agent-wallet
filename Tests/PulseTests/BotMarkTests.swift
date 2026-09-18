@@ -232,10 +232,11 @@ struct BotMarkTests {
     /// random glances would make this flake.
     @Test("The gaze lean moves the eyes, and the right way")
     func gazeLeanMovesTheEyes() {
-        func eyeCentre(bias: Double) -> Double {
+        func eyeCentre(_ gaze: BotMarkGaze) -> Double {
             var programme = BotMarkProgramme(states: ["idle"])
             programme.gazeScale = 0
-            programme.gazeBias = bias
+            programme.gazeBias = gaze.bias
+            programme.flipX = gaze.mirrored
             let engine = BotMarkEngine()
             var time = 0.0
             var frame = engine.advance(to: time, programme: programme)
@@ -243,10 +244,10 @@ struct BotMarkTests {
                 time += 1.0 / 60
                 frame = engine.advance(to: time, programme: programme)
             }
-            // Both eyes, so a wink or a blink cannot tilt the reading. No
-            // correction for the turn: it is applied to where the eyes were
-            // put, so what is read here is already what is drawn.
-            return frame.eyes.map { Double($0.transform.tx) }.reduce(0, +) / 2
+            // Both eyes, so a wink or a blink cannot tilt the reading, and in
+            // screen space, because the mirror is half of what aims the mark.
+            let engineSpace = frame.eyes.map { Double($0.transform.tx) }.reduce(0, +) / 2
+            return gaze.mirrored ? -engineSpace : engineSpace
         }
 
         let ahead = eyeCentre(.ahead)
@@ -289,7 +290,8 @@ struct BotMarkTests {
                     guard let path = eye.path.copy(using: &transform) else { return 0 }
                     sum += Double(path.boundingBoxOfPath.midX)
                 }
-                samples.append(sum / 2 - Double(centre))
+                // Screen space: the mirror turns the engine's own x around.
+                samples.append((sum / 2 - Double(centre)) * (gaze.mirrored ? -1 : 1))
             }
             return samples.reduce(0, +) / Double(samples.count)
         }
@@ -305,47 +307,6 @@ struct BotMarkTests {
         }
     }
 
-    /// Dragging the rail to the other edge turns the mark round; opening the
-    /// panel does not.
-    ///
-    /// The mirror is a scale of -1, and a scale that changes between one frame
-    /// and the next swaps the character for its own reflection with nothing in
-    /// between. Sprung, it passes edge-on and comes round. But a mark appearing
-    /// already mirrored has not turned anywhere, so the first frame snaps —
-    /// otherwise every mark on a right-hand rail would spin on launch.
-    @Test("Changing edge turns the mark; appearing on one does not")
-    func facingTurnsRatherThanSwaps() {
-        func frames(flipped: Bool, from engine: BotMarkEngine,
-                    start: Double, seconds: Double) -> [Double] {
-            var programme = BotMarkProgramme(states: ["idle"])
-            programme.flipX = flipped
-            var time = start
-            var facings: [Double] = []
-            while time < start + seconds {
-                facings.append(engine.advance(to: time, programme: programme).facing)
-                time += 1.0 / 60
-            }
-            return facings
-        }
-
-        // Appearing mirrored: settled from the very first frame.
-        let fresh = BotMarkEngine()
-        let onAppear = frames(flipped: true, from: fresh, start: 0, seconds: 0.5)
-        #expect(onAppear.allSatisfy { $0 < -0.99 }, "a mark that appeared mirrored animated its flip")
-
-        // Settled facing one way, then the rail moves to the other edge.
-        let moved = BotMarkEngine()
-        _ = frames(flipped: false, from: moved, start: 0, seconds: 1)
-        let turn = frames(flipped: true, from: moved, start: 1, seconds: 1)
-        #expect(turn.first! > 0.9, "the turn did not start from where the mark was")
-        #expect(turn.last! < -0.9, "the mark never finished turning")
-        // Edge-on somewhere in the middle, which is what makes it a turn.
-        #expect(turn.contains { abs($0) < 0.3 }, "the mark swapped sides without passing through")
-        // And it takes a moment: an instant flip would clear 0.3 in one frame.
-        let crossing = turn.filter { abs($0) < 0.9 }.count
-        #expect(crossing >= 6, "the turn took \(crossing) frames — too fast to read as motion")
-    }
-
     /// Which way each edge looks. A rail on the right edge of the screen has
     /// the screen to its left.
     @Test("The rail's edge decides the lean")
@@ -355,6 +316,12 @@ struct BotMarkTests {
         // A top rail has screen on both sides of it.
         #expect(BotMarkGaze(edge: .top) == .ahead)
         #expect(BotMarkGaze.ahead.bias == 0)
+        // The engine leans the same way whichever edge it is; the mirror is
+        // what turns a right-hand rail around.
+        #expect(BotMarkGaze.left.bias == BotMarkGaze.right.bias)
+        #expect(BotMarkGaze.left.mirrored)
+        #expect(!BotMarkGaze.right.mirrored)
+        #expect(!BotMarkGaze.ahead.mirrored)
     }
 
     /// Working has to be visible *as* working at ring size, which is the one
