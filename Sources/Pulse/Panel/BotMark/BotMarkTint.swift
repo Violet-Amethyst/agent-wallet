@@ -32,10 +32,11 @@ enum BotMarkTint {
         case .volcengine: BotMarkPalette.rgb(0x1664FF)
         // Best-guess brand colours: right family, exact value unconfirmed.
         case .minimax, .minimaxCN: BotMarkPalette.rgb(0xE8483F)
-        // Best-guess brand colours: right family, exact value unconfirmed.
         case .antigravity: BotMarkPalette.rgb(0x4285F4)
         case .glmCoding: BotMarkPalette.rgb(0x3A7BF7)
         case .kimiCode: BotMarkPalette.rgb(0x2F6BFF)
+        case .openAI: BotMarkPalette.rgb(0x10A37F)
+        case .qoderCN: BotMarkPalette.rgb(0x7B39EC)
         case .codex, .cursor, .openCodeGo, .ollamaCloud, .zai,
              .copilot, .grok, .grokBot, .commandCode, .devin:
             nil
