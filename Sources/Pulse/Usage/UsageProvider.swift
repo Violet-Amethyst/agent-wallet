@@ -254,8 +254,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// anyone on the plan who doesn't run the CLI on this Mac.
     var usesAPIKey: Bool {
         [.openAI, .openCodeGo, .kimiCode, .ollamaCloud, .zai, .glmCoding, .minimax, .minimaxCN, .volcengine,
-         .commandCode, .deepSeek, .devin].contains(self)
-        [.openCodeGo, .kimiCode, .ollamaCloud, .zai, .glmCoding, .minimax, .minimaxCN, .volcengine,
          .commandCode, .deepSeek, .devin, .xiaomiMiMo].contains(self)
     }
 
@@ -291,7 +289,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// signed-in settings page — so a session is the only credential there is,
     /// and calling it an API key in Settings would send people looking for one
     /// that does not exist.
-    var usesSessionCookie: Bool { [.ollamaCloud].contains(self) }
+    ///
     /// Xiaomi joins it for the same reason: the platform's API keys buy
     /// inference and answer none of the console's account routes, so the plan
     /// and the balance are behind the web session and nothing else.

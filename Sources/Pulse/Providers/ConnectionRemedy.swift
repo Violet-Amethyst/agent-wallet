@@ -32,12 +32,10 @@ enum ConnectionRemedy: Equatable {
         // that either way.
         case .devinAppMissing, .devinPlanUnread: return .openApp("Devin")
         case .notSignedIn, .signedOut: return .signIn
-case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCredential
+        case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCredential
         case .deepSeekWebLoginRequired: return .editCredential
         case .openAIWebLoginRequired, .openAIWebSessionExpired: return .readBrowser
         case .qoderLoginRequired: return .openApp("Qoder CN")
-        case .ollamaSessionMissing, .ollamaSessionExpired: return .readBrowser
-        case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCredential
         case .ollamaSessionMissing, .ollamaSessionExpired,
              .xiaomiSessionMissing, .xiaomiSessionExpired: return .readBrowser
         case .claudeDesktopKeyRefused, .unreachable, .rateLimited, .serverError,

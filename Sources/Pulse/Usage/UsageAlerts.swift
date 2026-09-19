@@ -388,7 +388,7 @@ struct AlertMemory: Codable, Sendable, Equatable {
         case .claudeLoginExpired, .claudeDesktopKeyRefused, .claudeDesktopSessionExpired,
              .cursorLoginExpired, .grokLoginExpired, .signedOut, .apiKeyRefused,
              .openAIWebSessionExpired, .ollamaSessionExpired, .ollamaPageChanged,
-             .ollamaSessionExpired, .ollamaPageChanged, .xiaomiSessionExpired,
+             .xiaomiSessionExpired,
              .unreachable, .unreadableReply, .rateLimited, .serverError,
              .codexServerFailed:
             .failure

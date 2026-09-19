@@ -1001,6 +1001,9 @@ struct SettingsView: View {
             let host: String
             let keep: @Sendable (String) -> String?
             switch account.provider {
+            case .openAI:
+                host = "openai.com"
+                keep = { try? OpenAIPlatformSession.normalize($0) }
             case .ollamaCloud:
                 host = "ollama.com"
                 keep = { try? OllamaSessionCookie.normalize($0) }
@@ -1009,25 +1012,13 @@ struct SettingsView: View {
                 keep = { try? XiaomiMiMoCookie.normalize($0) }
             case .claudeCode, .codex, .antigravity, .cursor, .openCodeGo,
                  .kimiCode, .zai, .glmCoding, .minimax, .minimaxCN, .copilot,
-                 .grok, .grokBot, .volcengine, .commandCode, .deepSeek, .devin:
+                 .grok, .grokBot, .volcengine, .commandCode, .deepSeek, .qoderCN, .devin:
                 // Not session-based: `readSession` sends those to
                 // `readBrowserStorage` before it gets here.
                 return
             }
 
             let found = await Task.detached(priority: .userInitiated) {
-                let host = switch account.provider {
-                case .openAI: "openai.com"
-                case .ollamaCloud: "ollama.com"
-                default: ""
-                }
-                return BrowserCookies.session(forHost: host, allowing: browsers) {
-                    switch account.provider {
-                    case .openAI: try? OpenAIPlatformSession.normalize($0)
-                    case .ollamaCloud: try? OllamaSessionCookie.normalize($0)
-                    default: nil
-                    }
-                }
                 BrowserCookies.session(forHost: host, allowing: browsers, keep: keep)
             }.value
 

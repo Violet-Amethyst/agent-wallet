@@ -143,9 +143,8 @@ enum OAuthLogin {
                     deviceFlow: .standard(code: URL(string: "https://auth.x.ai/oauth2/device/code")!)
                 )
             case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
-             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grokBot, .volcengine,
-.commandCode, .deepSeek, .qoderCN, .devin:
-             .commandCode, .deepSeek, .devin, .xiaomiMiMo:
+                 .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grokBot, .volcengine,
+                 .commandCode, .deepSeek, .qoderCN, .devin, .xiaomiMiMo:
                 nil
             }
         }
