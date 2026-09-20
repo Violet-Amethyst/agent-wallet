@@ -40,9 +40,7 @@ Status handling is the ordinary one: `401`/`403` → `.apiKeyRefused`, `429` →
 
 ## Credential
 
-Chrome's existing platform login works without creating an API key. A key pasted
-into Settings is an optional alternative, kept encrypted by `APIKeyStore`.
-The displayed diagnostic source distinguishes the web session from the API.
+A key pasted into Settings, kept encrypted on this Mac by `APIKeyStore`. There is nothing to borrow — DeepSeek's key lives on its web console and no CLI on this Mac stores one. The chooser offers it unchecked, without a detected hint; selecting it still requires entering a key in Settings.
 
 ## There is no allowance, so the ring has no denominator
 

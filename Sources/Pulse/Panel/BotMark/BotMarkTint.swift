@@ -34,7 +34,7 @@ enum BotMarkTint {
         case .minimax, .minimaxCN: BotMarkPalette.rgb(0xE8483F)
         case .antigravity: BotMarkPalette.rgb(0x4285F4)
         case .glmCoding: BotMarkPalette.rgb(0x3A7BF7)
-        case .kimiCode: BotMarkPalette.rgb(0x2F6BFF)
+        case .kimiCode: BotMarkPalette.rgb(0x7AA5FF)
         case .openAI: BotMarkPalette.rgb(0x10A37F)
         case .qoderCN: BotMarkPalette.rgb(0x7B39EC)
         // Xiaomi's orange. The MiMo console is black-on-white, but the parent
