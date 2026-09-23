@@ -36,20 +36,30 @@ enum BotMarkTint {
         case .glmCoding: BotMarkPalette.rgb(0x3A7BF7)
         case .kimiCode: BotMarkPalette.rgb(0x7AA5FF)
         case .openAI: BotMarkPalette.rgb(0x10A37F)
-        case .qoderCN: BotMarkPalette.rgb(0x7B39EC)
         // Xiaomi's orange. The MiMo console is black-on-white, but the parent
         // brand's colour is the one a reader recognises on a rail.
         case .xiaomiMiMo: BotMarkPalette.rgb(0xFF6900)
-        case .codex, .cursor, .openCodeGo, .ollamaCloud, .zai,
-             .copilot, .grok, .grokBot, .commandCode, .devin:
+        // sub2api's own mark is a green-to-blue gradient; the blue end is
+        // what a single flat colour of it reads as.
+        case .sub2api: BotMarkPalette.rgb(0x3875F6)
+        // Qoder's green, the one colour in its mark. Green is also what a
+        // healthy ring is drawn in, which is the hazard named above; if a
+        // Qoder body inside a green ring reads as one blob, this is the line
+        // to change.
+        case .qoder: BotMarkPalette.rgb(0x2ADB5C)
+        // V2EX draws a light arrow on near-black and has no other colour.
+        // New API's own mark is a cyan-to-pink pair; neither end is the
+        // colour, so it takes one of Pulse's own rather than half a gradient.
+        case .codex, .kiro, .cursor, .openCodeGo, .ollamaCloud, .zai,
+             .copilot, .grok, .grokBot, .commandCode, .devin, .newAPI, .v2ex:
             nil
         }
     }
 
     /// Colours for a rail, in the order its rings are drawn.
     ///
-    /// Ten of eighteen providers are monochrome by design and carry no colour
-    /// at all. Ten white bots in a row is a rail you cannot read — the mark is
+    /// Some providers are monochrome by design and carry no colour at all.
+    /// A row of white bots is a rail you cannot read — the mark is
     /// the thing that says *which* ring this is, and identical is the one
     /// thing it must not be — so those are dealt a colour of Pulse's own.
     ///
@@ -85,7 +95,7 @@ enum BotMarkTint {
         // first and ran out of colours near the end of a long rail, which is
         // exactly where it then had no choice but to put two blues together.
         var best: (score: Double, stride: Int, rotation: Int)?
-        for stride in [1, 3, 7, 9] {
+        for stride in 1..<paletteSize where coprime(stride, paletteSize) {
             for rotation in 0..<paletteSize {
                 let score = worstNeighbour(brands: brands, stride: stride, rotation: rotation)
                 if best == nil || score > best!.score { best = (score, stride, rotation) }
@@ -142,13 +152,34 @@ enum BotMarkTint {
         brand(for: provider) == nil
     }
 
-    private static let paletteSize = 10
+    /// **At least as many slots as there are colourless providers**, or two of
+    /// them are dealt the same colour and the rail has two rings that look
+    /// alike — the one failure this whole file exists to avoid.
+    ///
+    /// It has overflowed once already: eleven was exactly the count when it
+    /// was written, and V2EX made it twelve. Sizing it to the count again
+    /// would only queue up the same bug, so this is deliberately **ahead** of
+    /// it — thirteen colourless providers today, four slots spare.
+    ///
+    /// **Prime on purpose.** `deal(over:)` walks the wheel with a stride
+    /// coprime to its size so every colour is visited once, and a prime size
+    /// means every stride qualifies rather than a handful.
+    private static let paletteSize = 17
 
-    /// The wheel, solved once: ten hues 36° apart, each at the same
+    /// The wheel, solved once: evenly spaced hues, each at the same
     /// luminance. `dealt(at:)` is a bisection, and a rail is dealt on every
     /// pass of the dock's body.
     private static let wheel: [Color] = (0..<paletteSize).map { dealt(at: $0) }
     private static let wheelHues: [Double] = wheel.map(hue(of:))
+
+    private static func coprime(_ first: Int, _ second: Int) -> Bool {
+        var a = first
+        var b = second
+        while b != 0 {
+            (a, b) = (b, a % b)
+        }
+        return a == 1
+    }
 
     private static func separation(_ first: Double, _ second: Double) -> Double {
         let difference = abs(first - second).truncatingRemainder(dividingBy: 360)
@@ -162,8 +193,9 @@ enum BotMarkTint {
 
     /// The nth dealt colour: an even hue, levelled to one brightness.
     ///
-    /// Ten hues 36° apart — the widest any ten can be. Which ring gets which
-    /// is `deal(over:)`'s business; this is only the wheel it draws from.
+    /// Evenly spaced hues — the widest any fixed-size wheel can be. Which
+    /// ring gets which is `deal(over:)`'s business; this is only the wheel it
+    /// draws from.
     /// Hand-picked hexes were tried first and put two greens 49° apart, two
     /// blues 14° and two ambers 13°, which is what a palette chosen by eye
     /// tends to do. Placing the hues only in the gaps the brand colours leave
@@ -177,14 +209,14 @@ enum BotMarkTint {
     private static func dealt(at index: Int) -> Color {
         // 27° is the offset that keeps the wheel as a whole furthest from the
         // hues the brand colours already hold.
-        let hue = Double((27 + 36 * (index % paletteSize)) % 360)
+        let hue = (27 + 360 * Double(index % paletteSize) / Double(paletteSize))
         return levelled(hue: hue, saturation: 0.68, target: 0.62)
     }
 
     /// The lightness that puts this hue at `target` luminance, by bisection.
     ///
     /// Twenty steps is far more than the eye needs and costs nothing: the
-    /// wheel above is a `static let`, so this runs ten times per process.
+    /// wheel above is a `static let`, so this runs once per slot per process.
     private static func levelled(hue: Double, saturation: Double, target: Double) -> Color {
         var low = 0.0
         var high = 1.0

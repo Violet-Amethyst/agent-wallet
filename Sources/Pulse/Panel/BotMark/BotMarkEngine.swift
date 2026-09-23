@@ -36,14 +36,13 @@ final class BotMarkEngine {
     // MARK: Springs
 
     private var rotation = BotMarkSpring(0)
-    /// Which way round the mark is drawn: +1 as the engine works, -1
-    /// mirrored. A spring rather than the boolean it comes from, so dragging
-    /// the rail to the other edge turns the character round instead of
-    /// swapping it for its own reflection between one frame and the next.
+    /// Which way the gaze is aimed: +1 as the engine works, -1 turned round.
+    /// A spring rather than the boolean it comes from, so dragging the rail
+    /// to the other edge sends the eyes across instead of teleporting them.
     ///
     /// Nil until the first frame, and set to the target outright there: a
-    /// mark that animated its flip on appear would spin every time the panel
-    /// opened. Only a *change* of edge is worth a turn.
+    /// mark that appears on a right-hand rail has not looked anywhere, and
+    /// animating it would have every ring swing its eyes on launch.
     private var facing: BotMarkSpring?
     private var headX = BotMarkSpring(0)
     private var headY = BotMarkSpring(0)
@@ -140,6 +139,16 @@ final class BotMarkEngine {
 
     private var directTurn = 0.0
     private var directRotation = 0.0
+    /// What was last drawn, and in which state — so a change of state is
+    /// caught up with rather than jumped to. See `render`.
+    private var drawn: (x: Double, y: Double, degrees: Double, turn: Double)?
+    private var drawnState = ""
+    /// What is left of the difference between the last frame of one state and
+    /// the first of the next, eased away over about a third of a second.
+    private var carryX = BotMarkSpring(0)
+    private var carryY = BotMarkSpring(0)
+    private var carryDegrees = BotMarkSpring(0)
+    private var carryTurn = BotMarkSpring(0)
     private var directX = 0.0
     private var directY = 0.0
     private var directGazeX = 0.0
@@ -399,17 +408,10 @@ final class BotMarkEngine {
         }
     }
 
-    /// The horizontal scale the whole mark is drawn through.
-    ///
-    /// Floored away from zero. Mid-turn the body passes edge-on, and at
-    /// exactly zero the transform is singular — a path scaled flat has no
-    /// bounding box worth the name and the eye clamp divides by its width.
-    /// Two hundredths is far narrower than one pixel at ring size, so the
-    /// turn still reads as passing through nothing.
-    private var facingValue: Double {
-        let value = facing?.value ?? 1
-        return abs(value) < 0.02 ? (value < 0 ? -0.02 : 0.02) : value
-    }
+    /// Which way the gaze is aimed: +1 as the engine works, -1 turned round,
+    /// and everything between while it is moving. Zero is simply a mark
+    /// looking straight ahead, which is what it passes through.
+    private var facingValue: Double { facing?.value ?? 1 }
 
     private func stepPhysics(delta: Double) {
         let steps = max(1, Int((delta / BotMath.fixedStep).rounded(.up)))
@@ -417,11 +419,10 @@ final class BotMarkEngine {
         for _ in 0..<steps {
             expressionSpring.step(frequency: expressionFrequency, damping: 1, delta: step)
             rotation.step(frequency: 5, damping: 0.9, delta: step)
-            // 9 is a turn of about a third of a second at this damping —
-            // long enough to read as the body coming round, short enough that
-            // a drag across the screen does not leave a mark still turning
-            // after the rail has settled. Slightly under-damped, so it
-            // arrives with a small overshoot rather than easing to a halt.
+            // Slower than the gaze spring it scales (13), so a change of
+            // edge reads as the mark deciding to look the other way rather
+            // than as another glance. About a third of a second, slightly
+            // under-damped, so the eyes arrive with a small settle.
             facing?.step(frequency: 9, damping: 0.85, delta: step)
             headX.step(frequency: 3.5, damping: 1, delta: step)
             headY.step(frequency: 4, damping: 1, delta: step)
@@ -437,6 +438,10 @@ final class BotMarkEngine {
             notify.step(frequency: 9, damping: 0.55, delta: step)
             humming.step(frequency: 6, damping: 1, delta: step)
             if spinSpring != nil { spinSpring!.step(frequency: 6.2, damping: 1, delta: step) }
+            carryX.step(frequency: 12, damping: 1, delta: step)
+            carryY.step(frequency: 12, damping: 1, delta: step)
+            carryDegrees.step(frequency: 12, damping: 1, delta: step)
+            carryTurn.step(frequency: 12, damping: 1, delta: step)
         }
     }
 
@@ -1086,6 +1091,22 @@ final class BotMarkEngine {
                 : shape.beltRadius)
     }
 
+    /// A spring standing at `value` and heading for nothing. **Not**
+    /// `BotMarkSpring(value)`, which makes `value` its target too: the carry
+    /// then never decayed, every switch added to it, and within a few the
+    /// body had been pushed off the canvas.
+    private static func carry(_ value: Double) -> BotMarkSpring {
+        var spring = BotMarkSpring(0)
+        spring.value = value
+        return spring
+    }
+
+    /// `value` brought into the half-period either side of zero, so a carried
+    /// angle unwinds the short way rather than back through every turn.
+    private static func wrapped(_ value: Double, period: Double) -> Double {
+        value - period * (value / period).rounded()
+    }
+
     // MARK: - Render
 
     private func render(now: Double, config: BotMarkConfig) -> BotMarkFrame {
@@ -1105,7 +1126,24 @@ final class BotMarkEngine {
         // A morph turns the character half a revolution as it arrives, so the
         // turn spring counts as part of the yaw while it is moving.
         let morphIsTurning = morph.value > 0.001 || abs(turn.target - turn.value) > 0.01
-        let turnAngle = (morphIsTurning ? turn.value : 0) + (spinSpring?.value ?? 0) + directTurn
+        let rawTurn = (morphIsTurning ? turn.value : 0) + (spinSpring?.value ?? 0) + directTurn
+        // **A change of state never teleports the body.** Several things are
+        // drawn straight rather than through a spring: celebrate's nine turns
+        // (`directRotation`, `directTurn`, hundreds of degrees by the end), a
+        // gesture's shake, and a morph's pose — the pencil's sweep, the ball's
+        // drop. Each is recomputed from the *new* state on the first frame
+        // after a switch, so a scene beat, a mood, a one-shot or the pointer
+        // interrupting one of them moved the body up to 144° or 108 units in
+        // a single frame, then carried on as if nothing had happened: a
+        // one-frame glitch, easy to glimpse and impossible to catch again.
+        // Measured over ten simulated minutes per persona with realistic
+        // switching. The difference at the switch is handed to springs that
+        // ease it away; angles take the short way round.
+        let handingOff = drawn != nil && state != drawnState
+        if handingOff, let drawn {
+            carryTurn = Self.carry(Self.wrapped(drawn.turn - rawTurn, period: 2 * .pi))
+        }
+        let turnAngle = rawTurn + carryTurn.value
         let shapeRing = abs(turnAngle) > 0.001 && !geometry.transitioning
             ? BotMarkGeometry.turnedShapeRing(shape, identifier: geometry.identifier,
                                           angle: turnAngle, headCentre: headCentre)
@@ -1160,10 +1198,21 @@ final class BotMarkEngine {
         let room = 12.0
         let travelX = BotMath.clamp((headX.value + directX) * normal, -room, room)
         let travelY = BotMath.clamp((headY.value + directY) * normal, -room, room)
-        let translateX = travelX + pose.x
-        let translateY = travelY + pose.y
-        let degrees = rotation.value * 180 / .pi * geometry.tiltScale * normal
+        let rawX = travelX + pose.x
+        let rawY = travelY + pose.y
+        let rawDegrees = rotation.value * 180 / .pi * geometry.tiltScale * normal
             + directRotation * normal + pose.rotation
+        if handingOff, let drawn {
+            carryX = Self.carry(drawn.x - rawX)
+            carryY = Self.carry(drawn.y - rawY)
+            carryDegrees = Self.carry(Self.wrapped(drawn.degrees - rawDegrees, period: 360))
+        }
+        let translateX = rawX + carryX.value
+        let translateY = rawY + carryY.value
+        let degrees = rawDegrees + carryDegrees.value
+        drawn = (translateX, translateY, degrees, turnAngle)
+        drawnState = state
+
 
         var transform = CGAffineTransform(translationX: headCentre + translateX,
                                           y: headCentre + translateY)
@@ -1282,10 +1331,10 @@ final class BotMarkEngine {
             : 4
 
         if config.pointer, let pointer {
-            // The live value, not the boolean: while the body is coming
-            // round, the pointer it is tracking has to come round with it.
-            let flip = facingValue
-            pointerTargetX = 22 * BotMath.clamp(pointer.x, -0.6, 0.6) * flip
+            // Not turned around with the gaze: the pointer is a real place on
+            // the screen, and the eyes follow it there whichever way the mark
+            // is facing.
+            pointerTargetX = 22 * BotMath.clamp(pointer.x, -0.6, 0.6)
             pointerTargetY = 14 * BotMath.clamp(pointer.y, -0.6, 0.6)
         } else {
             pointerTargetX = 0
@@ -1333,7 +1382,17 @@ final class BotMarkEngine {
             let pulse = 1 + 0.07 * sin(amount * .pi)
             var driftX = 1.4 * sin(0.00042 * now + Double(index)) + 0.5 * sin(0.001 * now + 2 * Double(index))
             var driftY = 0.9 * sin(0.00058 * now + Double(index))
-            let autonomousGazeWeight = config.pointer && pointer != nil ? 0.2 : 1.0
+            // **Somebody pointing at this ring outranks everything else the
+            // mark would rather be looking at.** Upstream already damps the
+            // state's own glance to a fifth while the pointer is on the
+            // panel; the two habits Pulse added have to give way in the same
+            // measure, or they win by sheer size. The standing lean is 7 and
+            // the expression's built-in glance reaches 76, against a pointer
+            // worth 22 — a rail on the right-hand edge kept staring left with
+            // the cursor sitting on its right, which is not watching anything.
+            let watching = config.pointer && pointer != nil
+            let autonomousGazeWeight = watching ? 0.2 : 1.0
+
             // **Only the gaze turns round, not the mark.** Mirroring the
             // whole drawing aimed the eyes correctly and looked absurd: the
             // body flipped over like a card, which is not what a character
@@ -1343,12 +1402,34 @@ final class BotMarkEngine {
             // it is sprung, the eyes travel across rather than jumping.
             //
             // Two terms are deliberately left out. The pointer is a real
-            // place on screen, already added above. And the glance a
-            // `notifying` mark gives its badge is below, because the badge
-            // sits at a fixed point on the body: turning the look without
-            // turning the badge would have it staring past the thing.
+            // place on screen, so it is added after the turn rather than
+            // through it. And the glance a `notifying` mark gives its badge
+            // is below, because the badge sits at a fixed point on the body:
+            // turning the look without turning the badge would have it
+            // staring past the thing.
             driftX = (driftX + aimX.value * autonomousGazeWeight + directGazeX
-                      + config.gazeBias) * facingValue + pointerX
+                      + config.gazeBias * autonomousGazeWeight) * facingValue
+
+            // The expression's own glance is in the artwork rather than in a
+            // number, so the only way to let it give way is to take it back
+            // out. Most of it, not all: a `sad` mark being pointed at should
+            // still look sad, and straightening the pair completely would
+            // make every expression's eyes sit in the same place.
+            driftX -= pairOffset * (1 - autonomousGazeWeight)
+            driftX += pointerX
+
+            // **The gaze rides inside the face; it does not push past it.**
+            // The expression is already looking somewhere — up to `eyeReach`
+            // off the head's centre — and the lean, the state's glance and
+            // the pointer are all added on top. Stacked the same way they put
+            // an eye outside the silhouette, where it is simply clipped: on a
+            // 25pt ring that reads as a mark with one eye missing, which is
+            // what it looked like. So the boldest thing the artwork itself
+            // does is the ceiling for the total, and anything Pulse adds has
+            // to fit under it. Moving back toward the middle is never
+            // restricted — only leaving the face is.
+            let reach = library.eyeReach
+            driftX = BotMath.clamp(pairOffset + driftX, -reach, reach) - pairOffset
             driftY += pointerY + aimY.value * autonomousGazeWeight + directGazeY
             let notification = BotMath.clamp(notify.value, 0, 1)
             driftX -= 10 * notification
@@ -1469,8 +1550,11 @@ struct BotMarkFrame {
     /// but a measurement of the body's size has to know, because a morph
     /// shrinks the character to a fifth on purpose and that is not a squash.
     var morphAmount: Double
-    /// -1…+1: the horizontal scale the whole mark is drawn through, so a
-    /// change of edge is a turn rather than a swap. ±1 at rest.
+    /// -1…+1: which way the gaze is aimed, and how far through a change of
+    /// edge it is. ±1 at rest.
+    ///
+    /// Not used by the drawing — it is already baked into where the eyes
+    /// were put — but a test measuring the turn has to be able to see it.
     var facing: Double
 
     /// The centre of the upstream viewBox, `-15 -15 259 259`.

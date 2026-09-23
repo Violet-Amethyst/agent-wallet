@@ -47,49 +47,21 @@ struct PulseApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // The floating rail owns Settings and Quit. No status-bar item.
-        Settings { EmptyView() }
+        // The AppKit delegate owns the status item so it can remove it at
+        // runtime. This scene supplies SwiftUI's required app scene without
+        // opening a second settings window; AppDelegate owns the real one.
+        Settings {
+            EmptyView()
+        }
+        // The delegate owns the real settings window. Replacing the standard
+        // command keeps Command-, from opening this required but empty scene.
         .commands {
             CommandGroup(replacing: .appSettings) {
-                Button(String.localized("Settings…")) { appDelegate.showSettings() }
-                    .keyboardShortcut(",")
-            }
-        }
-    }
-}
-
-private struct MenuBarContent: View {
-    let settings: AppSettings
-    let update: AppUpdate
-    let openSettings: () -> Void
-
-    var body: some View {
-        Group {
-            // Only when there is one. A permanent "check for updates" item
-            // would be a chore offered to everyone so that the rare person who
-            // needs it can find it; the check runs on its own daily, and the
-            // manual one lives in Settings.
-            if let newer = update.newer {
-                Button(String.localized("Agent Wallet \(newer.version) is available")) {
-                    update.check()
+                Button(String.localized("Settings…")) {
+                    appDelegate.showSettings()
                 }
-
-                Divider()
+                .keyboardShortcut(",", modifiers: .command)
             }
-
-            Button(String.localized("Settings…"), action: openSettings)
-                .keyboardShortcut(",")
-
-            Divider()
-
-            Button(String.localized("Quit Agent Wallet")) {
-                NSApplication.shared.terminate(nil)
-            }
-            .keyboardShortcut("q")
         }
-        // The menu is built once and kept; without a dependency on the
-        // language it would still be showing whatever was current at launch.
-        // Reading `settings.language` here is what makes SwiftUI rebuild it.
-        .id("\(settings.language.rawValue)-\(update.newer?.version ?? "")")
     }
 }

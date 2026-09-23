@@ -15,6 +15,10 @@
   <a href="https://github.com/qunqin24/Pulse/actions/workflows/ci.yml"><img src="https://github.com/qunqin24/Pulse/actions/workflows/ci.yml/badge.svg" alt="CI ビルド"></a>
   <img src="https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white" alt="Swift 6.0">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="ライセンス"></a>
+  <a href="https://github.com/qunqin24/Pulse/stargazers"><img src="https://img.shields.io/github/stars/qunqin24/Pulse?color=black" alt="GitHub スター"></a>
+  <a href="https://github.com/qunqin24/Pulse/releases"><img src="https://img.shields.io/github/downloads/qunqin24/Pulse/total?color=black" alt="ダウンロード数"></a>
+  <a href="https://github.com/qunqin24/Pulse/issues"><img src="https://img.shields.io/github/issues/qunqin24/Pulse?color=black" alt="オープンな Issue"></a>
+  <a href="https://github.com/qunqin24/Pulse/commits/main"><img src="https://img.shields.io/github/last-commit/qunqin24/Pulse?color=black" alt="最終コミット"></a>
 </p>
 
 <p align="center">
@@ -61,14 +65,14 @@ Pulse は画面の端にすっと収まる、控えめなフローティング�
 
 ### マルチアカウントとローカル台帳
 - **マルチアカウント対応**：同じプロバイダの複数のサブスクリプション（Claude Code、Codex、Grok、Grok Bot）を並べて監視し、ラベルを付けられます。
-- **トークン消費（設定内のみ）**：初期状態はオフです。ページ上部でオンにするとローカル記録を読み始め、オフにすると停止します。ログ・データベース・エクスポートを含む **54 のクライアントソース**に対応しています（Gemini CLI、Cline、Roo Code、OpenClaw、GitHub Copilot など）。Cursor や Trae などのエクスポート系ソースは、事前のエクスポートかキャプチャが必要です。これらはレールに表示する 19 のクォータプロバイダとは別物で、対応状況と実クライアントでの検証状況はソースごとに異なります。[ソースと対応範囲](Docs/token-spend-sources.md)。
+- **トークン消費（設定内のみ）**：初期状態はオフです。ページ上部でオンにするとローカル記録を読み始め、オフにすると停止します。ログ・データベース・エクスポートを含む **54 のクライアントソース**に対応しています（Gemini CLI、Cline、Roo Code、OpenClaw、GitHub Copilot など）。Cursor や Trae などのエクスポート系ソースは、事前のエクスポートかキャプチャが必要です。これらはレールに表示する 24 のクォータプロバイダとは別物で、対応状況と実クライアントでの検証状況はソースごとに異なります。[ソースと対応範囲](Docs/token-spend-sources.md)。
 - **明確な使用量の推定**：直近 7 日を初期表示し、選んだ期間を記憶します。コストは公開 API 価格で算出し、サブスクリプションの請求額ではありません。価格が不明な場合やトークン数の集計が不完全な場合、時刻の詳細が分からない場合はその旨を表示します。トークン数を記録しないソースは、その旨をそのまま表示します。
 - **モデル詳細とチャート**：モデルを開くと、入力・出力・キャッシュのトークン数と推定コスト、記録に基づく日次・時間別チャート、エージェント別の内訳、並べ替えとページ送りができる詳細テーブルを表示します。チャートにポインタを合わせると、日付または時刻とそのトークン数を読み取れます。利用できない日次・時間別の内訳は「利用不可」と表示し、ゼロとはみなしません。
-- **19 のプロバイダ**：Claude Code、Codex、Antigravity、Cursor、GitHub Copilot、Grok、Grok Bot、OpenCode Go、Kimi Code、Ollama Cloud、z.ai、Zhipu、MiniMax（国際・中国本土）、Volcengine、Command Code、DeepSeek、Devin、Xiaomi Coding Plan。
+- **24 のプロバイダ**：Claude Code、Codex、Kiro、Antigravity、Cursor、GitHub Copilot、Grok、Grok Bot、OpenCode Go、Kimi Code、Ollama Cloud、z.ai、Zhipu、MiniMax（国際・中国本土）、Volcengine、Command Code、DeepSeek、Devin、Xiaomi Coding Plan、sub2api、New API、V2EX、Qoder。
 - **スクリプト可**：`Pulse --json` が最後の読み取り値——プラン、すべての上限、リセット時刻、数字がどれだけ古いか——を出力します。tmux、sketchybar、Raycast、シェルプロンプトにどうぞ。キャッシュを読むだけなので、ポーリングのコストはかかりません。
 - **開発者向け連携**：設定から Raycast 拡張と、そのまま設定できる tmux・sketchybar・シェルのスクリプトを書き出せます。アカウントのリンクは該当ペインを直接開きます。[セットアップガイド](Docs/integrations.md)。
 - **接続診断**：実際の読み取り元、キャッシュの利用、最新のチェックとフォールバックの結果を確認できます。状況に応じた操作で再接続・再ログイン・認証情報の修正ができ、アカウント情報やシークレットを含まない診断レポートをコピーできます。
-- **プライバシー第一**：Pulse はあなたの Mac 上で、あなた自身のログインのもとで動きます。接続先は三つだけで、ここに挙げたものがすべてです——すでに使っているプロバイダ、トークン消費ペインの公開モデル価格を取得する [models.dev](https://models.dev)、そしてアプリの更新を確認する GitHub/Sparkle。プロバイダへのリクエスト、サインイン時のトークン交換、models.dev は「設定」›「一般」›「ネットワーク」で選んだプロキシを使い、手動プロキシは対応するヘルパープロセスにも渡されます。Sparkle のアップデート確認は常に macOS のシステムプロキシ設定に従います。
+- **プライバシー第一**：Pulse はあなたの Mac 上で、あなた自身のログインのもとで動きます。接続先は三つだけで、ここに挙げたものがすべてです——すでに使っているプロバイダ、トークン消費ペインの公開モデル価格を取得する [models.dev](https://models.dev)、そしてアプリの更新を確認する GitHub/Sparkle。プロバイダへのリクエスト、サインイン時のトークン交換、models.dev は「設定」›「ネットワークと更新」で選んだプロキシを使い、手動プロキシは対応するヘルパープロセスにも渡されます。Sparkle のアップデート確認は常に macOS のシステムプロキシ設定に従います。
 
 <p align="center">
   <img src="Docs/panel.webp" height="300" alt="レールの隣に開く使用量の詳細カード">
@@ -104,6 +108,7 @@ Pulse は各サービスが報告する数字をそのまま表示します。�
 |---|---|---|
 | **Claude Code** | アカウントの OAuth 使用量エンドポイント。Claude デスクトップのセッションとステータスラインへ自動フォールバック | 既存の CLI／デスクトップセッションを読み取り、シームレスに自動フォールバック |
 | **Codex** | クライアントの使用量エンドポイント。`codex app-server` へフォールバック | ローカルの Codex 認証情報を直接読み取り |
+| **Kiro** | Kiro CLI ネイティブの ACP 使用量メソッド | Kiro CLI のログイン済みセッションを利用。Pulse が Kiro の認証情報を読み取ったり保存したりすることはありません（[詳細](Docs/providers/kiro.md)） |
 | **Antigravity** | ローカルの Language Server（LSP） | Antigravity エディタの実行中のみ有効 |
 | **Cursor** | Cursor アカウントの使用量サマリー API | 既存のエディタログインから fast と slow のリクエストプールを表示 |
 | **Grok** | Grok Build CLI プロキシ（`cli-chat-proxy.grok.com`） | すべての Grok 製品で共有される単一の週次プール |
@@ -120,6 +125,10 @@ Pulse は各サービスが報告する数字をそのまま表示します。�
 | **DeepSeek** | 貼り付けたキー。文書化された `GET /user/balance` | 前払い残高のみで枠はなし。リングが何を基準にするかはあなたが選ぶ |
 | **Devin** | 入力は不要——ブラウザのセッションを読み取り、キーチェーンの確認も出ない | Devin が報告する日次・週次の枠。ブラウザセッションも貼り付けた認証情報もない場合は、アプリが保存した日付付きプランを読み取る。エンドポイント障害時は一致するエンドポイントのキャッシュのみを使い、アカウントと組織の境界を保つ（[Docs/providers/devin.md](Docs/providers/devin.md)） |
 | **Xiaomi Coding Plan** | 入力は不要——サインイン済みのブラウザセッションを読み取る。`Cookie:` ヘッダーを貼り付けることもできる | Xiaomi MiMo コンソールの月間トークン枠。期間の終了が報告されていればそれも表示する。前払い残高はカードに 1 行として並ぶ。プランのないアカウントは 0% を描かず、そう述べる（[Docs/providers/xiaomi-coding-plan.md](Docs/providers/xiaomi-coding-plan.md)） |
+| **sub2api** | 貼り付けたグループキー。ゲートウェイのアドレスは自分で入力 | 自前で運用する [sub2api](https://github.com/Wei-Shaw/sub2api) ゲートウェイのグループ単位の集計を読み取る——残高、クォータ、サブスクリプション、レート制限のいずれかで、グループの設定によって変わる（[Docs/providers/sub2api.md](Docs/providers/sub2api.md)） |
+| **New API** | 貼り付けた `sk-` キー。ゲートウェイのアドレスは自分で入力 | 自前で運用する [New API](https://github.com/QuantumNous/new-api) ゲートウェイの残高を、運用者が設定した通貨で表示。回答の比率は意味が二通りありうるため、割合は表示しない（[Docs/providers/newapi.md](Docs/providers/newapi.md)） |
+| **V2EX** | 貼り付けた個人アクセストークン | AI Chat のローリング 5 時間トークン枠。購入した追加パックがあれば、もう 1 つ輪を表示。ウィンドウがまだ始まっていないときはカウントダウンを表示しない（[Docs/providers/v2ex.md](Docs/providers/v2ex.md)） |
+| **Qoder** | 入力は不要——qoder.com または qoder.com.cn のサインイン済みブラウザセッションを読み取る。`Cookie:` ヘッダーを貼り付けることもできる | クレジット枠（プランとパックの合計）を Qoder が報告するリセット時刻とともに表示。チームプランの共有クレジットは別の輪として表示し、決して合算しない。クレジットが 0 のときはそう表示し、輪は描かない（[Docs/providers/qoder.md](Docs/providers/qoder.md)） |
 
 ---
 
@@ -145,7 +154,7 @@ Pulse は各サービスが報告する数字をそのまま表示します。�
 ## プライバシーとセキュリティ
 
 Pulse は厳格なローカルファーストのセキュリティ原則で設計されています：
-- **Pulse のバックエンドはなし**：あなたの Mac が、あなた自身のログインで、すでに使っているプロバイダへつなぎます。また、トークン消費ペインのために [models.dev](https://models.dev) から公開モデル価格を取得し、GitHub/Sparkle でアプリの更新を確認します。プロバイダへのリクエスト、サインイン時のトークン交換、models.dev は「設定」›「一般」›「ネットワーク」で選んだプロキシを使い、手動プロキシは対応するヘルパープロセスにも渡されます。Sparkle のアップデート確認は常に macOS のシステムプロキシ設定に従います。
+- **Pulse のバックエンドはなし**：あなたの Mac が、あなた自身のログインで、すでに使っているプロバイダへつなぎます。また、トークン消費ペインのために [models.dev](https://models.dev) から公開モデル価格を取得し、GitHub/Sparkle でアプリの更新を確認します。プロバイダへのリクエスト、サインイン時のトークン交換、models.dev は「設定」›「ネットワークと更新」で選んだプロキシを使い、手動プロキシは対応するヘルパープロセスにも渡されます。Sparkle のアップデート確認は常に macOS のシステムプロキシ設定に従います。
 - **ローカルの認証情報**：製品がそのように動く場合、開発ツールがすでにローカルへ保存した認証情報（`~/.claude`、`~/.codex`、Cursor のストレージなど）を読み取ります。一部のプロバイダには、設定で入力するキーやサインインが必要です。
 - **暗号化されたローカル保存**：手動で入力した API キーとセッショントークンは暗号化され、Pulse のローカルアプリケーションディレクトリに所有者のみの権限で厳密に保存されます。
 - **ローカルの利用記録**：Pulse はトークン数と、タイトルや作業ディレクトリといったセッション情報を得るために、トランスクリプト・データベース・エクスポートを読み取ります。これらの記録には会話のテキストが含まれることがありますが、処理はあなたの Mac 上で完結し、記録もそこに留まります。Pulse が読むのはこれらの記録だけです。
@@ -187,3 +196,15 @@ Pulse は 2026 年 8 月に [**Vinz**（@hivinz_）](https://x.com/hivinz_/statu
 ## ライセンス
 
 [Apache 2.0](LICENSE) の下でライセンスされています。同梱のサードパーティ資産はそれぞれのライセンスを保持します。詳しくは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
+
+---
+
+## Star の推移
+
+<a href="https://star-history.com/#qunqin24/Pulse&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=qunqin24/Pulse&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=qunqin24/Pulse&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=qunqin24/Pulse&type=Date" />
+  </picture>
+</a>

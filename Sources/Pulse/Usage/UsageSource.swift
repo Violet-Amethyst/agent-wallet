@@ -95,6 +95,8 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
             // Never shown: `options(for:)` doesn't offer it, and `source(for:)`
             // won't return it for anything but Claude Code.
             .localized("Use the endpoint when possible, the other route when not.")
+        case (_, .kiro):
+            .localized("Asks Kiro CLI over ACP, using the login it already saved.")
         case (.endpoint, .volcengine):
             .localized("Signs Volcengine's usage API with the access keys you entered.")
         case (.tooling, .volcengine):
@@ -105,7 +107,8 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
         case (_, .openAI):
             .localized("Reads your OpenAI API Platform costs with the Admin Key you entered.")
         case (_, .openCodeGo), (_, .kimiCode), (_, .zai), (_, .glmCoding),
-             (_, .minimax), (_, .minimaxCN), (_, .copilot), (_, .commandCode), (_, .deepSeek):
+             (_, .minimax), (_, .minimaxCN), (_, .copilot), (_, .commandCode), (_, .deepSeek),
+             (_, .sub2api), (_, .newAPI), (_, .v2ex):
             // Never shown either — one route, and it needs a key.
             .localized("Uses the key you entered.")
         case (.endpoint, .devin):
@@ -119,8 +122,6 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
             // Never shown: one route, and it borrows the login Cursor stored,
             // since Grok Bot is billed against that account.
             .localized("Reads your account's limits with the login Cursor saved.")
-        case (_, .qoderCN):
-            .localized("Qoder CN's own login")
         case (_, .grok):
             // Never shown: one route, and it borrows the login Grok's own CLI
             // stored, exactly as Cursor's does.
@@ -129,6 +130,10 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
             // Never shown: one route, and it reads the console with the
             // browser session rather than with a key.
             .localized("Reads the console with your signed-in browser session.")
+        case (_, .qoder):
+            // Never shown: one route, the account page's own request, made
+            // with the browser session for the site that was chosen.
+            .localized("Reads your credits with your signed-in browser session.")
         case (_, .ollamaCloud):
             // Never shown: one route, and it reads a page rather than an API.
             .localized("Reads your quota from Ollama's own settings page.")
@@ -254,6 +259,28 @@ enum RailSpacing: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Which end of an allowance window the neutral outer clock arc measures.
+///
+/// Elapsed keeps the behaviour Pulse shipped with. Remaining turns the same
+/// provider-reported reset and duration into a countdown: full when the window
+/// opens, empty when it resets. Neither direction invents a duration where the
+/// provider did not state one.
+enum WindowClockDirection: String, CaseIterable, Identifiable, Sendable {
+    case elapsed
+    case remaining
+
+    static let `default` = WindowClockDirection.elapsed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .elapsed: .localized("Elapsed")
+        case .remaining: .localized("Remaining")
+        }
+    }
+}
+
 /// The scale every panel measurement is multiplied by.
 ///
 /// A stored value rather than something threaded through every call site,
@@ -292,6 +319,14 @@ enum PanelMetrics {
     nonisolated(unsafe) private static var storedLabelAboveRing = false
     nonisolated(unsafe) private static var storedForecast = false
 
+    /// Whether the rail's ends are half circles rather than softened corners.
+    ///
+    /// Here with the rest because it moves `DockLayout.verticalPadding`: the
+    /// two styles sit the end ring differently in the end, so the rail is
+    /// 16pt longer with round ends and the AppKit frame is worked out from
+    /// that before SwiftUI lays anything out.
+    nonisolated(unsafe) private static var storedRoundEnds = false
+
     /// How many rings the panel has to leave room for.
     ///
     /// Not `Provider.allCases.count` any more: one provider can be signed in
@@ -307,6 +342,7 @@ enum PanelMetrics {
     static var topRailShowsPercentages: Bool { lock.withLock { storedTopPercentages } }
     static var sideRailShowsPercentages: Bool { lock.withLock { storedSidePercentages } }
     static var labelAboveRing: Bool { lock.withLock { storedLabelAboveRing } }
+    static var usesRoundEnds: Bool { lock.withLock { storedRoundEnds } }
     static var railCapacity: Int { lock.withLock { storedCapacity } }
 
     static func use(_ size: PanelSize) {
@@ -327,6 +363,10 @@ enum PanelMetrics {
 
     static func putLabelAboveRing(_ above: Bool) {
         lock.withLock { storedLabelAboveRing = above }
+    }
+
+    static func useRoundEnds(_ uses: Bool) {
+        lock.withLock { storedRoundEnds = uses }
     }
 
     /// Whether the card carries a forecast line under every limit.

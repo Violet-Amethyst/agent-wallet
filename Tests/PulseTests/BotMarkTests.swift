@@ -85,8 +85,8 @@ struct BotMarkTests {
 
     /// The whole point of dealing colours is that the rail is not a row of
     /// identical bots. A hash over the ids was tried first and collided: six
-    /// of the ten shared two colours.
-    @Test("A rail of colourless providers gets ten different colours")
+    /// of the original set shared two colours.
+    @Test("A rail of colourless providers gives every provider a distinct colour")
     func dealtColoursAreDistinct() {
         let colourless = Provider.allCases.filter { BotMarkTint.brand(for: $0) == nil }
         let colours = BotMarkTint.deal(over: colourless).map(\.hexString)
@@ -244,10 +244,10 @@ struct BotMarkTests {
                 time += 1.0 / 60
                 frame = engine.advance(to: time, programme: programme)
             }
-            // Both eyes, so a wink or a blink cannot tilt the reading, and in
-            // screen space, because the mirror is half of what aims the mark.
-            let engineSpace = frame.eyes.map { Double($0.transform.tx) }.reduce(0, +) / 2
-            return gaze.mirrored ? -engineSpace : engineSpace
+            // Both eyes, so a wink or a blink cannot tilt the reading. No
+            // correction for the turn: it is applied to where the eyes were
+            // put, so what is read here is already what is drawn.
+            return frame.eyes.map { Double($0.transform.tx) }.reduce(0, +) / 2
         }
 
         let ahead = eyeCentre(.ahead)
@@ -290,8 +290,7 @@ struct BotMarkTests {
                     guard let path = eye.path.copy(using: &transform) else { return 0 }
                     sum += Double(path.boundingBoxOfPath.midX)
                 }
-                // Screen space: the mirror turns the engine's own x around.
-                samples.append((sum / 2 - Double(centre)) * (gaze.mirrored ? -1 : 1))
+                samples.append(sum / 2 - Double(centre))
             }
             return samples.reduce(0, +) / Double(samples.count)
         }
@@ -717,7 +716,12 @@ struct BotMarkTests {
             var time = 0.0
             var outside = 0
             var total = 0
-            while time < 240 {
+            // Ten minutes, not four. The share is a frame count over random
+            // glances, and at four minutes the spread put a fixed rail at 4.0%
+            // against a threshold of 4 — the bound was fine and the sample was
+            // not. A longer run separates ~3% fixed from ~5-13% broken with
+            // room to spare.
+            while time < 600 {
                 time += 1.0 / 30
                 let frame = engine.advance(to: time, programme: programme)
                 guard frame.morphAmount < 0.01, frame.eyes.count == 2,
@@ -747,6 +751,61 @@ struct BotMarkTests {
                 #expect(share < 4,
                         "\(persona) \(mood) has an eye off the body on \(share)% of frames")
             }
+        }
+    }
+
+    /// Somebody pointing at a ring outranks everything the mark would rather
+    /// be looking at.
+    ///
+    /// Two of the three things aiming a mark are much larger than the pointer:
+    /// the expression's built-in glance reaches 76 units and the standing lean
+    /// is 7, against a pointer worth 22. On a rail against the right-hand edge
+    /// they pull the same way, so the mark went on staring left with the
+    /// cursor sitting on its right — which is the opposite of the behaviour
+    /// the pointer exists for. Upstream already damps the state's own glance
+    /// to a fifth while the pointer is on the panel; the lean and the artwork
+    /// now give way in the same measure.
+    ///
+    /// Checked on the hard case: every persona, turned to face the screen, so
+    /// the habits and the pointer disagree.
+    @Test("The pointer outranks the lean and the expression")
+    func pointerWinsOverHabit() {
+        func eyes(_ persona: BotMarkPersona, pointerX: Double) -> Double {
+            var programme = Self.programme(persona, .idle)
+            programme.gazeBias = BotMarkGaze.left.bias
+            programme.flipX = BotMarkGaze.left.mirrored
+            programme.pointer = CGPoint(x: pointerX, y: 0)
+            let engine = BotMarkEngine()
+            var time = 0.0
+            var settled: [Double] = []
+            while time < 30 {
+                time += 1.0 / 30
+                let frame = engine.advance(to: time, programme: programme)
+                guard frame.eyes.count == 2, frame.eyes.allSatisfy({ $0.visible }) else { continue }
+                let centre = CGPoint(x: BotMarkFrame.viewBoxCentre,
+                                     y: BotMarkFrame.viewBoxCentre)
+                    .applying(frame.transform).x
+                var sum = 0.0
+                for eye in frame.eyes {
+                    var transform = eye.transform.concatenating(frame.transform)
+                    guard let path = eye.path.copy(using: &transform) else { return .nan }
+                    sum += Double(path.boundingBoxOfPath.midX)
+                }
+                // Past the first few seconds, so the springs have arrived.
+                if time > 5 { settled.append(sum / 2 - Double(centre)) }
+            }
+            return settled.reduce(0, +) / Double(settled.count)
+        }
+
+        for persona in BotMarkPersona.allCases {
+            let looksLeft = eyes(persona, pointerX: -1)
+            let looksRight = eyes(persona, pointerX: 1)
+            #expect(looksRight > looksLeft + 8,
+                    "\(persona) barely moved: \(looksLeft) with the pointer left, \(looksRight) with it right")
+            // And it is not merely a shift — the eyes end up on the side the
+            // pointer is actually on.
+            #expect(looksLeft < 0, "\(persona) did not look left at a pointer on its left")
+            #expect(looksRight > 0, "\(persona) did not look right at a pointer on its right")
         }
     }
 

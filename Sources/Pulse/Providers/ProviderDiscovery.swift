@@ -20,6 +20,8 @@ extension Provider {
         case .claudeCode:
             return [local(".claude"), local("Library/Application Support/Claude")] + app("Claude")
         case .codex: return [local(".codex")]
+        case .kiro:
+            return [local(".kiro"), local("Library/Application Support/kiro-cli")] + app("Kiro") + app("Kiro CLI")
         case .grok: return [local(".grok")]
         case .grokBot: return app("Grok Bot")
         case .antigravity: return app("Antigravity")
@@ -33,10 +35,14 @@ extension Provider {
             return ["Devin", "Windsurf"].map {
                 local("Library/Application Support/\($0)/User/globalStorage/state.vscdb")
             }
-        case .qoderCN:
-            return [local("Library/Application Support/com.qodercn.app.stable/auth.v1.dat")] + app("Qoder CN")
+        // The editor, either edition. A hint only: what is read is the
+        // browser's session for the account page, not anything the app keeps.
+        case .qoder:
+            return ["Qoder", "QoderCN", "com.qodercn.app.stable"].map { local("Library/Application Support/\($0)") } + app("Qoder") + app("Qoder CN")
+        // sub2api is somebody's own deployment and V2EX is a website; there
+        // is nothing on this Mac that says either is in use.
         case .openAI, .kimiCode, .ollamaCloud, .zai, .minimax, .minimaxCN, .copilot,
-             .volcengine, .deepSeek, .xiaomiMiMo:
+             .volcengine, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex:
             return []
         }
     }

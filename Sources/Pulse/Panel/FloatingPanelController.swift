@@ -21,14 +21,28 @@ final class FloatingPanelController {
     /// nothing: it is transparent, and macOS routes clicks through the
     /// transparent parts of a non-opaque window.
     enum Layout {
-        /// The panel's size for a given dock, which is the only thing about it
-        /// that ever changes — and it changes only when the rail is re-docked
-        /// onto the other axis, never while a card opens. That distinction is
+        /// The panel's size for a given dock and display housing. It changes
+        /// when the axis or screen geometry changes, never while a card opens
+        /// or the notch surface expands. That distinction is
         /// the whole point: growing the window mid-animation moves the
         /// coordinate space the rail is laid out in, so the rail lurches
         /// sideways and slides back every time a card appears. Re-docking
         /// happens under the pointer, with no card open, and has to resize.
-        static func size(for edge: PanelEdge) -> CGSize {
+        ///
+        /// **Whole points, always.** AppKit rounds a window's frame, and
+        /// SwiftUI lays the rail out against the frame it actually got, while
+        /// every hit test measures against this. At 280.44 wide the window
+        /// came out 281: the rail was drawn flush with the screen edge, the
+        /// hit rect stopped 0.56pt short of it, and a pointer pushed against
+        /// the edge — exactly where anyone reaching for a docked rail puts it
+        /// — was "off the panel". The sliver opened on entry and the sampler
+        /// shut it again, over and over. Rounded here, the two cannot differ.
+        static func size(for edge: PanelEdge, notchSize: CGSize? = nil) -> CGSize {
+            let size = unrounded(for: edge, notchSize: notchSize)
+            return CGSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
+        }
+
+        private static func unrounded(for edge: PanelEdge, notchSize: CGSize?) -> CGSize {
             // Card + its pointer + the gap after it, which is the room the
             // card unfolds into whichever way it unfolds.
             let reach = DetailCardLayout.width
@@ -49,8 +63,9 @@ final class FloatingPanelController {
             case .horizontal:
                 return CGSize(
                     // Wide enough for whichever is wider, for the same reason.
-                    width: max(DockLayout.maximumLength(on: .horizontal), DetailCardLayout.width),
+                    width: max(DockLayout.maximumLength(on: .horizontal), DetailCardLayout.width, notchSize?.width ?? 0),
                     height: DockLayout.thickness(on: .horizontal)
+                        + (notchSize?.height ?? 0)
                         + DetailCardLayout.horizontalGap
                         + DetailCardLayout.pointerWidth
                         + DetailCardLayout.maximumHeight
@@ -179,10 +194,13 @@ final class FloatingPanelController {
             DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: edge.axis, docked: docked)
         }
         panel.grabArea = { [settings, store, placement] in
+            if placement.notch != nil && !placement.isRailExpanded { return .zero }
             let size = DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: placement.edge.axis, docked: placement.isDocked)
-            return placement.isRailExpanded
-                ? PanelHitArea.rail(edge: placement.edge, railSize: size, railTop: placement.railTop, railLeading: placement.railLeading)
-                : PanelHitArea.strip(edge: placement.edge, railSize: size, railTop: placement.railTop, railLeading: placement.railLeading)
+            if placement.isRailExpanded {
+                let rail = PanelHitArea.rail(edge: placement.edge, railSize: size, railTop: placement.railTop, railLeading: placement.railLeading)
+                return placement.notch.map { PanelHitArea.notchSurface(rail: rail, notchSize: $0.size) } ?? rail
+            }
+            return PanelHitArea.strip(edge: placement.edge, railSize: size, railTop: placement.railTop, railLeading: placement.railLeading)
         }
         panel.onClick = { [settings, placement, store] point in
             guard placement.isRailExpanded else { return }
@@ -376,6 +394,7 @@ final class FloatingPanelController {
         else { return }
 
         let edge = placement.edge
+        placement.notch = edge == .top ? PanelScreen.notch(of: screen) : nil
         let railSize = DockLayout.size(
             for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }),
             on: edge.axis,
@@ -384,7 +403,7 @@ final class FloatingPanelController {
         let layout = placement.layout(
             in: screen.visibleFrame,
             topEdge: FloatingPanel.topEdge(of: screen),
-            panel: Layout.size(for: edge),
+            panel: Layout.size(for: edge, notchSize: placement.notch?.size),
             rail: railSize
         )
 
@@ -429,6 +448,27 @@ final class FloatingPanelController {
 private final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// **What makes the glass Liquid Glass rather than a frosted blur.** A
+    /// private AppKit question, answered here so the panel's glass always
+    /// renders active.
+    ///
+    /// macOS 26 draws glass in an inactive window as a flat blur with no
+    /// lensing. This panel is inactive almost always: it cannot become key,
+    /// and once Pulse has been active even once (Settings opened, a menu
+    /// used) every window it owns is drawn inactive from the moment another
+    /// app takes over. Measured on 26.7 over busy text: SwiftUI or AppKit
+    /// glass, `.clear` or `.regular`, any size, with `appearsActive` /
+    /// `controlActiveState` forced in the environment, re-ordered or rebuilt
+    /// after deactivation — all frosted. Returning `true` here was refracted,
+    /// readable glass in every case, with `canBecomeKey` still `false`.
+    ///
+    /// Chosen over making the panel key-eligible, which also works until the
+    /// app is first deactivated and would put focus at risk. Private, so it
+    /// may stop being asked: then the glass is frosted again and nothing else
+    /// breaks — the panel has no controls whose look depends on this.
+    @objc(_hasActiveAppearanceIgnoringKeyFocus)
+    private func hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
 
     /// What can be taken hold of, in the panel's own top-left coordinates:
     /// the rail when it is drawn out, its sliver when it is not. Supplied by
@@ -626,7 +666,8 @@ private final class FloatingPanel: NSPanel {
             placement.edge
         }
         let landingRail = railSize?(landing, dock.isDocked) ?? rail
-        let landingPanel = FloatingPanelController.Layout.size(for: landing)
+        let landingNotch = dock.edge == .top ? PanelScreen.notch(of: screen) : nil
+        let landingPanel = FloatingPanelController.Layout.size(for: landing, notchSize: landingNotch?.size)
 
         // Under the pointer, in the new orientation. Carrying the old grab
         // offset across a quarter turn would put the rail somewhere the hand
@@ -672,6 +713,8 @@ private final class FloatingPanel: NSPanel {
             verticalRatio: ratios.v,
             display: PanelScreen.identifier(of: screen)
         )
+
+        placement.notch = landingNotch
 
         // One source of truth for the geometry: ask the placement where that
         // puts things rather than working it out a second way here.

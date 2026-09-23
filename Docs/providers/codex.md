@@ -20,10 +20,6 @@ The two answers have **different field names** (`used_percent` / `limit_window_s
 
 ## Windows
 
-`settings.showsCodexSpark` defaults to false. `CodexDisplay` applies that preference to live and cached readings before Settings and the floating rail consume them. Parsers retain Spark so the switch can restore it immediately. General weekly usage sorts first; `WalletAdapter` never pairs a Spark session with a general weekly window. Changing this display preference does not rewrite the raw cache or its observation time.
-
-The app-server locator checks the bundled CLI in ChatGPT.app and Codex.app before PATH. Finder launches do not inherit the terminal PATH; missing the bundled client previously left a pinned tooling route showing old cached usage.
-
 Never assume a fixed pair. `primary` / `secondary` are not tied to particular durations; which exist depends on the plan — ChatGPT Pro has no 5-hour limit at all, only the tiers below it do. A window’s kind is derived from its duration. The UI renders however many come back.
 
 Codex reports `limit_reached` / `allowed` per group plus top-level `rate_limit_reached_type` and `spend_control.reached`. Those flags describe a whole group, which may hold both a 5-hour and a weekly window, so spent is pinned to the fullest window rather than smeared across both.
@@ -43,6 +39,8 @@ The plan comes back as an internal tier name, not the name on the plan — `prol
 Two layers made it worse than one stuck handler. `ensureRunning` returns early while the process lives and starts a replacement when it does not — but it left the dead one's pipe wired up, so every restart added another spinning thread. It now tears the old reader down first, `shutDown` does the same, and EOF fails whatever was still pending instead of making it wait out the twenty-second timeout. A restart installing a new reader while the old one is still closing is fenced by handle identity, so a stale EOF cannot tear down its replacement.
 
 `VolcengineUsageService` has cleared its handler at EOF since it was written; this path simply never learned it. `CodexAppServerTests` drives the reader against a plain `Pipe`, so it needs no `codex` on the machine.
+
+Each pending RPC owns its 20-second timeout. A reply, write failure, EOF or shutdown completes it once and cancels that task. Request IDs continue across helper restarts, so an old callback cannot complete a new request. Closing the reader discards incomplete JSON, and queued data is accepted only from the current pipe. `RPCRequestLifecycleTests` exercises reconnects and deadlines with isolated subprocesses; it does not call a signed-in Codex.
 
 Locating the executable cannot rely on `PATH`: a GUI app inherits almost none of it. `CodexAppServer.locateCodex` checks usual install locations, including versioned Node directories.
 

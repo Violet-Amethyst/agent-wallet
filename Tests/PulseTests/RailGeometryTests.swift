@@ -15,11 +15,29 @@ import Testing
 /// catch a wrong count — the numbers *are* the bug. So `shownSlotCount` is
 /// called here for real, and the rest pins the geometry that makes agreeing on
 /// it sufficient, at every edge and both dock states.
-@Suite("Rail geometry")
+@Suite("Rail geometry", .serialized)
 struct RailGeometryTests {
     private static let edges: [PanelEdge] = [.left, .right, .top]
     /// One, a handful, and a rail longer than any real one.
     private static let counts = [1, 2, 3, 7, 15, 16]
+
+    /// Runs `body` once per end style.
+    ///
+    /// `AppSettings.usesRoundEnds` picks between two different rails: softened
+    /// ends take a written `verticalPadding` of 46, round ones derive 54 from
+    /// the end's own circle. The invariants below have to hold for both, and
+    /// only one of them is the default — so without this the other ships
+    /// untested. The flag is a global on `PanelMetrics`, which is why the
+    /// suite is serialized and why the original is put back.
+    private func underEachEndStyle(_ body: (String) -> Void) {
+        let original = PanelMetrics.usesRoundEnds
+        defer { PanelMetrics.useRoundEnds(original) }
+
+        for round in [false, true] {
+            PanelMetrics.useRoundEnds(round)
+            body(round ? "round ends" : "softened ends")
+        }
+    }
 
     /// Where the rail's own hit area sits, for a rail of `count` rings.
     private func rail(_ count: Int, _ edge: PanelEdge, docked: Bool) -> CGRect {
@@ -44,17 +62,19 @@ struct RailGeometryTests {
     @MainActor
     @Test("Every ring's centre lies inside the rail it is drawn on")
     func everyRingCentreIsInsideTheRail() {
-        for edge in Self.edges {
-            for docked in [true, false] {
-                for count in Self.counts {
-                    let area = rail(count, edge, docked: docked)
+        underEachEndStyle { style in
+            for edge in Self.edges {
+                for docked in [true, false] {
+                    for count in Self.counts {
+                        let area = rail(count, edge, docked: docked)
 
-                    for index in 0..<count {
-                        let centre = ringCentre(index, in: area, edge, docked: docked)
-                        #expect(
-                            area.contains(centre),
-                            "ring \(index) of \(count), \(edge) edge, docked \(docked)"
-                        )
+                        for index in 0..<count {
+                            let centre = ringCentre(index, in: area, edge, docked: docked)
+                            #expect(
+                                area.contains(centre),
+                                "ring \(index) of \(count), \(edge) edge, docked \(docked), \(style)"
+                            )
+                        }
                     }
                 }
             }
@@ -70,22 +90,47 @@ struct RailGeometryTests {
     func theLastRingIsNotClippedByTheRail() {
         let radius = DockLayout.ringDiameter / 2
 
-        for edge in Self.edges {
-            for docked in [true, false] {
-                for count in Self.counts {
-                    let area = rail(count, edge, docked: docked)
-                    let centre = ringCentre(count - 1, in: area, edge, docked: docked)
-                    let ring = CGRect(
-                        x: centre.x - radius, y: centre.y - radius,
-                        width: radius * 2, height: radius * 2
-                    )
+        underEachEndStyle { style in
+            for edge in Self.edges {
+                for docked in [true, false] {
+                    for count in Self.counts {
+                        let area = rail(count, edge, docked: docked)
+                        let centre = ringCentre(count - 1, in: area, edge, docked: docked)
+                        let ring = CGRect(
+                            x: centre.x - radius, y: centre.y - radius,
+                            width: radius * 2, height: radius * 2
+                        )
 
-                    #expect(
-                        area.contains(ring),
-                        "last of \(count) rings, \(edge) edge, docked \(docked): \(ring) escapes \(area)"
-                    )
+                        #expect(
+                            area.contains(ring),
+                            "last of \(count) rings, \(edge) edge, docked \(docked), \(style): \(ring) escapes \(area)"
+                        )
+                    }
                 }
             }
+        }
+    }
+
+    /// The two rules `DockBerthShape` is drawn against, for both styles.
+    ///
+    /// The corner and the flare share the rail's top and bottom edges, so
+    /// `cornerRadius + flareWidth` may not exceed the width or the body's flat
+    /// edge runs backwards and the outline folds in on itself. And the flare
+    /// lives inside the bounding rect, so padding shorter than it would lay
+    /// the first ring outside the shape and clip it. Neither is visible in a
+    /// hit test, which is what the tests above check.
+    @MainActor
+    @Test("The berth outline cannot fold or clip, whichever ends are drawn")
+    func theBerthOutlineHoldsItsConstraints() {
+        underEachEndStyle { style in
+            #expect(
+                DockLayout.cornerRadius + DockLayout.flareWidth <= DockLayout.width,
+                "\(style): corner and flare overrun the rail's width"
+            )
+            #expect(
+                DockLayout.verticalPadding >= DockLayout.flareHeight,
+                "\(style): the first ring is laid out inside the flare"
+            )
         }
     }
 
@@ -161,6 +206,27 @@ struct RailGeometryTests {
 
                     #expect(hit == slot, "ring \(index), \(edge) edge, docked \(docked)")
                 }
+            }
+        }
+    }
+
+    /// The window's size is whole points at every scale and edge.
+    ///
+    /// AppKit rounds the frame it is given; SwiftUI draws the rail against the
+    /// rounded one while hit tests use this. A fractional width left the last
+    /// half point at the screen edge drawn but dead, and a pointer pushed
+    /// against a docked rail closed it.
+    @Test("The panel's size is whole points", arguments: edges)
+    func panelSizeIsIntegral(edge: PanelEdge) {
+        let original = PanelSize.allCases.first { $0.scale == PanelMetrics.scale } ?? .default
+        defer { PanelMetrics.use(original) }
+
+        underEachEndStyle { style in
+            for size in PanelSize.allCases {
+                PanelMetrics.use(size)
+                let panel = FloatingPanelController.Layout.size(for: edge)
+                #expect(panel.width == panel.width.rounded(), "\(edge) \(size) \(style): width \(panel.width)")
+                #expect(panel.height == panel.height.rounded(), "\(edge) \(size) \(style): height \(panel.height)")
             }
         }
     }

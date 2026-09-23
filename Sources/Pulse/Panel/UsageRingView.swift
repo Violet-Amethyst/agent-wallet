@@ -47,6 +47,13 @@ struct UsageRingView: View {
     /// Whether Pulse is fetching a fresh usage reading. This rotates the
     /// coloured usage arc itself, keeping white reserved for CLI activity.
     var isRefreshing: Bool = false
+    /// Whether `isBusy`/`isRefreshing` are allowed to turn anything.
+    ///
+    /// On by default — see `AppSettings.animatesRingActivity`. Off, the two
+    /// facts above are still tracked but draw nothing extra: no travelling
+    /// mark, no refresh sweep, and the usage arc stays at full opacity while
+    /// a reading is fetched instead of dimming for the turn to sit in.
+    var animatesActivity: Bool = true
     /// Whether this ring's logo is replaced by an animated mark, which is a
     /// per-account choice — see `AppSettings.botMarks`.
     var showsBotMark: Bool = false
@@ -70,7 +77,7 @@ struct UsageRingView: View {
     var botQuiet = false
     /// Whether this ring is the one being pointed at.
     var highlight: Bool = false
-    /// How much of the window has gone by, 0...1, or nil to leave it out.
+    /// How much of the window clock to draw, 0...1, or nil to leave it out.
     ///
     /// Drawn as a thin arc **outside** the usage ring. Outside because the
     /// circle inside is spoken for — the CLI-activity mark rides there — and
@@ -79,7 +86,7 @@ struct UsageRingView: View {
     /// hairline at a different radius reads as a different measurement
     /// without claiming a status of its own, and cannot clash with a colour
     /// somebody chose for the ring.
-    var elapsedFraction: Double?
+    var windowClockFraction: Double?
 
     /// The long-quota ring, drawn **outside** the short one.
     ///
@@ -251,9 +258,9 @@ struct UsageRingView: View {
                 // gauge; turning it takes the reading away for as long as the
                 // refresh lasts, and puts it back with a jump when the spin
                 // stops at whatever angle it had reached.
-                .opacity(isRefreshing ? 0.3 : 1)
+                .opacity(isRefreshing && animatesActivity ? 0.3 : 1)
 
-            if isRefreshing { refreshMark }
+            if isRefreshing && animatesActivity { refreshMark }
 
             if showsBotMark {
                 // The mark has its own unavailable expression; keep it legible
@@ -289,7 +296,7 @@ struct UsageRingView: View {
             // bot's working state are one fact drawn twice, and the white arc
             // is the half that says nothing about which provider it belongs
             // to. The mark keeps it; the arc goes.
-            if isBusy && !showsBotMark {
+            if isBusy && !showsBotMark && animatesActivity {
                 Circle()
                     .trim(from: 0, to: Self.busySweep)
                     .stroke(
@@ -326,11 +333,11 @@ struct UsageRingView: View {
         .accessibilityHidden(true)
     }
 
-    /// How far through the window the clock has run: a hairline outside the
-    /// usage ring, in a neutral rather than a second hue.
+    /// The selected side of the window clock: a hairline outside the usage
+    /// ring, in a neutral rather than a second hue.
     @ViewBuilder
     private var windowClock: some View {
-        if let elapsedFraction {
+        if let windowClockFraction {
             ZStack {
                 // Its own faint track, so an arc a tenth of the way round
                 // still reads as a proportion of something rather than as a
@@ -339,17 +346,17 @@ struct UsageRingView: View {
                     .stroke(Color.primary.opacity(0.16), lineWidth: Self.clockLineWidth * PanelMetrics.scale)
 
                 Circle()
-                    .trim(from: 0, to: elapsedFraction)
+                    .trim(from: 0, to: windowClockFraction)
                     .stroke(
                         Color.primary.opacity(0.7),
                         style: StrokeStyle(lineWidth: Self.clockLineWidth * PanelMetrics.scale, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
                     // It moves in minutes, so it is never worth animating from
-                    // one reading to the next — but a window that has just
-                    // reset drops from full to nothing, and that should not
-                    // look like a glitch.
-                    .animation(.easeOut(duration: 0.35), value: elapsedFraction)
+                    // one reading to the next — but a reset jumps between the
+                    // two ends in either direction, and should not look like a
+                    // glitch.
+                    .animation(.easeOut(duration: 0.35), value: windowClockFraction)
             }
             .frame(width: clockDiameter, height: clockDiameter)
         }

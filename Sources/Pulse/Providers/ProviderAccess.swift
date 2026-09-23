@@ -9,6 +9,10 @@ extension Provider {
             .localized("Reads Claude Code's saved login from Keychain or its credentials file. May ask for Keychain access, including Claude Desktop's cookie storage.")
         case .codex:
             .localized("Reads ~/.codex/auth.json and may run codex app-server with its saved login. Pulse does not request Keychain access.")
+        case .openAI:
+            .localized("Uses the API key or browser session entered in Settings. No Keychain prompt.")
+        case .kiro:
+            .localized("Runs Kiro CLI's native ACP usage method with its saved login. Pulse does not read or store Kiro credentials.")
         case .antigravity:
             .localized("Reads the running editor's local language server and connection token. No Keychain prompt.")
         case .cursor, .grokBot:
@@ -25,16 +29,16 @@ extension Provider {
             .localized("Reads Devin's web login from local Chromium browsers without a prompt; may also read the desktop app's saved plan.")
         case .volcengine:
             .localized("Runs arkcli with its saved login, or uses access keys entered in Settings. Pulse does not request Keychain access.")
-        case .ollamaCloud, .xiaomiMiMo:
+        case .ollamaCloud, .xiaomiMiMo, .qoder:
             .localized("Uses a browser session you import in Settings. Importing may ask for browser Keychain access.")
         case .copilot:
             .localized("Uses the GitHub login you connect in Settings. No Keychain prompt.")
-        case .qoderCN:
-            .localized("Reads Qoder CN's saved login. macOS may ask for keychain access.")
-        case .openAI:
-            .localized("Uses the API key or browser session entered in Settings. No Keychain prompt.")
-        case .kimiCode, .zai, .minimax, .minimaxCN, .deepSeek:
+        case .kimiCode, .zai, .minimax, .minimaxCN, .deepSeek, .v2ex:
             .localized("Uses only the API key you enter in Settings. No Keychain prompt.")
+        // The one provider whose address is the reader's own, so the sentence
+        // says where the key goes: nowhere but the server they named.
+        case .sub2api, .newAPI:
+            .localized("Sends the key you enter only to the server address you enter. No Keychain prompt.")
         }
     }
 }

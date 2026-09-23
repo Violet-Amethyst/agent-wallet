@@ -6,6 +6,7 @@ enum UsageRoute: String, Codable, Sendable {
     case statusLine
     case desktopSession
     case appServer
+    case kiroACP
     case languageServer
     case webSession
     case arkCLI
@@ -19,6 +20,7 @@ enum UsageRoute: String, Codable, Sendable {
         case .statusLine: .localized("Claude Code status line")
         case .desktopSession: .localized("Desktop app session")
         case .appServer: .localized("Codex app server")
+        case .kiroACP: .localized("Kiro CLI ACP")
         case .languageServer: .localized("Local language server")
         case .webSession: .localized("Signed-in web page")
         case .arkCLI: "arkcli"
@@ -30,12 +32,14 @@ enum UsageRoute: String, Codable, Sendable {
     static func soleRoute(for account: AccountKey) -> UsageRoute? {
         if !account.isPrimary { return .endpoint }
         switch account.provider {
-        case .claudeCode, .codex, .volcengine, .deepSeek, .qoderCN, .devin: return nil
+        case .claudeCode, .codex, .volcengine, .deepSeek, .devin: return nil
         case .antigravity: return .languageServer
-        // Both read a signed-in browser session rather than a key.
-        case .ollamaCloud, .xiaomiMiMo: return .webSession
+        // All three read a signed-in browser session rather than a key.
+        case .ollamaCloud, .xiaomiMiMo, .qoder: return .webSession
+        case .kiro: return .kiroACP
         case .cursor, .openAI, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax,
-             .minimaxCN, .copilot, .grok, .grokBot, .commandCode:
+             .minimaxCN, .copilot, .grok, .grokBot, .commandCode,
+             .sub2api, .newAPI, .v2ex:
             return .endpoint
         }
     }

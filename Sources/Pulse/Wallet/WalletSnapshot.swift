@@ -413,24 +413,24 @@ enum WalletAdapter {
 
     private static func isQuota(_ window: UsageWindow) -> Bool {
         switch window.kind {
-        case .fiveHour, .daily, .weekly, .monthly, .messages, .other: true
+        case .fiveHour, .daily, .weekly, .monthly, .messages, .other, .topUp, .credits, .sharedCredits: true
         case .spend, .balance: false
         }
     }
 
     private static func isShort(_ window: UsageWindow) -> Bool {
         switch window.kind {
-        case .fiveHour, .daily, .messages: true
+        case .fiveHour, .daily, .messages, .credits: true
         case .other(let seconds): seconds <= shortCeiling
-        case .weekly, .monthly, .spend, .balance: false
+        case .weekly, .monthly, .topUp, .sharedCredits, .spend, .balance: false
         }
     }
 
     private static func isLong(_ window: UsageWindow) -> Bool {
         switch window.kind {
-        case .weekly, .monthly: true
+        case .weekly, .monthly, .topUp, .sharedCredits: true
         case .other(let seconds): seconds > shortCeiling
-        case .fiveHour, .daily, .messages, .spend, .balance: false
+        case .fiveHour, .daily, .messages, .credits, .spend, .balance: false
         }
     }
 }

@@ -158,9 +158,10 @@ extension Provider {
         // The same sign-in would work, but Cursor's usage summary is read
         // from the editor's own stored login and a second account has no
         // editor behind it. Grok Bot needs nothing but the token.
-        case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
-             .commandCode, .deepSeek, .qoderCN, .devin, .xiaomiMiMo: false
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
+             .v2ex, .qoder: false
         }
     }
 }

@@ -7,6 +7,80 @@ shows in the update window — see [Scripts/changelog.py](Scripts/changelog.py).
 Add the entry **before** tagging, in the small grammar the converter knows:
 bullets, `**bold**`, `` `code` `` and `[links](https://example.com)`.
 
+## 1.4.0
+
+**中文**
+
+**新功能**
+
+- **新增 Sub2API、New API、V2EX 和 Qoder，服务商增至二十四个。** 两个自建网关填入服务器地址和密钥即可读取余额或额度；V2EX 使用个人访问令牌读取 AI Chat 额度；Qoder 从浏览器读取 qoder.com 或 qoder.com.cn 的登录，显示积分额度，团队套餐的共享积分单独一个圆环。感谢 [@momusticks](https://github.com/qunqin24/Pulse/issues/59) 提议。
+- **真正的液态玻璃。** 开启后面板是透明、带折射的 macOS 26 液态玻璃，不再是一层磨砂；文字改为白色，并新增「透明度」滑块，可按常用背景调节玻璃明暗。设置中的名称也改回「液态玻璃」。
+- **时间圆环可以倒数。** 「距离重置的时间」的外圈可选「已过去」或「剩余」，剩余模式从满圈逐渐缩短到重置。感谢 [@Steven-oyjb](https://github.com/qunqin24/Pulse/pull/44)。
+- **Kiro 与 ZCode 也会显示工作动画。** Pulse 读取它们在本机写下的会话记录判断任务是否进行中；ZCode 只在配置的接口属于智谱或 z.ai 时才驱动对应圆环。感谢 [@guanbear](https://github.com/qunqin24/Pulse/pull/56)。
+- **设置按主题拆分成多个页面。** 外观、圆环与数字、位置与行为、通用、通知、网络与刷新各自独立；侧边栏搜索也能按设置项名称找到所在页面。
+- **每个服务都有配置指南。** 设置里的「配置帮助」现在打开专门写给用户的页面：密钥或登录从哪里获取、填到哪里、常见报错怎么处理。
+
+**改进与修复**
+
+- **贴边时鼠标推到屏幕最边缘不再误判离开。** 之前开启自动收起时，指针贴着边缘会让胶囊反复展开又收起。
+- **切换卡片更顺滑。** 高度不同的卡片之间切换时，新增的一行不再先于卡片出现在外面；快速扫过圆环时也不会看到空卡片。
+- **小机器人不再偶尔瞬移。** 庆祝转圈或变形动作被中途打断时，身体会平滑过渡，不再在一帧内跳转。
+- **Token 消耗：同名项目分开统计，无定价用量不再显示 $0.00。** 不同路径下的同名目录不再合并成一行；无法定价的会话和项目显示「—」或带 `*` 的小计。感谢 [@tech-zjf](https://github.com/qunqin24/Pulse/pull/57)（[#58](https://github.com/qunqin24/Pulse/pull/58)）。
+
+**English**
+
+**New**
+
+- **Sub2API, New API, V2EX and Qoder bring the count to twenty-four providers.** Both self-hosted gateways read a balance or allowance from a server address and key you enter; V2EX reads its AI Chat allowance with a Personal Access Token; Qoder reads your qoder.com or qoder.com.cn sign-in from the browser and shows your credits, with a team plan's shared credits as a ring of their own. Thanks to [@momusticks](https://github.com/qunqin24/Pulse/issues/59) for asking.
+- **Real Liquid Glass.** With glass on, the panel is clear, refracting macOS 26 Liquid Glass rather than a frosted layer. Text is drawn white, and a new **Transparency** slider sets how much the glass is dimmed for the backgrounds you usually work over. The setting is called Liquid Glass again in every language.
+- **The window clock can count down.** The outer arc of **Time until reset** can show time elapsed or time remaining; remaining starts full and empties toward the reset. Thanks to [@Steven-oyjb](https://github.com/qunqin24/Pulse/pull/44).
+- **Kiro and ZCode show activity too.** Pulse reads the session records they leave on this Mac to tell whether a turn is in flight; ZCode drives a ring only when its configured endpoint belongs to Zhipu or z.ai. Thanks to [@guanbear](https://github.com/qunqin24/Pulse/pull/56).
+- **Settings are split by subject.** Appearance, Rings and figures, Position and behavior, General, Notifications, and Network and refresh each have their own pane, and the sidebar search finds a pane by the names of its settings.
+- **Every provider has a setup guide.** **Setup help** now opens a page written for users: where the key or login comes from, where it goes in Pulse, and what each error means.
+
+**Changed and fixed**
+
+- **A pointer pushed against the screen edge no longer counts as leaving a docked rail.** With auto-collapse on, it used to open and close the rail over and over.
+- **Switching cards is smoother.** An added row no longer appears outside a card that has not grown yet, and sweeping across the rings no longer shows an empty card.
+- **The animated mark no longer jumps.** A celebration spin or a shape change interrupted mid-motion now eases into the next state instead of snapping in one frame.
+- **Token spend keeps same-name projects apart and stops showing unpriced use as $0.00.** Directories with the same name at different paths are no longer merged, and sessions or projects that cannot be priced show `—` or a subtotal marked `*`. Thanks to [@tech-zjf](https://github.com/qunqin24/Pulse/pull/57) ([#58](https://github.com/qunqin24/Pulse/pull/58)).
+
+## 1.3.1
+
+**中文**
+
+**新功能**
+
+- **Kiro 成为第二十个服务商。** Pulse 通过 Kiro CLI 自带的 ACP 接口读取当前账号的方案与额度，无需额外登录或复制凭据；同一响应里的多个额度会分别显示，并保持稳定的账号身份。
+- **浮动栏可以贴合刘海。** 顶部停靠时会围住刘海并延伸到屏幕边缘，在有刘海和无刘海的屏幕间移动时自动采用对应形状；警报提示改画在刘海下方，不会再被屏幕缺口遮住。
+- **菜单栏图标可以隐藏。** 可只用浮动栏或全局快捷键进入 Pulse。设置会保证始终至少留有一个可用入口；`Command-,` 也会直接打开设置。
+- **更多外观与动画开关。** 可关闭浮动栏警报颜色、CLI 活动动画和刷新动画，并让浮动栏两端保持与圆环一致的柔和曲线。
+
+**改进与修复**
+
+- **未选择显示的服务不会再偷偷读取。** Pulse 只扫描已监控服务的本机 CLI 活动；关闭显示的服务在设置里明确标为“未显示”，也无法从诊断页触发刷新。
+- **Kiro 额度顺序变化不再打乱账号。** 额度身份改用 Kiro 返回的资源类型，不再依赖数组位置，因此重排后仍会保留各自的显示设置和历史。
+- **修复辅助进程重启后的错误超时。** Codex 和 Kiro 的旧请求计时器不会再结束新一轮同编号请求，也不会让已经完成的请求留下延迟报错。
+- **隐藏菜单栏图标时不会把自己锁在应用外。** 如果浮动栏不可用且快捷键没有成功注册，Pulse 会自动恢复菜单栏入口；首次选择服务前也不会允许隐藏唯一入口。
+- **修正 GLM 服务图标与发布构建检查。** 两个 GLM 区域使用一致的服务标识；构建命令不再重复覆盖 Swift 语言模式，避免把无效警告当作发布失败。
+
+**English**
+
+**New**
+
+- **Kiro is the twentieth provider.** Pulse reads the current plan and allowances through the ACP service built into Kiro CLI, with no extra sign-in or copied credential. Multiple allowances in one response remain separate and keep stable account identities.
+- **The rail can berth around the notch.** A top-docked rail wraps the notch and reaches the screen edge, adapting as it moves between displays with and without a notch. Its alert cue is drawn below the cutout where it remains visible.
+- **The menu bar icon can be hidden.** Pulse can be reached through the floating rail or global shortcuts alone. Settings always preserve at least one working entry point, and `Command-,` opens Settings directly.
+- **More appearance and motion controls.** The docked alert colour, CLI activity animation and refresh animation can each be disabled, while the rail can keep ends softened to the rings' own curve.
+
+**Changed and fixed**
+
+- **Providers that are not selected are no longer read.** Pulse scans local CLI activity only for watched providers. A hidden provider is labelled “Not shown” in Settings and cannot be refreshed from diagnostics.
+- **Kiro allowance ordering no longer changes account identity.** Allowances use the resource type returned by Kiro instead of their array position, preserving display choices and history when the response is reordered.
+- **Fixed false timeouts after helper restarts.** Old Codex and Kiro request timers can no longer finish a newer request that reused the same identifier, or report a late failure after a request already completed.
+- **Hiding the menu bar icon cannot lock the user out.** Pulse restores the menu bar entry if the rail is unavailable and no shortcut registered successfully, and keeps the sole entry visible until the first provider selection is complete.
+- **Corrected the GLM provider marks and the release build check.** Both GLM regions now use a consistent provider identity, and build commands no longer override the package's Swift language mode and turn a redundant warning into a failed release.
+
 ## 1.3.0
 
 **中文**
@@ -71,7 +145,6 @@ bullets, `**bold**`, `` `code` `` and `[links](https://example.com)`.
 - **The bot's eyes stay inside its face.** The expression's own glance, the edge lean and the random glances stacked up and pushed an eye past the silhouette, where it was clipped — which read as a mark with one eye.
 - **Rewrote the Chinese copy for the bot settings**, which had been translated word by word from the English.
 
->>>>>>> f16304e (Pulse 1.3.0)
 ## 1.2.0
 
 **中文**

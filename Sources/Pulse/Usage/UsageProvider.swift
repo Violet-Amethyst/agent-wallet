@@ -9,6 +9,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     case claudeCode
     case codex
     case openAI
+    case kiro
     case antigravity
     case cursor
     case openCodeGo
@@ -24,9 +25,12 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     case volcengine
     case commandCode
     case deepSeek
-    case qoderCN
     case devin
     case xiaomiMiMo
+    case sub2api
+    case newAPI
+    case v2ex
+    case qoder
 
     var id: String { rawValue }
 
@@ -36,6 +40,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .claudeCode: "Claude Code"
         case .codex: "Codex"
         case .openAI: "OpenAI"
+        case .kiro: "Kiro"
         case .antigravity: "Antigravity"
         case .cursor: "Cursor"
         case .openCodeGo: "OpenCode Go"
@@ -43,14 +48,9 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .ollamaCloud: "Ollama Cloud"
         // Two entries rather than one with a region switch, because they are
         // two accounts on two services: a key for one is refused by the other,
-        // and plenty of people have only one of them.
-        // **Named for the two shops, not for the product.** Both sell the
-        // same thing under the same name — "GLM Coding Plan" — so a row
-        // called that is a row half the buyers will pick wrongly: an
-        // international subscriber chose it, pasted a z.ai key, and had it
-        // sent to the mainland service, which refused it (issue #13). The
-        // company is the one thing that differs and the one thing a buyer
-        // knows, so it is the whole name.
+        // and the choice belongs to where you bought it rather than how you run it.
+        // The display names use the English spelling GLM-Coding's own landing
+        // page uses.
         case .zai: "z.ai"
         case .glmCoding: "Zhipu"
         // Same product, two storefronts and two accounts. There is no separate
@@ -78,7 +78,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // The shop, not the model family: the balance belongs to the account
         // and is spent across whatever the key is pointed at.
         case .deepSeek: "DeepSeek"
-        case .qoderCN: "Qoder"
         // Cognition's agent. The Mac app is the renamed Windsurf editor and
         // still identifies itself as `com.exafunction.windsurf`, but the plan,
         // the quota and the account are Devin's, and Devin is what the reader
@@ -90,6 +89,27 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // denominator and the thing the buyer signed up for. "Xiaomi MiMo"
         // would name the platform and leave the two products sharing a row.
         case .xiaomiMiMo: "Xiaomi Coding Plan"
+        // The gateway's own name, lower case, as the project writes it. Not
+        // "Relay" or "中转站": those name the *kind* of thing, which would be
+        // the one row a second gateway could not be added beside — and the
+        // rule here is that a ring is named for the product behind it.
+        // The operator of somebody's deployment may never have said what it
+        // runs; the reply's own field names are what identify it.
+        case .sub2api: "sub2api"
+        // The project's own name, spaced as its README writes it. Not
+        // "NewAPI" and not "new-api", which are the repository and the Docker
+        // image rather than what the thing is called.
+        case .newAPI: "New API"
+        // The site, not "AI Chat". The allowance is granted to the V2EX
+        // account and sized from what that account has done there — years of
+        // top-ups, and a Solana balance — so it belongs to the membership
+        // rather than to a product bought separately.
+        case .v2ex: "V2EX"
+        // The product, as its own site writes it. One entry for both sites:
+        // unlike MiniMax's two storefronts these are one product sold under
+        // one name, and the site is a setting of the account rather than a
+        // second thing somebody subscribes to (`QoderSite`).
+        case .qoder: "Qoder"
         }
     }
 
@@ -100,18 +120,17 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .claudeCode: "claude"
         case .codex: "openai"
         case .openAI: "openai"
+        case .kiro: "kiro"
         case .antigravity: "antigravity"
         case .cursor: "cursor"
         case .openCodeGo: "opencode"
         case .kimiCode: "kimi"
         case .ollamaCloud: "ollama"
-        case .zai: "zai"
-        // 清言's mark, not the corporate Zhipu one. Both rows are the same
-        // company's two storefronts, so the mark is the only thing telling
-        // them apart on the rail — and the corporate logo is a wordmark-ish
-        // glyph that reads as "the same company as the other row" rather than
-        // as a different row.
-        case .glmCoding: "qingyan"
+        // One mark for both storefronts, the way MiniMax's two rows share
+        // theirs. The rail stops distinguishing them: the ring names do it,
+        // and those are only read on the card. Deliberate — a rail carrying
+        // both rows shows one mark twice.
+        case .zai, .glmCoding: "zai"
         // One mark for both, since there is only one brand. Two accounts of one
         // provider already share a mark on the rail; this is the same case.
         case .minimax, .minimaxCN: "minimax"
@@ -126,7 +145,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // smudge, and this is the mark the product is recognised by anyway.
         case .commandCode: "commandcode"
         case .deepSeek: "deepseek"
-        case .qoderCN: "qoder"
         case .devin: "devin"
         // Xiaomi publishes no symbol for MiMo — the mark is a two-line
         // "Xiaomi / MiMo" lockup and that is what the console's own favicon
@@ -134,18 +152,28 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // does not use; at ring size it reads as a shape rather than as words,
         // which is the trade for being the real mark.
         case .xiaomiMiMo: "xiaomimimo"
+        // The interlocking mark from the project's own logo, without the
+        // badge it is drawn on: a rounded square goes grey at ring size and
+        // the rail already sets every mark on the same ground.
+        case .sub2api: "sub2api"
+        // **The brand mark, not the one in New API's own web UI.** That one
+        // is the command-key glyph, which is exactly what Command Code's mark
+        // already is — two rings a reader could not tell apart, which is the
+        // one thing a rail of logos must not do. This is the project's own
+        // logo reduced to a monochrome outline: two crescents and the spark
+        // between them.
+        case .newAPI: "newapi"
+        case .v2ex: "v2ex"
+        case .qoder: "qoder"
         }
     }
 
     /// Whether this agent leaves transcripts on disk that Pulse can read.
     ///
     /// The two CLIs write one JSONL file per session, carrying both the token
-    /// counts every local figure is built from and the turn boundaries the
-    /// activity mark is read from. Antigravity is an editor rather than a CLI
-    /// and keeps no such record, so anything derived from transcripts — the
-    /// spending history, the estimated value of a window, the "working right
-    /// now" mark — simply doesn't apply to it and is left out rather than
-    /// shown as zero.
+    /// counts every local spend figure is built from. This is intentionally
+    /// narrower than `supportsLocalActivity`: lifecycle-only records can drive
+    /// an honest activity mark without being usable for a cost estimate.
     var keepsLocalTranscripts: Bool {
         switch self {
         case .claudeCode, .codex: true
@@ -154,9 +182,24 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // its own store rather than the JSONL both CLIs above write, so the
         // ledger cannot read it yet. False here means "no history shown",
         // which is true today and better than a column of zeroes.
-        case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-             .volcengine, .commandCode, .deepSeek, .qoderCN, .devin, .xiaomiMiMo: false
+             .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api,
+             .newAPI, .v2ex, .qoder: false
+        }
+    }
+
+    /// Whether Pulse can determine that this provider's local agent is in the
+    /// middle of a turn. This is deliberately separate from
+    /// `keepsLocalTranscripts`: Kiro and ZCode leave enough lifecycle records
+    /// for an activity mark, but not the token buckets the spend ledger needs.
+    var supportsLocalActivity: Bool {
+        switch self {
+        case .claudeCode, .codex, .kiro, .zai, .glmCoding: true
+        case .openAI, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+             .minimax, .minimaxCN, .copilot, .grok, .grokBot, .volcengine,
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo,
+             .sub2api, .newAPI, .v2ex, .qoder: false
         }
     }
 
@@ -201,9 +244,9 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     var hasSourceChoice: Bool {
         switch self {
         case .claudeCode, .codex, .volcengine, .devin: true
-        case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-             .commandCode, .deepSeek, .qoderCN, .xiaomiMiMo: false
+             .commandCode, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder: false
         }
     }
 
@@ -226,9 +269,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .cursor:
             (String.localized("Cursor's own login"),
              String.localized("Uses the login Cursor already saved."))
-        case .qoderCN:
-            (String.localized("Qoder CN's own login"),
-             String.localized("Reads Qoder CN's saved login. macOS may ask for keychain access."))
         case .grok:
             (String.localized("Grok's own login"),
              String.localized("Uses the login Grok's CLI already saved."))
@@ -238,11 +278,14 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .grokBot:
             (String.localized("Cursor's own login"),
              String.localized("Grok Bot is billed to your Cursor account."))
+        case .kiro:
+            (String.localized("Kiro CLI ACP"),
+             String.localized("Uses Kiro CLI's signed-in session without reading its credentials."))
         // Either a choice of routes, or a key the user pastes: both are asked
         // about elsewhere, so there is nothing here to state.
         case .claudeCode, .codex, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
-             .commandCode, .deepSeek, .devin, .xiaomiMiMo:
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder:
             nil
         }
     }
@@ -254,7 +297,8 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// anyone on the plan who doesn't run the CLI on this Mac.
     var usesAPIKey: Bool {
         [.openAI, .openCodeGo, .kimiCode, .ollamaCloud, .zai, .glmCoding, .minimax, .minimaxCN, .volcengine,
-         .commandCode, .deepSeek, .devin, .xiaomiMiMo].contains(self)
+         .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
+         .v2ex, .qoder].contains(self)
     }
 
     /// Whether this Mac can see the thing this provider is billing for.
@@ -264,7 +308,20 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// through an API on somebody else's servers: nothing local moves when it
     /// drains, so `AdaptiveRefresh`'s signals are blind to it and it would sit
     /// on the ceiling for ever. See `AdaptiveRefresh.unwatchedCeiling`.
-    var spendingIsWatchedLocally: Bool { !reportsSpendableBalance }
+    var spendingIsWatchedLocally: Bool {
+        // Money spent through an API on somebody else's servers: the shape
+        // this rule was written for.
+        if reportsSpendableBalance { return false }
+        // **V2EX is the exception the money test cannot see.** Its allowance
+        // is counted in tokens rather than in currency, so the test above says
+        // nothing about it — and it is spent in a browser on v2ex.com, which
+        // moves nothing on this Mac. Its window does not even turn over on a
+        // clock: V2EX starts one when a message arrives *there*. So neither
+        // half of "watched" holds, and inheriting `true` from a test about
+        // currency would leave it half an hour behind a window it never saw
+        // start. See `AdaptiveRefresh.unwatchedCeiling`.
+        return self != .v2ex
+    }
 
     /// Whether this provider reports a prepaid balance that can be compared
     /// against a figure — so a "warn me below" line is worth offering.
@@ -273,7 +330,24 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// a display string and Codex's is sometimes the word "Unlimited". This is
     /// the shorter list that also hands over `creditRemaining`, which is a
     /// number and a currency.
-    var reportsSpendableBalance: Bool { [.deepSeek, .commandCode].contains(self) }
+    /// sub2api joins them for its wallet groups, which are the same thing
+    /// under another name: money in an account, spent by the call, with no
+    /// allowance behind it. Its quota and subscription groups report no
+    /// wallet, and this asks about the provider rather than about one
+    /// reading — a group with no balance simply never hands one over.
+    var reportsSpendableBalance: Bool {
+        [.deepSeek, .commandCode, .sub2api, .newAPI].contains(self)
+    }
+
+    /// Whether this provider is somebody's own deployment, so Pulse has to be
+    /// **told where it is** before it can ask anything.
+    ///
+    /// The only two, and the reason `GatewayAddress` exists: every other
+    /// provider here ships its host, while these can be pointed at any machine
+    /// on the internet with a credential attached. What Settings draws an
+    /// address field for, and what `AppSettings.serverAddress(for:)` is keyed
+    /// by.
+    var usesServerAddress: Bool { [.sub2api, .newAPI].contains(self) }
 
     /// Whether the pasted credential is a **pair** rather than one token.
     ///
@@ -289,11 +363,12 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// signed-in settings page — so a session is the only credential there is,
     /// and calling it an API key in Settings would send people looking for one
     /// that does not exist.
-    ///
     /// Xiaomi joins it for the same reason: the platform's API keys buy
     /// inference and answer none of the console's account routes, so the plan
     /// and the balance are behind the web session and nothing else.
-    var usesSessionCookie: Bool { self == .ollamaCloud || self == .xiaomiMiMo }
+    /// Qoder is the third: it publishes no usage API at all, and its account
+    /// page reads its credits with the signed-in session.
+    var usesSessionCookie: Bool { [.ollamaCloud, .xiaomiMiMo, .qoder].contains(self) }
 
     /// Whether this provider's credential is read out of a browser rather than
     /// out of another tool's files.
@@ -313,5 +388,5 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// and reading `usesAPIKey` where the *storage* was meant is what left a
     /// signed-in account reporting "sign in again": the token was saved and
     /// then never loaded back for the fetch.
-    var keepsOwnCredential: Bool { usesAPIKey || usesSessionCookie || self == .copilot }
+    var keepsOwnCredential: Bool { usesAPIKey || self == .copilot }
 }

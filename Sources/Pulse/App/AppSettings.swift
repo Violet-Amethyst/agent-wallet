@@ -14,6 +14,20 @@ final class AppSettings {
         }
     }
 
+    /// Whether Pulse removes its menu bar icon.
+    ///
+    /// Off by default so existing installs keep the current entry point. This
+    /// setting deliberately does not call `onChange`: the status item reacts
+    /// through its dedicated callback, and changing it must not trigger a
+    /// provider refresh.
+    var hidesMenuBarIcon: Bool {
+        didSet {
+            guard hidesMenuBarIcon != oldValue else { return }
+            UserDefaults.standard.set(hidesMenuBarIcon, forKey: Key.hidesMenuBarIcon)
+            onMenuBarIconChange?()
+        }
+    }
+
     /// Whether the floating panel stays out of other apps' full-screen Spaces.
     ///
     /// On by default: a usage glance is useful on the desktop, but sitting over
@@ -116,6 +130,43 @@ final class AppSettings {
         }
     }
 
+    /// Which Qoder site the saved session belongs to.
+    ///
+    /// `qoder.com` and `qoder.com.cn` are two sign-ins on two hosts, and a
+    /// session for one is refused by — and must never be sent to — the other.
+    /// So the site decides both where the browser is asked for cookies and
+    /// where the request goes, and changing it discards the session saved for
+    /// the old one (Settings does that). A scalar, like DeepSeek's settings
+    /// beside it, because Qoder has no second account.
+    var qoderSite: QoderSite {
+        didSet {
+            guard qoderSite != oldValue else { return }
+            UserDefaults.standard.set(qoderSite.rawValue, forKey: Key.qoderSite)
+            onChange?()
+        }
+    }
+
+    /// Where Pulse sends a self-hosted gateway's request, per account.
+    ///
+    /// sub2api and New API are somebody's own deployments, so unlike every
+    /// other provider here there is no address to ship: these are typed.
+    /// Stored as the reader wrote it and checked on the way out
+    /// (`GatewayAddress`), so a half-typed address never becomes a request and
+    /// is never quietly rewritten into one. Empty until they say.
+    ///
+    /// **Keyed by account id, like `sources` and `sessionBrowsers`**, rather
+    /// than a scalar per provider. It was a scalar while sub2api was the only
+    /// one; a second gateway turned "the address" into "*whose* address", and
+    /// a shape that cannot hold two is the shape that quietly gives one
+    /// provider the other's host.
+    var serverAddresses: [String: String] {
+        didSet {
+            guard serverAddresses != oldValue else { return }
+            UserDefaults.standard.set(serverAddresses, forKey: Key.serverAddresses)
+            onChange?()
+        }
+    }
+
     /// Warn when a prepaid balance falls below this much, per account.
     ///
     /// Empty is off, which is how it ships — the same rule every other alert
@@ -184,17 +235,7 @@ final class AppSettings {
     var orderedAccounts: [AccountKey] {
         let known = allAccounts
         let stored = providerOrder.compactMap(AccountKey.init(id:)).filter(known.contains)
-        var ordered = stored + known.filter { !stored.contains($0) }.sorted(by: byName)
-        // Insert this newly supported account beside OpenCode Go. An order
-        // that already mentions it is the user's own and takes precedence.
-        let qoder = AccountKey(.qoderCN)
-        if !stored.contains(qoder), let position = ordered.firstIndex(of: qoder) {
-            ordered.remove(at: position)
-            if let openCode = ordered.firstIndex(of: AccountKey(.openCodeGo)) {
-                ordered.insert(qoder, at: openCode + 1)
-            } else { ordered.append(qoder) }
-        }
-        return ordered
+        return stored + known.filter { !stored.contains($0) }.sorted(by: byName)
     }
 
     /// The order accounts fall into before anybody has arranged them: **by the
@@ -362,7 +403,7 @@ final class AppSettings {
     /// keyed by account. A missing entry means the logo, which is the default.
     ///
     /// **Per account, not one switch for the rail.** A logo says which of
-    /// eighteen products a ring belongs to, and a mark gives that up for
+    /// twenty products a ring belongs to, and a mark gives that up for
     /// motion — which is a trade worth making for the two or three rings
     /// somebody actually watches work, and not for the rest. Per account
     /// rather than per provider for the same reason `ringTints` is: two
@@ -557,6 +598,33 @@ final class AppSettings {
         }
     }
 
+    /// Whether the rail's ends are half circles taken from the ring, rather
+    /// than softened corners of their own.
+    ///
+    /// Off by default, which is the rail as it has always been drawn: 26pt
+    /// superellipse corners and a flatter 24 x 38 flare into the screen edge.
+    /// On, one circle sets every curve on the panel — each end becomes a half
+    /// circle of half the rail, the flare is that same circle turned inside
+    /// out so the two meet as a single S-curve, and the card's tail leaves
+    /// the card along its edge instead of at an angle.
+    ///
+    /// One switch rather than three, because the three are one idea. Split up
+    /// they would let a round end sit on the old end padding, which puts the
+    /// first ring hard against the curve it is supposed to be centred in.
+    ///
+    /// Set on `PanelMetrics` before the change is announced, like the other
+    /// rail metrics: the two styles sit the end ring differently, so the rail
+    /// is 16pt longer with round ends and whoever reacts is about to measure
+    /// it.
+    var usesRoundEnds: Bool {
+        didSet {
+            guard usesRoundEnds != oldValue else { return }
+            PanelMetrics.useRoundEnds(usesRoundEnds)
+            UserDefaults.standard.set(usesRoundEnds, forKey: Key.usesRoundEnds)
+            onChange?()
+        }
+    }
+
     /// Whether each ring also shows how far through its window the clock is.
     ///
     /// Off by default. It is a genuinely useful second reading — 80% spent a
@@ -574,6 +642,30 @@ final class AppSettings {
             UserDefaults.standard.set(showsWindowClock, forKey: Key.showsWindowClock)
         }
     }
+
+    /// Whether the outer clock arc fills with elapsed time or empties with the
+    /// time remaining. Elapsed is the persisted fallback so existing installs
+    /// keep the display they chose before this direction setting existed.
+    var windowClockDirection: WindowClockDirection {
+        didSet {
+            guard windowClockDirection != oldValue else { return }
+            Self.storeWindowClockDirection(windowClockDirection, in: .standard)
+        }
+    }
+
+    static func storedWindowClockDirection(in defaults: UserDefaults) -> WindowClockDirection {
+        defaults.string(forKey: Key.windowClockDirection)
+            .flatMap(WindowClockDirection.init(rawValue:)) ?? .default
+    }
+
+    static func storeWindowClockDirection(
+        _ direction: WindowClockDirection,
+        in defaults: UserDefaults
+    ) {
+        defaults.set(direction.rawValue, forKey: Key.windowClockDirection)
+    }
+
+    static var windowClockDirectionDefaultsKey: String { Key.windowClockDirection }
 
     /// Show what is **left** rather than what is gone.
     ///
@@ -614,6 +706,25 @@ final class AppSettings {
         didSet {
             guard warningThreshold != oldValue else { return }
             UserDefaults.standard.set(warningThreshold.rawValue, forKey: Key.warningThreshold)
+        }
+    }
+
+    /// Whether the collapsed sliver takes on `warningThreshold`'s colour when
+    /// a limit is close.
+    ///
+    /// On by default. A rail full of accounts that all cross the threshold at
+    /// once turns the sliver into a permanent coloured line against the
+    /// screen edge — off locks it to its normal, alert-free colour, the same
+    /// one it would draw with nothing to report. The rings are unaffected:
+    /// this only touches the sliver `FloatingUsagePanelView.alertTint` feeds
+    /// `UsageDockView`.
+    ///
+    /// No `onChange?()`: nothing about the panel's frame depends on it, the
+    /// same as `warningThreshold`.
+    var dockShowsAlertColor: Bool {
+        didSet {
+            guard dockShowsAlertColor != oldValue else { return }
+            UserDefaults.standard.set(dockShowsAlertColor, forKey: Key.dockShowsAlertColor)
         }
     }
 
@@ -719,6 +830,23 @@ final class AppSettings {
         }
     }
 
+    /// How clear the glass is, 0 to 1: how little of `PanelGlass`'s dimming
+    /// sits under the panel's white content. The reader's to choose because
+    /// the right amount depends on what is usually behind the panel — a
+    /// white page wants more, a dark editor none.
+    ///
+    /// Deliberately no `onChange`: that refetches every provider, and a
+    /// slider sets this dozens of times a second. The panel is `@Observable`
+    /// and redraws on its own.
+    var glassTransparency: Double {
+        didSet {
+            let clamped = min(max(glassTransparency, 0), 1)
+            guard clamped == glassTransparency else { glassTransparency = clamped; return }
+            guard glassTransparency != oldValue else { return }
+            UserDefaults.standard.set(glassTransparency, forKey: Key.glassTransparency)
+        }
+    }
+
     /// Whether the rail hides down to a sliver when the pointer is elsewhere.
     ///
     /// On by default. The panel sits over whatever else is on screen all day,
@@ -818,6 +946,22 @@ final class AppSettings {
         }
     }
 
+    /// Whether a ring turns while its CLI is working or Pulse is fetching it a
+    /// fresh reading.
+    ///
+    /// On by default — it is how those two facts are shown at all, see
+    /// `UsageRingView.isBusy`/`isRefreshing`. Off draws the ring exactly as it
+    /// would sit between events: the usage arc at full opacity, no travelling
+    /// mark, no refresh sweep. The facts themselves are unaffected — a busy
+    /// CLI is still busy — only the moving cue for them is withheld, for
+    /// anyone who finds a rail of turning rings more distracting than useful.
+    var animatesRingActivity: Bool {
+        didSet {
+            guard animatesRingActivity != oldValue else { return }
+            UserDefaults.standard.set(animatesRingActivity, forKey: Key.animatesRingActivity)
+        }
+    }
+
     func isSplit(_ account: AccountKey) -> Bool {
         account.provider.splitsByModelGroup && splitAccounts.contains(account.id)
     }
@@ -845,9 +989,14 @@ final class AppSettings {
     /// Called after any change that the AppKit side has to react to — showing
     /// or hiding the panel, or resizing it because the rail got shorter.
     var onChange: (() -> Void)?
+    /// Called only when the menu bar status item should be inserted or removed.
+    /// Kept separate from `onChange` so a presentation preference cannot start
+    /// a provider refresh.
+    var onMenuBarIconChange: (() -> Void)?
 
     init(
         isPanelVisible: Bool = true,
+        hidesMenuBarIcon: Bool = false,
         hidesInFullScreen: Bool = true,
         followsActiveDisplay: Bool = false,
         openSettingsShortcut: GlobalShortcut? = nil,
@@ -856,6 +1005,8 @@ final class AppSettings {
         deepSeekBudget: Double? = nil,
         openAIBillingTotal: Double? = nil,
         deepSeekCurrency: String? = nil,
+        qoderSite: QoderSite = .international,
+        serverAddresses: [String: String] = [:],
         lowBalanceAlerts: [String: Double] = [:],
         enabledAccounts: Set<String> = Set(Provider.allCases.map(\.rawValue)),
         extraAccounts: [ExtraAccount] = [],
@@ -875,14 +1026,19 @@ final class AppSettings {
         panelSize: PanelSize = .default,
         railSpacing: RailSpacing = .default,
         usesGlass: Bool = false,
+        glassTransparency: Double = PanelGlass.defaultTransparency,
         topRailShowsPercentages: Bool = false,
         sideRailShowsPercentages: Bool = true,
         labelAboveRing: Bool = false,
+        usesRoundEnds: Bool = false,
         showsWindowClock: Bool = false,
+        windowClockDirection: WindowClockDirection = .default,
         showsRemaining: Bool = false,
         warningThreshold: WarningThreshold = .default,
+        dockShowsAlertColor: Bool = true,
         showsForecast: Bool = false,
         showsSecondRing: Bool = false,
+        animatesRingActivity: Bool = true,
         splitAccounts: Set<String> = [],
         spendSpan: SpendSpan = .default,
         readsTokenSpend: Bool = false,
@@ -891,6 +1047,7 @@ final class AppSettings {
         alertsOnFailure: Bool = false
     ) {
         self.isPanelVisible = isPanelVisible
+        self.hidesMenuBarIcon = hidesMenuBarIcon
         self.hidesInFullScreen = hidesInFullScreen
         self.followsActiveDisplay = followsActiveDisplay
         self.openSettingsShortcut = openSettingsShortcut
@@ -899,6 +1056,8 @@ final class AppSettings {
         self.deepSeekBudget = deepSeekBudget
         self.openAIBillingTotal = openAIBillingTotal
         self.deepSeekCurrency = deepSeekCurrency
+        self.qoderSite = qoderSite
+        self.serverAddresses = serverAddresses
         self.lowBalanceAlerts = lowBalanceAlerts
         self.enabledAccounts = enabledAccounts
         self.extraAccounts = extraAccounts
@@ -919,14 +1078,19 @@ final class AppSettings {
         self.panelSize = panelSize
         self.railSpacing = railSpacing
         self.usesGlass = usesGlass
+        self.glassTransparency = min(max(glassTransparency, 0), 1)
         self.topRailShowsPercentages = topRailShowsPercentages
         self.sideRailShowsPercentages = sideRailShowsPercentages
         self.labelAboveRing = labelAboveRing
+        self.usesRoundEnds = usesRoundEnds
         self.showsWindowClock = showsWindowClock
+        self.windowClockDirection = windowClockDirection
         self.showsRemaining = showsRemaining
         self.warningThreshold = warningThreshold
+        self.dockShowsAlertColor = dockShowsAlertColor
         self.showsForecast = showsForecast
         self.showsSecondRing = showsSecondRing
+        self.animatesRingActivity = animatesRingActivity
         self.splitAccounts = splitAccounts
         self.spendSpan = spendSpan
         self.readsTokenSpend = readsTokenSpend
@@ -1060,6 +1224,20 @@ final class AppSettings {
         sessionBrowsers = updated
     }
 
+    /// The gateway address entered for an account, trimmed, or empty.
+    func serverAddress(for account: AccountKey) -> String {
+        (serverAddresses[account.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Blank removes the entry rather than storing an empty string, so the
+    /// stored dictionary carries only addresses somebody actually set.
+    func setServerAddress(_ address: String, for account: AccountKey) {
+        var updated = serverAddresses
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated[account.id] = trimmed.isEmpty ? nil : trimmed
+        serverAddresses = updated
+    }
+
     /// The window pinned for an account, if any.
     func pinnedWindow(for account: AccountKey) -> String? {
         pinnedWindows[account.id]
@@ -1148,6 +1326,7 @@ final class AppSettings {
 
         let settings = AppSettings(
             isPanelVisible: visible,
+            hidesMenuBarIcon: defaults.object(forKey: Key.hidesMenuBarIcon) as? Bool ?? false,
             hidesInFullScreen: defaults.object(forKey: Key.hidesInFullScreen) as? Bool ?? true,
             followsActiveDisplay: defaults.object(forKey: Key.followsActiveDisplay) as? Bool ?? false,
             openSettingsShortcut: defaults.string(forKey: Key.openSettingsShortcut)
@@ -1159,6 +1338,9 @@ final class AppSettings {
             deepSeekBudget: defaults.object(forKey: Key.deepSeekBudget) as? Double,
             openAIBillingTotal: defaults.object(forKey: Key.openAIBillingTotal) as? Double,
             deepSeekCurrency: defaults.string(forKey: Key.deepSeekCurrency),
+            qoderSite: defaults.string(forKey: Key.qoderSite)
+                .flatMap(QoderSite.init(rawValue:)) ?? .international,
+            serverAddresses: defaults.dictionary(forKey: Key.serverAddresses) as? [String: String] ?? [:],
             lowBalanceAlerts: defaults.dictionary(forKey: Key.lowBalanceAlerts) as? [String: Double] ?? [:],
             enabledAccounts: selection.enabledAccounts,
             extraAccounts: extras,
@@ -1181,15 +1363,20 @@ final class AppSettings {
             railSpacing: defaults.string(forKey: Key.railSpacing)
                 .flatMap(RailSpacing.init(rawValue:)) ?? .default,
             usesGlass: defaults.object(forKey: Key.usesGlass) as? Bool ?? false,
+            glassTransparency: defaults.object(forKey: Key.glassTransparency) as? Double ?? PanelGlass.defaultTransparency,
             topRailShowsPercentages: defaults.object(forKey: Key.topRailShowsPercentages) as? Bool ?? false,
             sideRailShowsPercentages: defaults.object(forKey: Key.sideRailShowsPercentages) as? Bool ?? true,
             labelAboveRing: defaults.object(forKey: Key.labelAboveRing) as? Bool ?? false,
+            usesRoundEnds: defaults.object(forKey: Key.usesRoundEnds) as? Bool ?? false,
             showsWindowClock: defaults.object(forKey: Key.showsWindowClock) as? Bool ?? false,
+            windowClockDirection: Self.storedWindowClockDirection(in: defaults),
             showsRemaining: defaults.object(forKey: Key.showsRemaining) as? Bool ?? false,
             warningThreshold: (defaults.object(forKey: Key.warningThreshold) as? Int)
                 .flatMap(WarningThreshold.init(rawValue:)) ?? .default,
+            dockShowsAlertColor: defaults.object(forKey: Key.dockShowsAlertColor) as? Bool ?? true,
             showsForecast: defaults.object(forKey: Key.showsForecast) as? Bool ?? false,
             showsSecondRing: defaults.object(forKey: Key.showsSecondRing) as? Bool ?? false,
+            animatesRingActivity: defaults.object(forKey: Key.animatesRingActivity) as? Bool ?? true,
             splitAccounts: Set(defaults.stringArray(forKey: Key.splitAccounts) ?? []),
             spendSpan: Self.storedSpendSpan(in: defaults),
             readsTokenSpend: Self.storedReadsTokenSpend(in: defaults),
@@ -1212,6 +1399,7 @@ final class AppSettings {
         PanelMetrics.showTopPercentages(settings.topRailShowsPercentages)
         PanelMetrics.showSidePercentages(settings.sideRailShowsPercentages)
         PanelMetrics.putLabelAboveRing(settings.labelAboveRing)
+        PanelMetrics.useRoundEnds(settings.usesRoundEnds)
         PanelMetrics.showForecast(settings.showsForecast)
         PanelMetrics.makeRoom(for: settings.railSlotCount)
         return settings
@@ -1276,6 +1464,7 @@ final class AppSettings {
 
     private enum Key {
         static let panelVisible = "settings.panelVisible"
+        static let hidesMenuBarIcon = "settings.hidesMenuBarIcon"
         static let extraAccounts = "settings.extraAccounts"
         static let hidesInFullScreen = "settings.hidesInFullScreen"
         static let followsActiveDisplay = "settings.followsActiveDisplay"
@@ -1285,6 +1474,8 @@ final class AppSettings {
         static let deepSeekBudget = "settings.deepSeekBudget"
         static let openAIBillingTotal = "settings.openAIBillingTotal"
         static let deepSeekCurrency = "settings.deepSeekCurrency"
+        static let qoderSite = "settings.qoderSite"
+        static let serverAddresses = "settings.serverAddresses"
         static let lowBalanceAlerts = "settings.lowBalanceAlerts"
         static let language = "settings.language"
         static let pinnedWindows = "settings.pinnedWindows"
@@ -1301,19 +1492,24 @@ final class AppSettings {
         static let panelSize = "settings.panelSize"
         static let railSpacing = "settings.railSpacing"
         static let usesGlass = "settings.usesGlass"
+        static let glassTransparency = "settings.glassTransparency"
         static let topRailShowsPercentages = "settings.topRailShowsPercentages"
         static let sideRailShowsPercentages = "settings.sideRailShowsPercentages"
         static let labelAboveRing = "settings.labelAboveRing"
+        static let usesRoundEnds = "settings.usesRoundEnds"
         static let showsWindowClock = "settings.showsWindowClock"
+        static let windowClockDirection = "settings.windowClockDirection"
         static let botMarks = "settings.botMarks"
         static let botPersonas = "settings.botPersonas"
         static let botShapes = "settings.botShapes"
         static let botColours = "settings.botColours"
         static let showsRemaining = "settings.showsRemaining"
         static let warningThreshold = "settings.warningThreshold"
+        static let dockShowsAlertColor = "settings.dockShowsAlertColor"
         static let showsForecast = "settings.showsForecast"
         static let showsSecondRing = "settings.showsSecondRing"
         static let walletV0Applied = "settings.walletV0Applied"
+        static let animatesRingActivity = "settings.animatesRingActivity"
         static let splitAccounts = "settings.splitAccounts"
         static let spendSpan = "settings.spendSpan"
         static let readsTokenSpend = "settings.readsTokenSpend"

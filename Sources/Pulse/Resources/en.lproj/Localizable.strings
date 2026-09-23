@@ -1,20 +1,18 @@
 /* Menu bar */
 "Settings…" = "Settings…";
 "Quit Pulse" = "Quit Pulse";
-"Agent Wallet" = "Agent Wallet";
-"Agent Wallet Settings" = "Agent Wallet Settings";
-"Quit Agent Wallet" = "Quit Agent Wallet";
-"Agent Wallet %@ is available" = "Agent Wallet %@ is available";
 
 /* Settings window */
 "Pulse Settings" = "Pulse Settings";
-"Balance display" = "Balance display";
-"DeepSeek connection" = "DeepSeek connection";
-"Official API balance" = "Official API balance";
-"Reads your prepaid API balance. This does not read usage from the signed-in DeepSeek website." = "Reads your prepaid API balance. This does not read usage from the signed-in DeepSeek website.";
 "Panel" = "Panel";
 "Application" = "Application";
 "General" = "General";
+"Appearance" = "Appearance";
+"Rings and figures" = "Rings and figures";
+"Position and behavior" = "Position and behavior";
+"Network and refresh" = "Network and refresh";
+"Figures" = "Figures";
+"Rings" = "Rings";
 "Providers" = "Providers";
 "About" = "About";
 
@@ -86,9 +84,18 @@
 "Percentages on top" = "Percentages on top";
 "Turn red at" = "Turn red at";
 "Where a ring stops being amber. A spent limit is red whatever this says." = "Where a ring stops being amber. A spent limit is red whatever this says.";
+"Alert colour when docked" = "Alert colour when docked";
+"Off keeps the collapsed rail neutral even when a limit needs attention." = "Off keeps the collapsed rail neutral even when a limit needs attention.";
+"Ring activity animation" = "Ring activity animation";
+"The turning mark for a working CLI or a reading being fetched. Off leaves the ring still." = "The turning mark for a working CLI or a reading being fetched. Off leaves the ring still.";
 "Percentages at the side" = "Percentages at the side";
 "The figure under each ring, docked left or right." = "The figure under each ring, docked left or right.";
 "Time until reset" = "Time until reset";
+"A second arc outside each ring, showing progress through the current window." = "A second arc outside each ring, showing progress through the current window.";
+"Time ring direction" = "Time ring direction";
+"Choose whether the outer arc fills with elapsed time or empties with time remaining." = "Choose whether the outer arc fills with elapsed time or empties with time remaining.";
+"Elapsed" = "Elapsed";
+"Remaining" = "Remaining";
 "Animated mark" = "Animated mark";
 "Bot personality" = "Bot personality";
 "Bot shape" = "Bot shape";
@@ -125,7 +132,6 @@
 "Stoic" = "Stoic";
 "Proud" = "Proud";
 "Draw a bot that reacts to this account instead of the provider's logo." = "Draw a bot that reacts to this account instead of the provider's logo.";
-"A second arc outside each ring, for how much of the window has passed." = "A second arc outside each ring, for how much of the window has passed.";
 "Figure above the ring" = "Figure above the ring";
 "Show what's left" = "Show what's left";
 "Forecast" = "Forecast";
@@ -195,17 +201,6 @@
 "Reading may be out of date" = "Reading may be out of date";
 "%@ Used" = "%@ Used";
 "%@ Left" = "%@ Left";
-"%@ remaining" = "%@ remaining";
-"%@ spent" = "%@ spent";
-"Credits remaining" = "Credits remaining";
-"Monthly spend" = "Monthly spend";
-"Monthly budget" = "Monthly budget";
-"Remaining budget" = "Remaining budget";
-"of %@ monthly budget" = "of %@ monthly budget";
-"Seven-day spend" = "Seven-day spend";
-"Tokens" = "Tokens";
-"Requests" = "Requests";
-"Subscription cycle" = "Subscription cycle";
 "Codex isn't installed." = "Codex isn't installed.";
 "Couldn't start the Codex helper." = "Couldn't start the Codex helper.";
 "Sign in to Claude Code to see usage." = "Sign in to Claude Code to see usage.";
@@ -279,6 +274,8 @@
 /* Panel size */
 "Size" = "Size";
 "Spacing" = "Spacing";
+"Round ends" = "Round ends";
+"The rail's ends and the card's tail follow the ring's own curve." = "The rail's ends and the card's tail follow the ring's own curve.";
 "How much air there is between the rings." = "How much air there is between the rings.";
 "Tight" = "Tight";
 "Loose" = "Loose";
@@ -292,9 +289,15 @@
 "Start Pulse automatically when you log in." = "Start Pulse automatically when you log in.";
 "Waiting for approval in System Settings › General › Login Items." = "Waiting for approval in System Settings › General › Login Items.";
 
+/* Menu bar icon */
+"Hide menu bar icon" = "Hide menu bar icon";
+"Remove Pulse from the menu bar; use the panel menu or shortcut to open settings." = "Remove Pulse from the menu bar; use the panel menu or shortcut to open settings.";
+
 /* Liquid Glass */
 "Liquid Glass" = "Liquid Glass";
-"Frosted glass instead of solid black." = "Frosted glass instead of solid black.";
+"Clear glass that shows what is behind the panel, instead of solid black." = "Clear glass that shows what is behind the panel, instead of solid black.";
+"Transparency" = "Transparency";
+"Clearer to the right. Darker reads better over bright pages." = "Clearer to the right. Darker reads better over bright pages.";
 "Drag it by a ring while this is on." = "Drag it by a ring while this is on.";
 "Open Antigravity to see its usage." = "Open Antigravity to see its usage.";
 "Asks the language server Antigravity runs while it is open." = "Asks the language server Antigravity runs while it is open.";
@@ -330,7 +333,6 @@
 "Couldn't reach the update feed." = "Couldn't reach the update feed.";
 "Uses the key you entered." = "Uses the key you entered.";
 "API key" = "API key";
-"Admin Key" = "Admin Key";
 "Session cookie" = "Session cookie";
 "Read from browser" = "Read from browser";
 "Only %@." = "Only %@.";
@@ -345,12 +347,9 @@
 "Token and organization" = "Token and organization";
 "Read from %@." = "Read from %@.";
 "No Ollama session found. Sign in at ollama.com first." = "No Ollama session found. Sign in at ollama.com first.";
-"No OpenAI Platform session found. Sign in at platform.openai.com first." = "No OpenAI Platform session found. Sign in at platform.openai.com first.";
 "Copied from your browser. Stored encrypted on this Mac." = "Copied from your browser. Stored encrypted on this Mac.";
 "Add an Ollama session in Settings." = "Add an Ollama session in Settings.";
 "The Ollama session expired. Sign in again and add it." = "The Ollama session expired. Sign in again and add it.";
-"Add an OpenAI Platform session in Settings." = "Add an OpenAI Platform session in Settings.";
-"The OpenAI Platform session was refused. Sign in again and add it." = "The OpenAI Platform session was refused. Sign in again and add it.";
 "Ollama's page has changed and can no longer be read." = "Ollama's page has changed and can no longer be read.";
 "Reads your quota from Ollama's own settings page." = "Reads your quota from Ollama's own settings page.";
 "Save" = "Save";
@@ -497,33 +496,9 @@
 "The money left, with no ring. DeepSeek reports no allowance." = "The money left, with no ring. DeepSeek reports no allowance.";
 "How much of the figure you set is gone." = "How much of the figure you set is gone.";
 "From platform.deepseek.com. Stored encrypted on this Mac." = "From platform.deepseek.com. Stored encrypted on this Mac.";
-"From platform.deepseek.com. Reads the prepaid API balance only — website usage and consumption are not imported. Stored encrypted on this Mac." = "From platform.deepseek.com. Reads the prepaid API balance only — website usage and consumption are not imported. Stored encrypted on this Mac.";
 "Balance" = "Balance";
 "Warn below" = "Warn below";
 "Notify once when the balance falls under this. Blank for never." = "Notify once when the balance falls under this. Blank for never.";
-"Read balance from" = "Read balance from";
-"Uses your DeepSeek Platform login saved in Chrome. An API key is optional and takes priority when saved." = "Uses your DeepSeek Platform login saved in Chrome. An API key is optional and takes priority when saved.";
-"API key (optional)" = "API key (optional)";
-"Qoder CN's own login" = "Qoder CN's own login";
-"Reads Qoder CN's saved login. macOS may ask for keychain access." = "Reuses Qoder CN's saved login. Launch and automatic refresh never ask for a password.";
-"Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings." = "Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings.";
-"Open Qoder CN and sign in. Allow keychain access when prompted, then refresh." = "Sign in to Qoder CN, then choose Connect Qoder CN in Settings. macOS may ask for authorization once.";
-
-"Qoder connection" = "Account connection";
-"Connect Qoder CN" = "Connect Qoder CN";
-"Connect once to reuse this session after restarting. Automatic refresh never asks for a password." = "Connect once to reuse this session after restarting. Automatic refresh never asks for a password.";
-"Optional alternative to Chrome login. Create at platform.deepseek.com; stored encrypted on this Mac." = "Optional alternative to Chrome login. Create at platform.deepseek.com; stored encrypted on this Mac.";
-"Show Codex Spark limits" = "Show Codex Spark limits";
-"Off by default. General weekly usage always appears first." = "Off by default. General weekly usage always appears first.";
-"Reads your OpenAI API Platform costs with the Admin Key you entered." = "Reads your OpenAI API Platform costs with the Admin Key you entered.";
-"From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac." = "From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac.";
-"Billing" = "Billing";
-"Billing total" = "Billing total";
-"From Billing history. Agent Wallet subtracts current API spend from this number; blank uses $100." = "Fill your total billed amount to show remaining budget on the ring. Leave blank to use the monthly default budget of $100 and show monthly spend.";
-"100" = "100";
-"Reads your OpenAI API Platform credit balance with the key you entered." = "Reads your OpenAI API Platform credit balance with the key you entered.";
-"Reads your OpenAI API Platform credit balance with the web session you saved." = "Reads your OpenAI API Platform credit balance with the web session you saved.";
-
 
 // Token spend: every agent's history added up.
 "Token spend" = "Token spend";
@@ -655,6 +630,32 @@
 "Uses a key entered in Settings, or reads ~/.commandcode/auth.json. No Keychain prompt." = "Uses a key entered in Settings, or reads ~/.commandcode/auth.json. No Keychain prompt.";
 "Reads Devin's web login from local Chromium browsers without a prompt; may also read the desktop app's saved plan." = "Reads Devin's web login from local Chromium browsers without a prompt; may also read the desktop app's saved plan.";
 "Runs arkcli with its saved login, or uses access keys entered in Settings. Pulse does not request Keychain access." = "Runs arkcli with its saved login, or uses access keys entered in Settings. Pulse does not request Keychain access.";
+"Kiro CLI ACP" = "Kiro CLI ACP";
+"Uses Kiro CLI's signed-in session without reading its credentials." = "Uses Kiro CLI's signed-in session without reading its credentials.";
+"Kiro CLI isn't installed." = "Kiro CLI isn't installed.";
+"Update Kiro CLI to read subscription usage." = "Update Kiro CLI to read subscription usage.";
+"Sign in to Kiro CLI to see usage." = "Sign in to Kiro CLI to see usage.";
+"Runs Kiro CLI's native ACP usage method with its saved login. Pulse does not read or store Kiro credentials." = "Runs Kiro CLI's native ACP usage method with its saved login. Pulse does not read or store Kiro credentials.";
+"Asks Kiro CLI over ACP, using the login it already saved." = "Asks Kiro CLI over ACP, using the login it already saved.";
 "Uses a browser session you import in Settings. Importing may ask for browser Keychain access." = "Uses a browser session you import in Settings. Importing may ask for browser Keychain access.";
 "Uses the GitHub login you connect in Settings. No Keychain prompt." = "Uses the GitHub login you connect in Settings. No Keychain prompt.";
 "Uses only the API key you enter in Settings. No Keychain prompt." = "Uses only the API key you enter in Settings. No Keychain prompt.";
+"Top-up pack" = "Top-up pack";
+"Server address" = "Server address";
+"Edit address" = "Edit address";
+"Add the server address in Settings." = "Add the server address in Settings.";
+"That address can't be used. It needs https://, unless the server is on your own network." = "That address can't be used. It needs https://, unless the server is on your own network.";
+"Sends the key you enter only to the server address you enter. No Keychain prompt." = "Sends the key you enter only to the server address you enter. No Keychain prompt.";
+"A group API key from your sub2api deployment. Sent only to the address above. Stored encrypted on this Mac." = "A group API key from your sub2api deployment. Sent only to the address above. Stored encrypted on this Mac.";
+"A Personal Access Token from v2ex.com. Stored encrypted on this Mac." = "A Personal Access Token from v2ex.com. Stored encrypted on this Mac.";
+"Your own deployment's address, such as https://gateway.example.com. Pulse asks it for usage and sends nothing else." = "Your own deployment's address, such as https://gateway.example.com. Pulse asks it for usage and sends nothing else.";
+"The same key your AI client uses for this gateway. Sent only to the address above. Stored encrypted on this Mac." = "The same key your AI client uses for this gateway. Sent only to the address above. Stored encrypted on this Mac.";
+"Credit allowance" = "Credit allowance";
+"Team credits" = "Team credits";
+"Sign in to Qoder in a browser to see usage." = "Sign in to Qoder in a browser to see usage.";
+"Qoder's saved session expired. Sign in again in your browser." = "Qoder's saved session expired. Sign in again in your browser.";
+"This Qoder account has no credits." = "This Qoder account has no credits.";
+"Reads your credits with your signed-in browser session." = "Reads your credits with your signed-in browser session.";
+"No Qoder session found. Sign in at %@ first." = "No Qoder session found. Sign in at %@ first.";
+"Site" = "Site";
+"Where you signed in. Changing it clears the saved session." = "Where you signed in. Changing it clears the saved session.";

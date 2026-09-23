@@ -34,6 +34,7 @@ final class UsageStore {
     private let alerts: UsageAlerts?
     private let appServer = CodexAppServer()
     private let codex: CodexUsageService
+    private let kiro = KiroUsageService()
     private let claudeCode = ClaudeCodeUsageService()
     private let antigravity = AntigravityUsageService()
     private let grok = GrokUsageService()
@@ -86,13 +87,14 @@ final class UsageStore {
 
     /// Whether either CLI is working right now. Its own clock — see
     /// `AgentActivityMonitor`.
-    let activity = AgentActivityMonitor()
+    let activity: AgentActivityMonitor
     /// Watches live readings for a limit turning over, so the rail's mark can
     /// celebrate one. Independent of the alert rules; see `ResetWatch`.
     private let resetWatch = ResetWatch()
 
-    init(settings: AppSettings, alerts: UsageAlerts? = nil) {
+    init(settings: AppSettings, alerts: UsageAlerts? = nil, activity: AgentActivityMonitor = AgentActivityMonitor()) {
         self.settings = settings
+        self.activity = activity
         networkProxy = settings.networkProxy
         self.alerts = alerts
         codex = CodexUsageService(server: appServer)
@@ -221,7 +223,7 @@ final class UsageStore {
 
         // Only relevant when the app server is being used as a fallback; it
         // pushes when limits change, which saves waiting for the next tick.
-        Task { [appServer] in
+        Task { [appServer, self] in
             await appServer.setRateLimitsChangedHandler { [weak self] in
                 Task { @MainActor in self?.refresh() }
             }
@@ -343,9 +345,10 @@ final class UsageStore {
 
     /// Nothing shows the spinner while the panel is off screen or the display
     /// is asleep, so nothing needs watching either.
-    private func updateActivityMonitor() {
+    /// Internal so tests can check selection without starting provider requests.
+    func updateActivityMonitor() {
         if !settings.needsProviderSelection && settings.isPanelVisible && !screensAsleep {
-            activity.start()
+            activity.start(providers: Set(settings.shownAccounts.map(\.provider)))
         } else {
             activity.stop()
         }
@@ -406,6 +409,7 @@ final class UsageStore {
         let kimi = KimiCodeUsageService(enteredKey: apiKeys[.kimiCode])
         let ollama = OllamaCloudUsageService(cookie: apiKeys[.ollamaCloud])
         let xiaomi = XiaomiMiMoUsageService(cookie: apiKeys[.xiaomiMiMo])
+        let qoder = QoderUsageService(cookie: apiKeys[.qoder], site: settings.qoderSite)
         let zai = ZaiUsageService(provider: .zai, enteredKey: apiKeys[.zai])
         let glm = ZaiUsageService(provider: .glmCoding, enteredKey: apiKeys[.glmCoding])
         let minimax = MiniMaxUsageService(provider: .minimax, enteredKey: apiKeys[.minimax])
@@ -425,6 +429,15 @@ final class UsageStore {
             budget: settings.deepSeekBudget,
             currency: settings.deepSeekCurrency
         )
+        let sub2api = Sub2APIUsageService(
+            enteredKey: apiKeys[.sub2api],
+            address: settings.serverAddress(for: AccountKey(.sub2api))
+        )
+        let newAPI = NewAPIUsageService(
+            enteredKey: apiKeys[.newAPI],
+            address: settings.serverAddress(for: AccountKey(.newAPI))
+        )
+        let v2ex = V2EXUsageService(enteredKey: apiKeys[.v2ex])
         // Nothing is fetched for a provider that isn't on the rail: it would
         // spend someone else's request, and read a credential, for a figure
         // nobody is going to see.
@@ -447,12 +460,15 @@ final class UsageStore {
         // blind to any of them.
         let extras = settings.shownAccounts.filter { !$0.isPrimary }
 
-        Task { [codex, claudeCode, antigravity, cursor, grok, grokBot] in
+        Task { [codex, kiro, claudeCode, antigravity, cursor, grok, grokBot] in
             // Independent, so they run side by side rather than one waiting on
             // another's round trip.
             async let codexUsage = wanted.contains(.codex)
                 ? await codex.fetch(source: codexSource)
                 : ProviderUsage.unavailable(.codex, reason: .loading)
+            async let kiroUsage = wanted.contains(.kiro)
+                ? await kiro.fetch()
+                : ProviderUsage.unavailable(.kiro, reason: .loading)
             async let claudeUsage = wanted.contains(.claudeCode)
                 ? await claudeCode.fetch(source: claudeSource)
                 : ProviderUsage.unavailable(.claudeCode, reason: .loading)
@@ -507,22 +523,32 @@ final class UsageStore {
             async let deepSeekUsage = wanted.contains(.deepSeek)
                 ? await deepSeek.fetch()
                 : ProviderUsage.unavailable(.deepSeek, reason: .loading)
-            async let qoderUsage = wanted.contains(.qoderCN)
-                ? await QoderCNUsageService().fetch()
-                : ProviderUsage.unavailable(.qoderCN, reason: .loading)
             async let devinUsage = wanted.contains(.devin)
                 ? await devin.fetch(source: devinSource)
                 : ProviderUsage.unavailable(.devin, reason: .loading)
+            async let sub2apiUsage = wanted.contains(.sub2api)
+                ? await sub2api.fetch()
+                : ProviderUsage.unavailable(.sub2api, reason: .loading)
+            async let newAPIUsage = wanted.contains(.newAPI)
+                ? await newAPI.fetch()
+                : ProviderUsage.unavailable(.newAPI, reason: .loading)
+            async let v2exUsage = wanted.contains(.v2ex)
+                ? await v2ex.fetch()
+                : ProviderUsage.unavailable(.v2ex, reason: .loading)
+            async let qoderUsage = wanted.contains(.qoder)
+                ? await qoder.fetch()
+                : ProviderUsage.unavailable(.qoder, reason: .loading)
 
-            let (rawCodex, rawClaude, rawAntigravity, rawOpenCode, rawOpenAI) =
-                await (codexUsage, claudeUsage, antigravityUsage, openCodeUsage, openAIUsage)
+            let (rawCodex, rawKiro, rawClaude, rawAntigravity, rawOpenAI, rawOpenCode) =
+                await (codexUsage, kiroUsage, claudeUsage, antigravityUsage, openAIUsage, openCodeUsage)
             let (rawKimi, rawCursor, rawOllama) = await (kimiUsage, cursorUsage, ollamaUsage)
             let (rawZai, rawGLM) = await (zaiUsage, glmUsage)
             let (rawMiniMax, rawMiniMaxCN) = await (minimaxUsage, minimaxCNUsage)
             let (rawCopilot, rawGrok, rawGrokBot) = await (copilotUsage, grokUsage, grokBotUsage)
             let (rawVolcengine, rawCommandCode) = await (volcengineUsage, commandCodeUsage)
-            let (rawDeepSeek, rawQoder, rawDevin) = await (deepSeekUsage, qoderUsage, devinUsage)
-            let rawXiaomi = await xiaomiUsage
+            let (rawDeepSeek, rawDevin) = await (deepSeekUsage, devinUsage)
+            let (rawSub2API, rawNewAPI, rawV2EX) = await (sub2apiUsage, newAPIUsage, v2exUsage)
+            let (rawXiaomi, rawQoder) = await (xiaomiUsage, qoderUsage)
 
             // **The disowning is checked before anything is written, not just
             // before the readings are handed to the panel.** `reconciled`
@@ -545,6 +571,7 @@ final class UsageStore {
             var results: [BatchResult] = []
             for (provider, raw) in [
                 (Provider.codex, rawCodex),
+                (.kiro, rawKiro),
                 (.claudeCode, rawClaude),
                 (.antigravity, rawAntigravity),
                 (.openAI, rawOpenAI),
@@ -562,9 +589,12 @@ final class UsageStore {
                 (.volcengine, rawVolcengine),
                 (.commandCode, rawCommandCode),
                 (.deepSeek, rawDeepSeek),
-                (.qoderCN, rawQoder),
                 (.devin, rawDevin),
                 (.xiaomiMiMo, rawXiaomi),
+                (.sub2api, rawSub2API),
+                (.newAPI, rawNewAPI),
+                (.v2ex, rawV2EX),
+                (.qoder, rawQoder),
             ] where wanted.contains(provider) {
                 results.append(BatchResult(
                     provider: provider,
@@ -630,7 +660,9 @@ final class UsageStore {
     /// narrower: it should not start the other provider's helper or spend a
     /// second endpoint request when the user asked about one ring.
     func refresh(_ account: AccountKey) {
-        guard !settings.needsProviderSelection else { return }
+        // Provider panes stay reachable while their rail slot is switched
+        // off. Their controls must not turn that into an unadvertised fetch.
+        guard !settings.needsProviderSelection, settings.isEnabled(account) else { return }
         // The same ceiling as the full pass, and for the same reason: this
         // path sets the flag too, so a ring click that never came back would
         // block every refresh after it.
@@ -662,6 +694,7 @@ final class UsageStore {
         let kimi = KimiCodeUsageService(enteredKey: key)
         let ollama = OllamaCloudUsageService(cookie: key)
         let xiaomi = XiaomiMiMoUsageService(cookie: key)
+        let qoder = QoderUsageService(cookie: key, site: settings.qoderSite)
         let zai = ZaiUsageService(provider: provider, enteredKey: key)
         let minimax = MiniMaxUsageService(provider: provider, enteredKey: key)
         let volcengine = VolcengineUsageService(enteredKey: key)
@@ -676,6 +709,13 @@ final class UsageStore {
             budget: settings.deepSeekBudget,
             currency: settings.deepSeekCurrency
         )
+        let sub2api = Sub2APIUsageService(
+            enteredKey: key, address: settings.serverAddress(for: account)
+        )
+        let newAPI = NewAPIUsageService(
+            enteredKey: key, address: settings.serverAddress(for: account)
+        )
+        let v2ex = V2EXUsageService(enteredKey: key)
 
         Task { [codex, claudeCode, antigravity, cursor, grok, grokBot] in
             let raw: ProviderUsage
@@ -685,6 +725,8 @@ final class UsageStore {
             switch provider {
             case .codex:
                 raw = await codex.fetch(source: source)
+            case .kiro:
+                raw = await kiro.fetch()
             case .claudeCode:
                 raw = await claudeCode.fetch(source: source)
             case .antigravity:
@@ -715,12 +757,18 @@ final class UsageStore {
                 raw = await commandCode.fetch()
             case .deepSeek:
                 raw = await deepSeek.fetch()
-            case .qoderCN:
-                raw = await QoderCNUsageService().fetch()
             case .devin:
                 raw = await devinAccount.fetch(source: source)
             case .xiaomiMiMo:
                 raw = await xiaomi.fetch()
+            case .sub2api:
+                raw = await sub2api.fetch()
+            case .newAPI:
+                raw = await newAPI.fetch()
+            case .v2ex:
+                raw = await v2ex.fetch()
+            case .qoder:
+                raw = await qoder.fetch()
             }
             }
 
@@ -791,9 +839,10 @@ final class UsageStore {
         case .grok: await grok.fetch(account: account, token: credentials.accessToken)
         case .grokBot: await grokBot.fetch(account: account, token: credentials.accessToken)
         // Nothing else can be signed in to, so nothing else gets here.
-        case .antigravity, .cursor, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
+        case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
-             .commandCode, .deepSeek, .qoderCN, .devin, .xiaomiMiMo:
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
+             .v2ex, .qoder:
             .unavailable(account, reason: .loading)
         }
     }

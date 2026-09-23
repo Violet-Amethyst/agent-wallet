@@ -37,9 +37,6 @@ struct FloatingUsagePanelView: View {
     /// the arc a tenth of the way round at a time. A minute is far finer than
     /// anything visible on a 48pt circle and costs one view invalidation.
     @State private var minute = Date()
-    /// What the system is set to, so glass can follow it instead of being
-    /// pinned to the panel's own dark.
-    @Environment(\.colorScheme) private var colorScheme
 
 
     var body: some View {
@@ -56,6 +53,15 @@ struct FloatingUsagePanelView: View {
                 // two rings, never interrupts anything.
                 PanelPointerWatcher(onChange: pointerMoved)
             )
+            .overlay(alignment: .topLeading) {
+                if let target = notchTarget {
+                    Color.clear
+                        .frame(width: target.width, height: target.height)
+                        .background(PointerEntryReporter(onEnter: show))
+                        .allowsHitTesting(false)
+                        .offset(x: target.minX, y: target.minY)
+                }
+            }
             // **Named, because the pointer is reported in this space.** The
             // watcher above fills this view and is flipped, so its points are
             // this view's points — which is what lets a mark deep in the rail
@@ -102,8 +108,10 @@ struct FloatingUsagePanelView: View {
                     edge: placement.edge,
                     isDocked: placement.isDocked,
                     isExpanded: isExpanded,
+                    notchSize: placement.notch?.size,
                     alert: alertTint,
                     usesGlass: settings.usesGlass,
+                    animatesActivity: settings.animatesRingActivity,
                     onEnter: select,
                     onRefresh: { account in
                         #if DEBUG
@@ -150,7 +158,7 @@ struct FloatingUsagePanelView: View {
                 // drag: the card closes, and the rail then chases the pointer
                 // on a spring instead of staying under it. The panel appears
                 // to slide away from the hand carrying it.
-                .animation(.spring(response: 0.34, dampingFraction: 0.82), value: selectedSlot)
+                .animation(.spring(response: 0.28, dampingFraction: 0.84), value: selectedSlot)
                 // The berth growing out of the sliver and back. **Here, on the
                 // thing that actually changes size** — not on the container
                 // outside, which is where it was and which also holds the
@@ -189,6 +197,13 @@ struct FloatingUsagePanelView: View {
             .onChange(of: placement.isDragging) { _, dragging in
                 if dragging { deselect() }
             }
+            .onChange(of: isNotchHeld) { _, held in
+                if !held && placement.notch != nil { pointerMoved(pointerPoint) }
+            }
+            .onDisappear {
+                hideAfterDelay?.cancel()
+                hideAfterDelay = nil
+            }
             // Only while the clock arc is actually being drawn. Started and
             // stopped by `.task(id:)` on the setting, so switching it off
             // takes the timer with it rather than leaving a minute hand
@@ -200,17 +215,20 @@ struct FloatingUsagePanelView: View {
                     try? await Task.sleep(for: .seconds(60))
                 }
             }
-            // Pinned dark only on the black panel, and pinned through the
+            // Pinned dark on both surfaces, and pinned through the
             // *environment* rather than `preferredColorScheme` — the latter is
             // a window-wide preference, not a view-level override, so it can't
             // express "this subtree is dark".
             //
-            // Liquid Glass switches between light and dark itself to stay
-            // legible against whatever is behind it, so under glass nothing is
-            // pinned: the standard `.primary` colours the panel is drawn in
-            // follow the appearance the material settled on. Forcing dark is
-            // exactly what leaves white text sitting on bright glass.
-            .environment(\.colorScheme, settings.usesGlass ? colorScheme : .dark)
+            // Under glass too, now that the glass is really clear (see
+            // `FloatingPanel`'s active-appearance override). Clear glass takes
+            // on whatever is behind it — white over a white page, black over a
+            // terminal — so no single text colour survives on it alone; white
+            // over `PanelGlass.dim` does, which is Apple's own answer for the clear
+            // variant. Following the system scheme instead left dark text
+            // vanishing over dark windows.
+            .environment(\.colorScheme, .dark)
+            .environment(\.glassTransparency, settings.glassTransparency)
             // Where red begins, for every ring, bar and figure below here at
             // once. Read off `settings` in one place so they cannot disagree.
             .environment(\.usageWarningThreshold, settings.warningThreshold.fraction)
@@ -222,7 +240,7 @@ struct FloatingUsagePanelView: View {
             // change. The last one is easy to forget and changes the rail's
             // *thickness*, so leaving it out draws the rings at one size in a
             // berth built for the other.
-            .id("\(settings.language.rawValue)-\(settings.panelSize.rawValue)-\(settings.topRailShowsPercentages)-\(settings.sideRailShowsPercentages)-\(settings.railSpacing.rawValue)-\(settings.labelAboveRing)-\(settings.showsForecast)")
+            .id("\(settings.language.rawValue)-\(settings.panelSize.rawValue)-\(settings.topRailShowsPercentages)-\(settings.sideRailShowsPercentages)-\(settings.railSpacing.rawValue)-\(settings.labelAboveRing)-\(settings.showsForecast)-\(settings.usesRoundEnds)")
     }
 
     /// Whether the rail is drawn out in full.
@@ -237,12 +255,31 @@ struct FloatingUsagePanelView: View {
     /// Derived rather than stored, so both this and switching auto-hide off in
     /// settings take effect at once rather than at the pointer's next visit.
     private var isExpanded: Bool {
-        !settings.autoCollapse || !placement.isDocked || isHovered
+        !settings.autoCollapse || !placement.isDocked || isHovered || isNotchHeld
+    }
+
+    private var isNotchHeld: Bool {
+        placement.notch != nil && (placement.isPressed || placement.isDragging || placement.isMenuOpen)
+    }
+
+    /// The hardware target in the watcher's flipped, panel-local coordinates.
+    private var notchTarget: CGRect? {
+        placement.notch.map {
+            CGRect(x: railLeading + railSize.width / 2 - $0.width / 2,
+                   y: railTop - $0.height,
+                   width: $0.width, height: $0.height)
+        }
     }
 
     /// The colour of the sliver when a limit is close enough that hiding the
     /// rail would be hiding something worth seeing.
+    ///
+    /// `dockShowsAlertColor` off means never: some rails stay past the
+    /// threshold for as long as they are watched, and a permanently coloured
+    /// line welded to the screen edge is worse than the thing it is warning
+    /// about.
     private var alertTint: Color? {
+        guard settings.dockShowsAlertColor else { return nil }
         let worst = entries.compactMap(\.headline).max { $0.usedFraction < $1.usedFraction }
         guard let worst,
 worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
@@ -351,8 +388,11 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
             // apart by the one thing that differs between them.
             title: title,
             // Nil unless it is switched on *and* the window says enough to
-            // work it out — a reset time on its own is not enough.
-            elapsed: settings.showsWindowClock ? headline?.elapsedFraction(at: minute) : nil,
+            // work it out — a reset time on its own is not enough. Direction
+            // only chooses which end of that same evidenced window to show.
+            windowClock: settings.showsWindowClock
+                ? headline?.windowClockFraction(direction: settings.windowClockDirection, at: minute)
+                : nil,
             figure: figure,
             second: wallet.longQuota,
             showsRemaining: wallet.showsRemainingOnRing,
@@ -372,7 +412,7 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
     /// The panel's own extent along that axis, which is what the card is
     /// clamped inside.
     private var panelAlong: CGFloat {
-        let panel = FloatingPanelController.Layout.size(for: placement.edge)
+        let panel = FloatingPanelController.Layout.size(for: placement.edge, notchSize: placement.notch?.size)
         return placement.edge.isVertical ? panel.height : panel.width
     }
 
@@ -472,7 +512,10 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
                 + DetailCardLayout.horizontalGap
             return CGSize(width: inset * placement.edge.cardDirection, height: 0)
         case .horizontal:
-            return CGSize(width: 0, height: railSize.height + DetailCardLayout.horizontalGap)
+            let bottom = placement.notch.map {
+                PanelHitArea.notchSurface(rail: CGRect(origin: .zero, size: railSize), notchSize: $0.size).maxY
+            } ?? railSize.height
+            return CGSize(width: 0, height: bottom + DetailCardLayout.horizontalGap)
         }
     }
 
@@ -598,7 +641,7 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
             // panel's own menu is up, for the same reason — the pointer is on
             // the menu, which is not the panel. Both re-arm: `hideAfterDelay`
             // is already nil here, so the watcher's next tick asks again.
-            guard !placement.isDragging, !placement.isMenuOpen else { return }
+            guard !placement.isDragging, !placement.isMenuOpen, !isNotchHeld else { return }
             hoveredAction = nil
             isHovered = false
         }
@@ -611,18 +654,25 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
     /// simply asking whether the pointer is inside the window would hold the
     /// card open across a large blank area well away from it.
     private func isOverContent(_ point: CGPoint) -> Bool {
+        if notchTarget?.contains(point) == true { return true }
         let edge = placement.edge
 
         // Collapsed, only the sliver's own target counts. Testing the rail's
         // full extent would hold the panel open across sixty points of empty
         // space it isn't drawing in.
         if !isExpanded {
+            if placement.notch != nil { return false }
             return PanelHitArea
                 .strip(edge: edge, railSize: railSize, railTop: railTop, railLeading: railLeading)
                 .contains(point)
         }
 
         let rail = PanelHitArea.rail(edge: edge, railSize: railSize, railTop: railTop, railLeading: railLeading)
+        if let notch = placement.notch {
+            let surface = PanelHitArea.notchSurface(rail: rail, notchSize: notch.size)
+            if NotchBerthShape(notchSize: notch.size)
+                .path(in: surface.insetBy(dx: -DockLayout.flareWidth, dy: 0)).contains(point) { return true }
+        }
         if rail.contains(point) { return true }
 
         guard let index = selectedIndex else { return false }
@@ -631,7 +681,7 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
         // stopping at the card's own edge, so the gap the pointer crosses
         // between the rail and the card is covered too. The slack along it
         // keeps the boundary from feeling like a trip wire at the card's edge.
-        let panel = FloatingPanelController.Layout.size(for: edge)
+        let panel = FloatingPanelController.Layout.size(for: edge, notchSize: placement.notch?.size)
         let start = railAlong + cardPadding(for: index) - PanelHitArea.slack
         let length = cardAlong + PanelHitArea.slack * 2
 
@@ -668,6 +718,23 @@ enum PanelHitArea {
     /// rules and an error under Swift 6's, which is how it broke in Xcode
     /// while `swift build` stayed happy.
     static let slack: CGFloat = 8
+
+    /// The surface extends up to the physical screen top and is at least as
+    /// wide as the housing, even when the rail only has one ring.
+    ///
+    /// No padding is added under the rail. The housing above the rings is the
+    /// screen's own bezel, not room this panel chose, and matching it would
+    /// mean 38pt of black under a 36pt ring: the rail keeps the symmetric
+    /// padding it has everywhere else and the housing simply sits on top.
+    ///
+    /// The body alone — `NotchBerthShape` sweeps `DockLayout.flareWidth`
+    /// further out at the screen edge, and the grab area deliberately does not
+    /// follow it there.
+    static func notchSurface(rail: CGRect, notchSize: CGSize) -> CGRect {
+        let width = max(rail.width, notchSize.width)
+        return CGRect(x: rail.midX - width / 2, y: rail.minY - notchSize.height,
+                      width: width, height: rail.height + notchSize.height)
+    }
 
     /// The rail's rectangle inside the panel, in the panel's top-left space.
     static func rail(edge: PanelEdge, railSize: CGSize, railTop: CGFloat, railLeading: CGFloat) -> CGRect {
