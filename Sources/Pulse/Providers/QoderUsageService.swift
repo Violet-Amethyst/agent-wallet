@@ -48,6 +48,14 @@ enum QoderSite: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// Hosts to search for session cookies, including aliases.
+    var hosts: [String] {
+        switch self {
+        case .international: ["qoder.com"]
+        case .china: ["qoder.cn", "qoder.com.cn"]
+        }
+    }
+
     var origin: String { "https://\(host)" }
 
     var usageURL: URL { URL(string: "\(origin)/api/v2/me/usages/big_model_credits")! }
@@ -304,11 +312,92 @@ struct QoderUsageService: Sendable {
     let cookie: String?
     let site: QoderSite
     var client = QoderClient()
+    var session = QoderCNSession()
 
     func fetch() async -> ProviderUsage {
+        // Desktop integration: when site is .china, and local Qoder CN app is installed,
+        // attempt to read the desktop app's session directly.
+        if site == .china && QoderCNSession.isInstalled {
+            if let desktop = await fetchDesktop(), desktop.state == .live {
+                return desktop
+            }
+        }
+
         var usage = await read()
         usage.sourceScope = Self.scope(site: site, cookie: cookie)
         return usage
+    }
+
+    func fetchDesktop() async -> ProviderUsage? {
+        guard let token = session.token() else { return nil }
+        var request = URLRequest(url: URL(string: "https://openapi.qoder.com.cn/sash/api/v2/me/usage")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("10", forHTTPHeaderField: "Cosy-ClientType")
+        request.setValue("Qoder", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 15
+
+        guard let (reply, response) = try? await (client.session ?? NetworkSession.shared).data(for: request) else {
+            return nil
+        }
+        guard let http = response as? HTTPURLResponse else { return nil }
+        switch http.statusCode {
+        case 200:
+            var usage = Self.parseDesktop(reply)
+            usage.sourceScope = UsageScope(route: .desktopSession, organization: "qoder.cn", identity: "desktop")
+            return usage
+        case 401, 403:
+            session.invalidate()
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    static func parseDesktop(_ data: Data, now: Date = Date()) -> ProviderUsage {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              root["displayMode"] as? String == "qoder",
+              let usage = root["qoderUsage"] as? [String: Any] else {
+            return .unavailable(.qoder, reason: .unreadableReply)
+        }
+        let expiry = (usage["expiresAt"] as? Double).flatMap { value -> Date? in
+            guard value > 0, value.isFinite else { return nil }
+            return Date(timeIntervalSince1970: value > 1e12 ? value / 1000 : value)
+        }
+        var windows: [UsageWindow] = []
+        var remaining = 0.0
+        for (field, label, kind) in [
+            ("userQuota", "Plan credits", UsageWindow.Kind.credits),
+            ("addOnQuota", "Add-on credits", UsageWindow.Kind.sharedCredits)
+        ] {
+            guard let pool = usage[field] as? [String: Any] else { continue }
+            guard let total = pool["total"] as? Double, let used = pool["used"] as? Double,
+                  total.isFinite, used.isFinite, total >= 0, used >= 0 else {
+                return .unavailable(.qoder, reason: .unreadableReply)
+            }
+            if total == 0 { continue }
+            let rem = (pool["remaining"] as? Double) ?? max(0, total - used)
+            remaining += rem
+            windows.append(UsageWindow(
+                id: "qoder.\(field)",
+                kind: kind,
+                scope: label,
+                usedFraction: min(max(used / total, 0), 1),
+                windowSeconds: 30 * 86_400,
+                resetsAt: field == "userQuota" ? expiry : nil,
+                reportsLength: false,
+                isExhausted: rem <= 0 || used >= total
+            ))
+        }
+        guard !windows.isEmpty else { return .unavailable(.qoder, reason: .qoderNoCredits) }
+        return ProviderUsage(
+            account: AccountKey(.qoder),
+            windows: windows,
+            observedAt: now,
+            state: .live,
+            plan: nil,
+            creditBalance: String(format: "%.0f cr", remaining)
+        )
     }
 
     /// Which site and which session a reading came from, for the cache.

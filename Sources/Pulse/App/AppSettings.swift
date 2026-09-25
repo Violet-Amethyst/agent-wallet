@@ -1005,7 +1005,7 @@ final class AppSettings {
         deepSeekBudget: Double? = nil,
         openAIBillingTotal: Double? = nil,
         deepSeekCurrency: String? = nil,
-        qoderSite: QoderSite = .international,
+        qoderSite: QoderSite = (QoderCNSession.isInstalled || (Locale.current.language.languageCode?.identifier == "zh")) ? .china : .international,
         serverAddresses: [String: String] = [:],
         lowBalanceAlerts: [String: Double] = [:],
         enabledAccounts: Set<String> = Set(Provider.allCases.map(\.rawValue)),
@@ -1339,7 +1339,8 @@ final class AppSettings {
             openAIBillingTotal: defaults.object(forKey: Key.openAIBillingTotal) as? Double,
             deepSeekCurrency: defaults.string(forKey: Key.deepSeekCurrency),
             qoderSite: defaults.string(forKey: Key.qoderSite)
-                .flatMap(QoderSite.init(rawValue:)) ?? .international,
+                .flatMap(QoderSite.init(rawValue:))
+                ?? (QoderCNSession.isInstalled || (Locale.current.language.languageCode?.identifier == "zh") ? .china : .international),
             serverAddresses: defaults.dictionary(forKey: Key.serverAddresses) as? [String: String] ?? [:],
             lowBalanceAlerts: defaults.dictionary(forKey: Key.lowBalanceAlerts) as? [String: Double] ?? [:],
             enabledAccounts: selection.enabledAccounts,

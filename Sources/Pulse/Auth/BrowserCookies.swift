@@ -294,10 +294,14 @@ enum BrowserCookies {
         }
 
         var item: CFTypeRef?
-        guard
-            SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess,
-            let password = item as? Data
-        else { return nil }
+        var passwordData: Data?
+        if SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess,
+           let password = item as? Data {
+            passwordData = password
+        } else if let cli = readKeychainCLI(service: service) {
+            passwordData = cli
+        }
+        guard let password = passwordData else { return nil }
 
         // Chromium's own parameters, unchanged since the scheme was
         // introduced: PBKDF2-SHA1 over the keychain password, a fixed salt,
@@ -317,6 +321,22 @@ enum BrowserCookies {
         guard derived == kCCSuccess else { return nil }
         keychainKeyCache.insert(key, for: service)
         return key
+    }
+
+    private static func readKeychainCLI(service: String) -> Data? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = ["find-generic-password", "-s", service, "-w"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        guard (try? process.run()) != nil else { return nil }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        return text.data(using: .utf8)
     }
 
     private static let keychainKeyCache = KeychainKeyCache()

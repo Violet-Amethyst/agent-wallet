@@ -1396,22 +1396,21 @@ struct SettingsView: View {
             // find nothing and say so in that provider's own pane — the
             // failure `Provider.soleRoute` was made exhaustive to prevent,
             // where Grok's pane described Antigravity's language server.
-            let host: String
+            let hosts: [String]
             let keep: @Sendable (String) -> String?
             switch account.provider {
             case .openAI:
-                host = "openai.com"
+                hosts = ["openai.com"]
                 keep = { try? OpenAIPlatformSession.normalize($0) }
             case .ollamaCloud:
-                host = "ollama.com"
+                hosts = ["ollama.com"]
                 keep = { try? OllamaSessionCookie.normalize($0) }
             case .xiaomiMiMo:
-                host = XiaomiMiMoClient.host
+                hosts = [XiaomiMiMoClient.host]
                 keep = { try? XiaomiMiMoCookie.normalize($0) }
-            // The chosen site's host and no other: `qoder.com.cn`'s session
-            // is not `qoder.com`'s, and is never read on its behalf.
+            // The chosen site's host and any domain aliases (e.g. qoder.cn and qoder.com.cn)
             case .qoder:
-                host = settings.qoderSite.host
+                hosts = settings.qoderSite.hosts
                 keep = { try? QoderCookie.normalize($0) }
             case .claudeCode, .codex, .kiro, .antigravity, .cursor, .openCodeGo,
                  .kimiCode, .zai, .glmCoding, .minimax, .minimaxCN, .copilot,
@@ -1422,8 +1421,13 @@ struct SettingsView: View {
                 return
             }
 
-            let found = await Task.detached(priority: .userInitiated) {
-                BrowserCookies.session(forHost: host, allowing: browsers, keep: keep)
+            let found = await Task.detached(priority: .userInitiated) { () -> BrowserCookies.Found? in
+                for host in hosts {
+                    if let res = BrowserCookies.session(forHost: host, allowing: browsers, keep: keep) {
+                        return res
+                    }
+                }
+                return nil
             }.value
 
             if let found {
@@ -2554,6 +2558,18 @@ struct SettingsView: View {
             // Above the session for the same reason: which site decides which
             // cookies the browser is asked for.
             if account.provider == .qoder {
+                if QoderCNSession.isInstalled {
+                    SettingsRow(
+                        String.localized("Qoder Desktop App"),
+                        subtitle: String.localized("Detected local Qoder desktop app login. Auto-syncs directly.")
+                    ) {
+                        Button(String.localized("Sync Now")) {
+                            store.refresh(account)
+                        }
+                    }
+                    SettingsRowDivider()
+                }
+
                 qoderSiteRow(for: account)
                 SettingsRowDivider()
             }
