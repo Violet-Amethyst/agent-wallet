@@ -218,12 +218,7 @@ enum AgentActivity {
                     continue
                 }
 
-            case .openAI, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
-                 .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-                 .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
-                 .sub2api, .newAPI, .v2ex, .qoder, .xai:
-                // None of these leaves transcripts Pulse reads, so nothing
-                // ever gets this far.
+            default:
                 return .finished
             }
         }
@@ -411,10 +406,7 @@ enum AgentActivity {
         case .kiro: home.appending(path: ".kiro/sessions")
         case .zai, .glmCoding:
             zcodeStorefront(home: home) == provider ? home.appending(path: ".zcode/cli/log") : nil
-        case .openAI, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
-             .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-             .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
-             .sub2api, .newAPI, .v2ex, .qoder, .xai: nil
+        default: nil
         }
     }
 

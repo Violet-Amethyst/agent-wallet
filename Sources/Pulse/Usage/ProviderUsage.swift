@@ -156,6 +156,23 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
 
     var estimate: Estimate?
 
+    /// The soonest a part of this allowance stops existing.
+    struct Expiry: Equatable, Codable, Sendable {
+        let amount: Double
+        let at: Date
+
+        static func soonest(of parts: [(amount: Double, at: Date)], after now: Date,
+                            calendar: Calendar = .current) -> Expiry? {
+            let ahead = parts.filter { $0.at > now && $0.amount > 0 }
+            guard let first = ahead.map(\.at).min() else { return nil }
+            let sameDay = ahead.filter { calendar.isDate($0.at, inSameDayAs: first) }
+            return .init(amount: sameDay.reduce(0) { $0 + $1.amount }, at: first)
+        }
+    }
+
+    var nextExpiry: Expiry?
+    var label: String?
+
     /// Spelled out because the hand-written `init(from:)` below suppresses the
     /// synthesised one. Same order and same defaults as before.
     init(
@@ -167,7 +184,9 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         resetsAt: Date?,
         reportsLength: Bool = true,
         estimate: Estimate? = nil,
-        isExhausted: Bool = false
+        isExhausted: Bool = false,
+        nextExpiry: Expiry? = nil,
+        label: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -178,6 +197,8 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         self.reportsLength = reportsLength
         self.estimate = estimate
         self.isExhausted = isExhausted
+        self.nextExpiry = nextExpiry
+        self.label = label
     }
 
     /// Decoded by hand for one reason: `estimate` replaced a stored
@@ -550,6 +571,9 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         /// A complete answer — nothing has been granted — and not a ring at
         /// 100%, which would say something was spent.
         case qoderNoCredits
+        case stepFunSessionMissing
+        case stepFunSessionExpired
+        case stepFunNoPlan
         /// A provider whose address is the reader's own has not been given
         /// one. Separate from a missing key because they are two fields and
         /// two steps, and "add an API key" about the one that already has a
@@ -571,6 +595,16 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         case unreadableReply
         case rateLimited
         case serverError
+        case extensionMissing
+        case extensionTimedOut
+        case extensionFailed
+        case extensionSignedOut
+        case sessionMissing
+        case sessionExpired
+        case localLoginMissing
+        case localLoginExpired
+        case localAppMissing
+        case noPlan
 
         var message: String {
             switch self {
@@ -608,6 +642,9 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             case .qoderSessionMissing: .localized("Sign in to Qoder in a browser to see usage.")
             case .qoderSessionExpired: .localized("Qoder's saved session expired. Sign in again in your browser.")
             case .qoderNoCredits: .localized("This Qoder account has no credits.")
+            case .stepFunSessionMissing: .localized("Sign in to StepFun's platform in a browser to see usage.")
+            case .stepFunSessionExpired: .localized("StepFun's saved session expired. Sign in again in your browser.")
+            case .stepFunNoPlan: .localized("No Step Plan on this StepFun account.")
             case .ollamaSessionMissing: .localized("Add an Ollama session in Settings.")
             case .ollamaSessionExpired: .localized("The Ollama session expired. Sign in again and add it.")
             case .ollamaPageChanged: .localized("Ollama's page has changed and can no longer be read.")
@@ -625,6 +662,16 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             case .unreadableReply: .localized("Couldn't read the reply.")
             case .rateLimited: .localized("Checking too often — easing off.")
             case .serverError: .localized("The service returned an error.")
+            case .extensionMissing: .localized("This extension's program can't be run. Check its folder.")
+            case .extensionTimedOut: .localized("The extension didn't answer in time.")
+            case .extensionFailed: .localized("The extension stopped with an error.")
+            case .extensionSignedOut: .localized("The extension says its login has expired.")
+            case .sessionMissing: .localized("Read a browser session in Settings.")
+            case .sessionExpired: .localized("The browser session expired. Sign in on the website, then read it again in Settings.")
+            case .localLoginMissing: .localized("Sign in with this service's own app or command-line tool first.")
+            case .localLoginExpired: .localized("The saved login has expired. Sign in again with the service's own app or tool.")
+            case .localAppMissing: .localized("Nothing saved on this Mac yet. Open the service's app once, then retry.")
+            case .noPlan: .localized("This account has no plan with usage limits.")
             }
         }
     }
@@ -692,8 +739,8 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
     /// likewise: its two sites are two accounts, and the site is a setting.
     var requiresScopeMatch: Bool {
         switch account.provider {
-        case .devin, .sub2api, .newAPI, .qoder: true
-        default: false
+        case .devin, .sub2api, .newAPI, .qoder, .stepFun: true
+        default: account.provider.profile?.requiresScopeMatch ?? false
         }
     }
 

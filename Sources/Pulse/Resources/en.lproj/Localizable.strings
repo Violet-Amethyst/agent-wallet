@@ -659,3 +659,17 @@
 "No Qoder session found. Sign in at %@ first." = "No Qoder session found. Sign in at %@ first.";
 "Site" = "Site";
 "Where you signed in. Changing it clears the saved session." = "Where you signed in. Changing it clears the saved session.";
+
+/* 3-tier hierarchy & features */
+"Subscriptions" = "Subscriptions";
+"API & Wallets" = "API & Wallets";
+"Available Providers" = "Available Providers";
+"Window Starter" = "Window Starter";
+"Detailed Card" = "Detailed Card";
+"Preheat usage windows as soon as they reset" = "Preheat usage windows as soon as they reset";
+"Show detailed usage metrics and ledger cards" = "Show detailed usage metrics and ledger cards";
+"Features" = "Features";
+"Quota" = "Quota";
+"Updated" = "Updated";
+
+

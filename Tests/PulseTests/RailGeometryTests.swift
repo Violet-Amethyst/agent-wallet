@@ -390,6 +390,10 @@ struct DualTrackOlympicRailGeometryTests {
 
     @Test("Left rail positions quota on left and money on right staggered at midlines")
     func leftRailDualTrackPositions() {
+        let originalEnds = PanelMetrics.usesRoundEnds
+        PanelMetrics.useRoundEnds(false)
+        defer { PanelMetrics.useRoundEnds(originalEnds) }
+
         let edge = PanelEdge.left
         let docked = true
         let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)

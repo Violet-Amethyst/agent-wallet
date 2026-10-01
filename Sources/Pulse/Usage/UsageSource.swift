@@ -144,6 +144,8 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
         case (_, .cursor):
             // Never shown, for the same reason: one route.
             .localized("Reads your account's limits with the login Cursor saved.")
+        default:
+            .localized("Use the endpoint when possible, the other route when not.")
         }
     }
 }

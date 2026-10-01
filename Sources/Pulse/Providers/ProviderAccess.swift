@@ -4,7 +4,8 @@ extension Provider {
     /// Shown before enabling a provider, both in the chooser and in Settings.
     /// Pure copy: drawing this must never inspect the credentials it describes.
     var monitoringAccessDescription: String {
-        switch self {
+        guard let written = handWritten else { return profile?.accessDescription() ?? "" }
+        return switch written {
         case .claudeCode:
             .localized("Reads Claude Code's saved login from Keychain or its credentials file. May ask for Keychain access, including Claude Desktop's cookie storage.")
         case .codex:
@@ -29,7 +30,7 @@ extension Provider {
             .localized("Reads Devin's web login from local Chromium browsers without a prompt; may also read the desktop app's saved plan.")
         case .volcengine:
             .localized("Runs arkcli with its saved login, or uses access keys entered in Settings. Pulse does not request Keychain access.")
-        case .ollamaCloud, .xiaomiMiMo, .qoder:
+        case .ollamaCloud, .xiaomiMiMo, .qoder, .stepFun:
             .localized("Uses a browser session you import in Settings. Importing may ask for browser Keychain access.")
         case .copilot:
             .localized("Uses the GitHub login you connect in Settings. No Keychain prompt.")
@@ -39,6 +40,8 @@ extension Provider {
         // says where the key goes: nowhere but the server they named.
         case .sub2api, .newAPI:
             .localized("Sends the key you enter only to the server address you enter. No Keychain prompt.")
+        case .pulseExtension:
+            .localized("Runs a program from your extensions folder on the refresh schedule. Pulse passes it no credentials; what it reads and where it connects are up to the program.")
         }
     }
 }

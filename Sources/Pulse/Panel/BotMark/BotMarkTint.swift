@@ -25,8 +25,13 @@ enum BotMarkTint {
     /// certainty than the others; they are one line each to correct. Kimi's
     /// blue, Z.ai having no colour of its own, and MiniMax's red are what the
     /// person maintaining this app says they are.
+    private static func profile(of provider: Provider) -> Color? {
+        provider.profile?.brandColor.map(BotMarkPalette.rgb)
+    }
+
     static func brand(for provider: Provider) -> Color? {
-        switch provider {
+        guard let written = provider.handWritten else { return profile(of: provider) }
+        return switch written {
         case .claudeCode: BotMarkPalette.rgb(0xD97757)
         case .deepSeek: BotMarkPalette.rgb(0x4D6BFE)
         case .volcengine: BotMarkPalette.rgb(0x1664FF)
@@ -47,11 +52,14 @@ enum BotMarkTint {
         // Qoder body inside a green ring reads as one blob, this is the line
         // to change.
         case .qoder: BotMarkPalette.rgb(0x2ADB5C)
+        // StepFun's mark is a blue gradient; the deep end is the colour.
+        case .stepFun: BotMarkPalette.rgb(0x0160FF)
         // V2EX draws a light arrow on near-black and has no other colour.
         // New API's own mark is a cyan-to-pink pair; neither end is the
         // colour, so it takes one of Pulse's own rather than half a gradient.
         case .codex, .kiro, .cursor, .openCodeGo, .ollamaCloud, .zai,
-             .copilot, .grok, .grokBot, .commandCode, .devin, .newAPI, .v2ex, .xai:
+             .copilot, .grok, .grokBot, .commandCode, .devin, .newAPI, .v2ex, .xai,
+             .pulseExtension:
             nil
         }
     }

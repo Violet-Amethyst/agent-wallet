@@ -392,28 +392,19 @@ struct AlertMemory: Codable, Sendable, Equatable {
         case .claudeLoginExpired, .claudeDesktopKeyRefused, .claudeDesktopSessionExpired,
              .cursorLoginExpired, .grokLoginExpired, .signedOut, .apiKeyRefused,
              .openAIWebSessionExpired, .ollamaSessionExpired, .ollamaPageChanged,
-             .xiaomiSessionExpired, .qoderSessionExpired,
+             .xiaomiSessionExpired, .qoderSessionExpired, .stepFunSessionExpired,
              .unreachable, .unreadableReply, .rateLimited, .serverError,
-             .codexServerFailed:
+             .codexServerFailed,
+             .extensionTimedOut, .extensionFailed, .extensionSignedOut,
+             .sessionExpired, .localLoginExpired:
             .failure
 
         // The provider replied. "No limits on this plan" and "your Cursor plan
         // doesn't include Grok Bot" are complete answers, and an answer ends
         // an outage as surely as a figure does.
         case .noLimitsReported, .grokBotNotIncluded,
-             // Same shape: a key that authenticated, an envelope that parsed,
-             // and a complete answer in it. Classed neutral it cleared
-             // nothing, so an earlier outage's `reportedFailure` stayed true
-             // for the life of the record and the *next* real outage said
-             // nothing — the exact failure the three-way split exists to
-             // prevent.
-             .zaiNoCodingPlan,
-             // And the same again for Xiaomi: the session worked and the
-             // account simply has no plan on it.
-             .xiaomiNoCodingPlan,
-             // And for Qoder: the session worked and the account holds no
-             // credits. An answer, not an outage.
-             .qoderNoCredits:
+             .zaiNoCodingPlan, .xiaomiNoCodingPlan, .qoderNoCredits,
+             .stepFunNoPlan, .noPlan:
             .answered
 
         // Never set up, never signed in, or an app that simply is not
@@ -425,17 +416,12 @@ struct AlertMemory: Codable, Sendable, Equatable {
              .kiroSignInRequired, .antigravityNotRunning, .antigravityNotAnswering,
              .cursorSignInRequired, .grokSignInRequired, .notSignedIn,
              .ollamaSessionMissing, .xiaomiSessionMissing, .qoderSessionMissing,
+             .stepFunSessionMissing,
              .apiKeyMissing, .volcengineCLIMissing,
              .volcengineSignInRequired,
-             // An app that was never installed or never signed in, which is
-             // the same standing as a CLI that is not there: true until
-             // somebody does something, and not an outage to announce.
              .devinAppMissing, .devinPlanUnread, .devinOrganizationMissing,
-             // A self-hosted service with no address yet, or one whose address
-             // Pulse will not send a key to. Both are setup steps nobody has
-             // finished, and neither is evidence about whether anything can be
-             // reached — nothing was ever asked.
-             .serverAddressMissing, .serverAddressRefused:
+             .serverAddressMissing, .serverAddressRefused,
+             .extensionMissing, .sessionMissing, .localLoginMissing, .localAppMissing:
             .neutral
         }
     }

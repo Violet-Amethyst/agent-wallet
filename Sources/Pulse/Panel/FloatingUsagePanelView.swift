@@ -87,8 +87,9 @@ struct FloatingUsagePanelView: View {
                 // the berth's size and outline are animated, so it visibly
                 // grows out of the sliver and back rather than one thing
                 // vanishing while another appears in its place.
+                let currentEntries = entries
                 UsageDockView(
-                    entries: entries,
+                    entries: currentEntries,
                     // Where the pointer is on the panel, for the marks' eyes
                     // to follow. Nil when it is off the panel, which is what
                     // makes them look back to their own business.
@@ -109,7 +110,7 @@ struct FloatingUsagePanelView: View {
                     isDocked: placement.isDocked,
                     isExpanded: isExpanded,
                     notchSize: placement.notch?.size,
-                    alert: alertTint,
+                    alert: alertTint(for: currentEntries),
                     usesGlass: settings.usesGlass,
                     animatesActivity: settings.animatesRingActivity,
                     onEnter: select,
@@ -127,13 +128,15 @@ struct FloatingUsagePanelView: View {
                 .fixedSize()
                 .overlay(alignment: placement.edge.cardAlignment) {
                     if let selected = selectedUsage, let index = selectedIndex {
+                        let isDetailed = currentEntries.indices.contains(index) && settings.showsDetailedCard(for: currentEntries[index].slot.account)
                         UsageDetailCard(
                             usesGlass: settings.usesGlass,
                             usage: selected,
                             title: selectedTitle ?? "",
                             edge: placement.edge,
                             showsRemaining: true,
-                            showsForecast: settings.showsForecast,
+                            showsForecast: settings.showsForecast || isDetailed,
+                            showsDetailed: isDetailed,
                             pointerCenter: pointerCentre(for: index),
                             wallet: selectedWallet
                         )
@@ -278,11 +281,11 @@ struct FloatingUsagePanelView: View {
     /// threshold for as long as they are watched, and a permanently coloured
     /// line welded to the screen edge is worse than the thing it is warning
     /// about.
-    private var alertTint: Color? {
+    private func alertTint(for entries: [RailEntry]) -> Color? {
         guard settings.dockShowsAlertColor else { return nil }
         let worst = entries.compactMap(\.headline).max { $0.usedFraction < $1.usedFraction }
         guard let worst,
-worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
+              worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
         else { return nil }
         return worst.tint(warningAt: settings.warningThreshold.fraction)
     }

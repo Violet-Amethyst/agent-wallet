@@ -659,3 +659,17 @@
 "No Qoder session found. Sign in at %@ first." = "没找到 Qoder 的登录信息。请先在 %@ 登录。";
 "Site" = "站点";
 "Where you signed in. Changing it clears the saved session." = "你在哪个站登录的。切换后会清掉已保存的登录信息。";
+
+/* 账号分层与服务抽屉 */
+"Subscriptions" = "额度订阅账号";
+"API & Wallets" = "按量充值账号";
+"Available Providers" = "未配置服务商";
+"Window Starter" = "启动窗口预热";
+"Detailed Card" = "显示高阶用量卡片";
+"Preheat usage windows as soon as they reset" = "在限额窗口重置后自动预热并记录";
+"Show detailed usage metrics and ledger cards" = "在面板中展示详细用量及历史明细卡片";
+"Features" = "功能特性";
+"Quota" = "额度";
+"Updated" = "更新时间";
+
+

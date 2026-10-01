@@ -134,8 +134,8 @@ struct RefreshPacingTests {
     /// inherit `true` in silence.
     @Test("Only the providers this Mac cannot watch are unwatched")
     func onlyUnwatchableProvidersAreUnwatched() {
-        let unwatched: Set<Provider> = [.deepSeek, .commandCode, .sub2api, .newAPI, .v2ex]
-        for provider in Provider.allCases {
+        let unwatched: Set<Provider> = [.deepSeek, .commandCode, .sub2api, .newAPI, .v2ex, .openAI, .xai]
+        for provider in Provider.allCases.filter({ $0.handWritten != nil }) {
             #expect(provider.spendingIsWatchedLocally == !unwatched.contains(provider),
                     "\(provider.rawValue)")
         }

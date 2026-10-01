@@ -146,6 +146,48 @@ final class AppSettings {
         }
     }
 
+    /// Which StepFun site the saved session belongs to.
+    var stepFunSite: StepFunSite {
+        didSet {
+            guard stepFunSite != oldValue else { return }
+            UserDefaults.standard.set(stepFunSite.rawValue, forKey: Key.stepFunSite)
+            onChange?()
+        }
+    }
+
+    /// Providers whose usage windows Pulse starts as soon as they reset.
+    var primedProviders: Set<String> = [] {
+        didSet {
+            guard primedProviders != oldValue else { return }
+            UserDefaults.standard.set(Array(primedProviders), forKey: Key.primedProviders)
+        }
+    }
+
+    func primesWindows(for provider: Provider) -> Bool {
+        primedProviders.contains(provider.rawValue)
+    }
+
+    func setPrimesWindows(_ on: Bool, for provider: Provider) {
+        if on { primedProviders.insert(provider.rawValue) } else { primedProviders.remove(provider.rawValue) }
+    }
+
+    /// Accounts showing detailed card with usage history and metrics.
+    var detailedCards: Set<String> = [] {
+        didSet {
+            guard detailedCards != oldValue else { return }
+            UserDefaults.standard.set(Array(detailedCards), forKey: Key.detailedCards)
+            onChange?()
+        }
+    }
+
+    func showsDetailedCard(for account: AccountKey) -> Bool {
+        detailedCards.contains(account.id)
+    }
+
+    func setShowsDetailedCard(_ shows: Bool, for account: AccountKey) {
+        if shows { detailedCards.insert(account.id) } else { detailedCards.remove(account.id) }
+    }
+
     /// The xAI Team ID (UUID format) to query billing and usage for.
     /// If nil, attempts to read from the browser session or defaults to "default".
     var xaiTeamId: String? {
@@ -200,17 +242,63 @@ final class AppSettings {
         }
     }
 
+    /// Where each API account's ring gets its denominator, keyed by account.
+    /// DeepSeek's own lives in `deepSeekBasis`, from before there were others;
+    /// `balanceBasis(for:)` reads either. A missing entry is the default.
+    var balanceBases: [String: String] = [:] {
+        didSet {
+            guard balanceBases != oldValue else { return }
+            UserDefaults.standard.set(balanceBases, forKey: Key.balanceBases)
+            onChange?()
+        }
+    }
+
+    /// What the reader calls a full tank for each API account, for
+    /// `BalanceBasis.budget`. DeepSeek's lives in `deepSeekBudget`.
+    var balanceBudgets: [String: Double] = [:] {
+        didSet {
+            guard balanceBudgets != oldValue else { return }
+            UserDefaults.standard.set(balanceBudgets, forKey: Key.balanceBudgets)
+            onChange?()
+        }
+    }
+
+    func balanceBasis(for account: AccountKey) -> BalanceBasis {
+        if account == AccountKey(.deepSeek) { return deepSeekBasis }
+        return balanceBases[account.id].flatMap(BalanceBasis.init(rawValue:)) ?? .default
+    }
+
+    func setBalanceBasis(_ basis: BalanceBasis, for account: AccountKey) {
+        if account == AccountKey(.deepSeek) { deepSeekBasis = basis; return }
+        balanceBases[account.id] = basis == .default ? nil : basis.rawValue
+    }
+
+    func balanceBudget(for account: AccountKey) -> Double? {
+        account == AccountKey(.deepSeek) ? deepSeekBudget : balanceBudgets[account.id]
+    }
+
+    func setBalanceBudget(_ budget: Double?, for account: AccountKey) {
+        if account == AccountKey(.deepSeek) { deepSeekBudget = budget; return }
+        balanceBudgets[account.id] = budget
+    }
+
     /// The order the rail draws them in, as account ids.
     ///
     /// Stored rather than derived so it survives a launch, and resolved through
     /// `orderedAccounts` rather than trusted as-is: an account added later is
     /// missing from every list stored before it existed, and one removed would
+    @ObservationIgnored
+    private var _cachedOrderedAccounts: [AccountKey]?
+    @ObservationIgnored
+    private var _cachedAllAccounts: [AccountKey]?
+
     /// still be named in lists stored while it did. The stored values are
     /// unchanged from when this was a list of providers — a provider's first
     /// account has the provider's own raw value as its id.
     var providerOrder: [String] {
         didSet {
             guard providerOrder != oldValue else { return }
+            _cachedOrderedAccounts = nil
             UserDefaults.standard.set(providerOrder, forKey: Key.providerOrder)
             // Deliberately no `onChange`: that is how the AppKit side hears
             // about settings the *usage loop* cares about, and it refetches
@@ -225,6 +313,8 @@ final class AppSettings {
     var extraAccounts: [ExtraAccount] {
         didSet {
             guard extraAccounts != oldValue else { return }
+            _cachedAllAccounts = nil
+            _cachedOrderedAccounts = nil
             // Before the change is announced: whoever reacts is about to
             // measure the panel, and the rail is now longer than it was.
             PanelMetrics.makeRoom(for: railSlotCount)
@@ -238,9 +328,40 @@ final class AppSettings {
     /// added to the two that allow it. Declaration order, before the user's
     /// own order is applied.
     var allAccounts: [AccountKey] {
-        Provider.allCases.flatMap { provider in
+        if let cached = _cachedAllAccounts { return cached }
+        let accounts = Provider.allCases.flatMap { provider in
             [AccountKey(provider)] + extraAccounts.filter { $0.provider == provider }.map(\.key)
+        } + extensions.map(\.account)
+        _cachedAllAccounts = accounts
+        return accounts
+    }
+
+    private(set) var extensions: [PulseExtension] = [] {
+        didSet {
+            _cachedAllAccounts = nil
+            _cachedOrderedAccounts = nil
+            let names = Dictionary(extensions.map { ($0.account.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+            UserDefaults.standard.set(names, forKey: Key.extensionNames)
         }
+    }
+    private(set) var extensionProblems: [ExtensionCatalog.Problem] = []
+
+    func rescanExtensions() {
+        apply(ExtensionCatalog.scan())
+    }
+
+    func apply(_ scan: ExtensionCatalog.Scan) {
+        guard scan.extensions != extensions || scan.problems != extensionProblems else { return }
+        let changedAccounts = scan.extensions.map(\.account) != extensions.map(\.account)
+        extensions = scan.extensions
+        extensionProblems = scan.problems
+        PanelMetrics.makeRoom(for: railSlotCount)
+        if changedAccounts { onChange?() }
+    }
+
+    func pulseExtension(for account: AccountKey) -> PulseExtension? {
+        guard account.provider == .pulseExtension else { return nil }
+        return extensions.first { $0.account == account }
     }
 
     /// Every account, in the user's order.
@@ -252,9 +373,12 @@ final class AppSettings {
     /// alphabetical order rather than in the order the enum happens to be
     /// written in.
     var orderedAccounts: [AccountKey] {
+        if let cached = _cachedOrderedAccounts { return cached }
         let known = allAccounts
         let stored = providerOrder.compactMap(AccountKey.init(id:)).filter(known.contains)
-        return stored + known.filter { !stored.contains($0) }.sorted(by: byName)
+        let accounts = stored + known.filter { !stored.contains($0) }.sorted(by: byName)
+        _cachedOrderedAccounts = accounts
+        return accounts
     }
 
     /// The order accounts fall into before anybody has arranged them: **by the
@@ -384,6 +508,7 @@ final class AppSettings {
     var language: AppLanguage {
         didSet {
             guard language != oldValue else { return }
+            _cachedOrderedAccounts = nil
             LocalizationSource.use(language)
             UserDefaults.standard.set(language.rawValue, forKey: Key.language)
             onChange?()
@@ -1065,7 +1190,12 @@ final class AppSettings {
         readsTokenSpend: Bool = false,
         alertThreshold: AlertThreshold = .default,
         alertsOnReset: Bool = false,
-        alertsOnFailure: Bool = false
+        alertsOnFailure: Bool = false,
+        stepFunSite: StepFunSite = .china,
+        primedProviders: Set<String> = [],
+        detailedCards: Set<String> = [],
+        balanceBases: [String: String] = [:],
+        balanceBudgets: [String: Double] = [:]
     ) {
         self.isPanelVisible = isPanelVisible
         self.hidesMenuBarIcon = hidesMenuBarIcon
@@ -1080,6 +1210,11 @@ final class AppSettings {
         self.xaiTeamId = xaiTeamId
         self.xaiBudget = xaiBudget
         self.qoderSite = qoderSite
+        self.stepFunSite = stepFunSite
+        self.primedProviders = primedProviders
+        self.detailedCards = detailedCards
+        self.balanceBases = balanceBases
+        self.balanceBudgets = balanceBudgets
         self.serverAddresses = serverAddresses
         self.lowBalanceAlerts = lowBalanceAlerts
         self.enabledAccounts = enabledAccounts
@@ -1409,7 +1544,13 @@ final class AppSettings {
             alertThreshold: (defaults.object(forKey: Key.alertThreshold) as? Int)
                 .flatMap(AlertThreshold.init(rawValue:)) ?? .default,
             alertsOnReset: defaults.object(forKey: Key.alertsOnReset) as? Bool ?? false,
-            alertsOnFailure: defaults.object(forKey: Key.alertsOnFailure) as? Bool ?? false
+            alertsOnFailure: defaults.object(forKey: Key.alertsOnFailure) as? Bool ?? false,
+            stepFunSite: defaults.string(forKey: Key.stepFunSite)
+                .flatMap(StepFunSite.init(rawValue:)) ?? .china,
+            primedProviders: Set(defaults.stringArray(forKey: Key.primedProviders) ?? []),
+            detailedCards: Set(defaults.stringArray(forKey: Key.detailedCards) ?? []),
+            balanceBases: defaults.dictionary(forKey: Key.balanceBases) as? [String: String] ?? [:],
+            balanceBudgets: defaults.dictionary(forKey: Key.balanceBudgets) as? [String: Double] ?? [:]
         )
         settings.detectedProviders = detected
         settings.suggestedProviders = selection.suggestedProviders
@@ -1427,6 +1568,7 @@ final class AppSettings {
         PanelMetrics.putLabelAboveRing(settings.labelAboveRing)
         PanelMetrics.useRoundEnds(settings.usesRoundEnds)
         PanelMetrics.showForecast(settings.showsForecast)
+        settings.rescanExtensions()
         PanelMetrics.makeRoom(for: settings.railSlotCount)
         return settings
     }
@@ -1545,5 +1687,11 @@ final class AppSettings {
         static let alertsOnReset = "settings.alertsOnReset"
         static let alertsOnFailure = "settings.alertsOnFailure"
         static let providerOrder = "settings.providerOrder"
+        static let stepFunSite = "settings.stepFunSite"
+        static let primedProviders = "settings.primedProviders"
+        static let detailedCards = "settings.detailedCards"
+        static let balanceBases = "settings.balanceBases"
+        static let balanceBudgets = "settings.balanceBudgets"
+        static let extensionNames = "settings.extensionNames"
     }
 }

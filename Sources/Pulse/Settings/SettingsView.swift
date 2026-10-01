@@ -135,6 +135,25 @@ struct SettingsView: View {
     @State private var selectedModel: String?
     @State private var modelSpend = ModelSpendSummary()
 
+    @State private var subscriptionsExpanded: Bool = true
+    @State private var walletsExpanded: Bool = true
+    @State private var unconfiguredExpanded: Bool = false
+
+    /// Active (enabled) quota/allowance accounts (Claude, Codex, Antigravity, Cursor, etc.)
+    private var activeQuotaAccounts: [AccountKey] {
+        matchingAccounts.filter { settings.isEnabled($0) && $0.provider.billing == .subscription }
+    }
+
+    /// Active (enabled) API/wallet balance accounts (DeepSeek, OpenAI, xAI, Sub2API, NewAPI, etc.)
+    private var activeWalletAccounts: [AccountKey] {
+        matchingAccounts.filter { settings.isEnabled($0) && $0.provider.billing == .api }
+    }
+
+    /// Unconfigured / disabled accounts (collapsed in bottom drawer, zero background probing)
+    private var unconfiguredAccounts: [AccountKey] {
+        matchingAccounts.filter { !settings.isEnabled($0) }
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $navigation.pane) {
@@ -159,12 +178,65 @@ struct SettingsView: View {
                     }
                 }
 
-                if !matchingAccounts.isEmpty {
-                    Section(String.localized("Accounts")) {
-                        // Same order as the rail: a sidebar that disagreed with
-                        // the thing it configures is its own small confusion.
-                        ForEach(matchingAccounts) { account in
+                // Tier 1: 额度订阅账号 (Subscriptions / Quota Plans)
+                if !activeQuotaAccounts.isEmpty {
+                    Section(isExpanded: $subscriptionsExpanded) {
+                        ForEach(activeQuotaAccounts) { account in
                             row(.account(account))
+                        }
+                    } header: {
+                        HStack {
+                            Text(localized: "Subscriptions")
+                            Spacer()
+                            Text("\(activeQuotaAccounts.count)")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                        }
+                    }
+                }
+
+                // Tier 2: 按量充值账号 (Pay-as-you-go & API Wallets)
+                if !activeWalletAccounts.isEmpty {
+                    Section(isExpanded: $walletsExpanded) {
+                        ForEach(activeWalletAccounts) { account in
+                            row(.account(account))
+                        }
+                    } header: {
+                        HStack {
+                            Text(localized: "API & Wallets")
+                            Spacer()
+                            Text("\(activeWalletAccounts.count)")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                        }
+                    }
+                }
+
+                // Tier 3: 未配置服务商 (Available Providers Drawer)
+                if !unconfiguredAccounts.isEmpty {
+                    Section(isExpanded: Binding(
+                        get: { isSearching || unconfiguredExpanded },
+                        set: { unconfiguredExpanded = $0 }
+                    )) {
+                        ForEach(unconfiguredAccounts) { account in
+                            unconfiguredRow(account)
+                        }
+                    } header: {
+                        HStack {
+                            Text(localized: "Available Providers")
+                            Spacer()
+                            Text("\(unconfiguredAccounts.count)")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
                         }
                     }
                 }
@@ -402,6 +474,27 @@ struct SettingsView: View {
             }
         }
         .tag(pane)
+    }
+
+    private func unconfiguredRow(_ account: AccountKey) -> some View {
+        Label {
+            HStack(spacing: 4) {
+                Text(title(.account(account)))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(account.provider.billing == .subscription ? String.localized("Quota") : "API")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(Color.secondary.opacity(0.12)))
+            }
+        } icon: {
+            LobeIconView(provider: account.provider, size: 14)
+                .opacity(0.5)
+                .saturation(0.3)
+        }
+        .tag(SettingsPane.account(account))
     }
 
     // MARK: - Panes
@@ -1050,6 +1143,46 @@ struct SettingsView: View {
                     .frame(maxWidth: SettingsLayout.controlWidth, alignment: .trailing)
                 }
             }
+
+            SettingsGroup(String.localized("Features")) {
+                SettingsRow(
+                    String.localized("Window Starter"),
+                    subtitle: String.localized("Preheat usage windows as soon as they reset")
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { !settings.primedProviders.isEmpty },
+                        set: { enabled in
+                            if enabled {
+                                settings.primedProviders = [Provider.claudeCode.rawValue, Provider.codex.rawValue]
+                            } else {
+                                settings.primedProviders = []
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+
+                SettingsRowDivider()
+
+                SettingsRow(
+                    String.localized("Detailed Card"),
+                    subtitle: String.localized("Show detailed usage metrics and ledger cards")
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { !settings.detailedCards.isEmpty },
+                        set: { enabled in
+                            if enabled {
+                                settings.detailedCards = Set(settings.shownAccounts.map(\.id))
+                            } else {
+                                settings.detailedCards = []
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+            }
         }
     }
 
@@ -1400,30 +1533,40 @@ struct SettingsView: View {
             // where Grok's pane described Antigravity's language server.
             let hosts: [String]
             let keep: @Sendable (String) -> String?
-            switch account.provider {
-            case .openAI:
-                hosts = ["openai.com"]
-                keep = { try? OpenAIPlatformSession.normalize($0) }
-            case .ollamaCloud:
-                hosts = ["ollama.com"]
-                keep = { try? OllamaSessionCookie.normalize($0) }
-            case .xiaomiMiMo:
-                hosts = [XiaomiMiMoClient.host]
-                keep = { try? XiaomiMiMoCookie.normalize($0) }
-            // The chosen site's host and any domain aliases (e.g. qoder.cn and qoder.com.cn)
-            case .qoder:
-                hosts = settings.qoderSite.hosts
-                keep = { try? QoderCookie.normalize($0) }
-            case .xai:
-                hosts = ["x.ai", "console.x.ai"]
-                keep = { XAIWebLogin.normalize($0) }
-            case .claudeCode, .codex, .kiro, .antigravity, .cursor, .openCodeGo,
-                 .kimiCode, .zai, .glmCoding, .minimax, .minimaxCN, .copilot,
-                 .grok, .grokBot, .volcengine, .commandCode, .deepSeek, .devin,
-                 .sub2api, .newAPI, .v2ex:
-                // Not session-based: `readSession` sends those to
-                // `readBrowserStorage` before it gets here.
-                return
+            if let written = account.provider.handWritten {
+                switch written {
+                case .openAI:
+                    hosts = ["openai.com"]
+                    keep = { try? OpenAIPlatformSession.normalize($0) }
+                case .ollamaCloud:
+                    hosts = ["ollama.com"]
+                    keep = { try? OllamaSessionCookie.normalize($0) }
+                case .xiaomiMiMo:
+                    hosts = [XiaomiMiMoClient.host]
+                    keep = { try? XiaomiMiMoCookie.normalize($0) }
+                // The chosen site's host and any domain aliases (e.g. qoder.cn and qoder.com.cn)
+                case .qoder:
+                    hosts = settings.qoderSite.hosts
+                    keep = { try? QoderCookie.normalize($0) }
+                case .stepFun:
+                    hosts = [settings.stepFunSite.host]
+                    keep = { try? StepFunCookie.normalize($0) }
+                case .xai:
+                    hosts = ["x.ai", "console.x.ai"]
+                    keep = { XAIWebLogin.normalize($0) }
+                case .claudeCode, .codex, .kiro, .antigravity, .cursor, .openCodeGo,
+                     .kimiCode, .zai, .glmCoding, .minimax, .minimaxCN, .copilot,
+                     .grok, .grokBot, .volcengine, .commandCode, .deepSeek, .devin,
+                     .sub2api, .newAPI, .v2ex, .pulseExtension:
+                    // Not session-based: `readSession` sends those to
+                    // `readBrowserStorage` before it gets here.
+                    return
+                }
+            } else {
+                guard case .sessionCookie(let profileHost, let cookies) = account.provider.profile?.credential
+                else { return }
+                hosts = [profileHost]
+                keep = { ProviderProfile.keep($0, cookies: cookies) }
             }
 
             let found = await Task.detached(priority: .userInitiated) { () -> BrowserCookies.Found? in
@@ -1734,6 +1877,36 @@ struct SettingsView: View {
                             supportsOpacity: false
                         )
                         .labelsHidden()
+                    }
+                }
+
+                SettingsRowDivider()
+
+                SettingsRow(
+                    String.localized("Detailed Card"),
+                    subtitle: String.localized("Show detailed usage metrics and ledger cards")
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { settings.showsDetailedCard(for: account) },
+                        set: { settings.setShowsDetailedCard($0, for: account) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+
+                if account.provider == .claudeCode || account.provider == .codex {
+                    SettingsRowDivider()
+
+                    SettingsRow(
+                        String.localized("Window Starter"),
+                        subtitle: String.localized("Preheat usage windows as soon as they reset")
+                    ) {
+                        Toggle("", isOn: Binding(
+                            get: { settings.primesWindows(for: account.provider) },
+                            set: { settings.setPrimesWindows($0, for: account.provider) }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                     }
                 }
             }

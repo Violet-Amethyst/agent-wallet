@@ -16,7 +16,10 @@ extension Provider {
             ["/Applications/\(name).app", local("Applications/\(name).app")]
         }
 
-        switch self {
+        guard let written = handWritten else {
+            return (profile?.discoveryPaths ?? []).map { $0.hasPrefix("/") ? $0 : local($0) }
+        }
+        switch written {
         case .claudeCode:
             return [local(".claude"), local("Library/Application Support/Claude")] + app("Claude")
         case .codex: return [local(".codex")]
@@ -35,14 +38,12 @@ extension Provider {
             return ["Devin", "Windsurf"].map {
                 local("Library/Application Support/\($0)/User/globalStorage/state.vscdb")
             }
-        // The editor, either edition. A hint only: what is read is the
-        // browser's session for the account page, not anything the app keeps.
         case .qoder:
             return ["Qoder", "QoderCN", "com.qodercn.app.stable"].map { local("Library/Application Support/\($0)") } + app("Qoder") + app("Qoder CN")
-        // sub2api is somebody's own deployment and V2EX is a website; there
-        // is nothing on this Mac that says either is in use.
+        case .stepFun:
+            return [local(".stepcode")]
         case .openAI, .kimiCode, .ollamaCloud, .zai, .minimax, .minimaxCN, .copilot,
-             .volcengine, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .xai:
+             .volcengine, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .xai, .pulseExtension:
             return []
         }
     }

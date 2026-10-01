@@ -410,6 +410,7 @@ final class UsageStore {
         let ollama = OllamaCloudUsageService(cookie: apiKeys[.ollamaCloud])
         let xiaomi = XiaomiMiMoUsageService(cookie: apiKeys[.xiaomiMiMo])
         let qoder = QoderUsageService(cookie: apiKeys[.qoder], site: settings.qoderSite)
+        let stepFun = StepFunUsageService(cookie: apiKeys[.stepFun], site: settings.stepFunSite)
         let zai = ZaiUsageService(provider: .zai, enteredKey: apiKeys[.zai])
         let glm = ZaiUsageService(provider: .glmCoding, enteredKey: apiKeys[.glmCoding])
         let minimax = MiniMaxUsageService(provider: .minimax, enteredKey: apiKeys[.minimax])
@@ -461,10 +462,23 @@ final class UsageStore {
             now: now
         )
         for provider in wanted { askedAt[AccountKey(provider).id] = now }
+        // Profiled providers are asked side by side in one group rather than
+        // each getting its own `async let` below: there are dozens of them,
+        // and nothing about one depends on another.
+        let profiled = wanted.compactMap { provider -> (ProviderProfile, ProfileContext)? in
+            guard let profile = provider.profile else { return nil }
+            return (profile, profileContext(for: provider))
+        }
         // Added accounts stay on the loop's own cadence: every one of them is
         // an agent whose transcripts this Mac can see, so the signals are not
         // blind to any of them.
-        let extras = settings.shownAccounts.filter { !$0.isPrimary }
+        let extras = settings.shownAccounts.filter { !$0.isPrimary && $0.provider != .pulseExtension }
+        // Extensions are read side by side rather than in that queue: each is
+        // a program with its own time limit, and one taking all of it must not
+        // make every other extension wait behind it.
+        let extensionServices = settings.shownAccounts
+            .compactMap(settings.pulseExtension(for:))
+            .map(ExtensionUsageService.init(pulseExtension:))
 
         Task { [codex, kiro, claudeCode, antigravity, cursor, grok, grokBot] in
             // Independent, so they run side by side rather than one waiting on
@@ -544,9 +558,22 @@ final class UsageStore {
             async let qoderUsage = wanted.contains(.qoder)
                 ? await qoder.fetch()
                 : ProviderUsage.unavailable(.qoder, reason: .loading)
+            async let stepFunUsage = wanted.contains(.stepFun)
+                ? await stepFun.fetch()
+                : ProviderUsage.unavailable(.stepFun, reason: .loading)
             async let xaiUsage = wanted.contains(.xai)
                 ? await xai.fetch(now: now)
                 : ProviderUsage.unavailable(.xai, reason: .loading)
+            // Started beside the built-in ones, not after they have all come
+            // back: waiting on them put the slowest of each group end to end.
+            async let profiledUsage = withTaskGroup(of: (Provider, ProviderUsage).self) { group in
+                for (profile, context) in profiled {
+                    group.addTask { (context.provider, await profile.fetch(context)) }
+                }
+                var readings: [(Provider, ProviderUsage)] = []
+                for await reading in group { readings.append(reading) }
+                return readings
+            }
 
             let (rawCodex, rawKiro, rawClaude, rawAntigravity, rawOpenAI, rawOpenCode) =
                 await (codexUsage, kiroUsage, claudeUsage, antigravityUsage, openAIUsage, openCodeUsage)
@@ -557,7 +584,19 @@ final class UsageStore {
             let (rawVolcengine, rawCommandCode) = await (volcengineUsage, commandCodeUsage)
             let (rawDeepSeek, rawDevin) = await (deepSeekUsage, devinUsage)
             let (rawSub2API, rawNewAPI, rawV2EX) = await (sub2apiUsage, newAPIUsage, v2exUsage)
-            let (rawXiaomi, rawQoder, rawXAI) = await (xiaomiUsage, qoderUsage, xaiUsage)
+            let (rawXiaomi, rawQoder, rawStepFun, rawXAI) = await (xiaomiUsage, qoderUsage, stepFunUsage, xaiUsage)
+            let rawProfiled = await profiledUsage
+
+            // Extensions run side by side: each has its own timeout and
+            // failure mode, and they do not share a host.
+            let rawExtensions = await withTaskGroup(of: ProviderUsage.self) { group in
+                for service in extensionServices {
+                    group.addTask { await service.fetch() }
+                }
+                var readings: [ProviderUsage] = []
+                for await reading in group { readings.append(reading) }
+                return readings
+            }
 
             // **The disowning is checked before anything is written, not just
             // before the readings are handed to the panel.** `reconciled`
@@ -604,10 +643,21 @@ final class UsageStore {
                 (.newAPI, rawNewAPI),
                 (.v2ex, rawV2EX),
                 (.qoder, rawQoder),
+                (.stepFun, rawStepFun),
                 (.xai, rawXAI),
-            ] where wanted.contains(provider) {
+            ] + rawProfiled where wanted.contains(provider) {
+                let raw = self.ringed(raw)
                 results.append(BatchResult(
                     provider: provider,
+                    raw: raw,
+                    fetched: await UsageCache.shared.reconciled(raw)
+                ))
+            }
+
+            for raw in rawExtensions {
+                let raw = self.ringed(raw)
+                results.append(BatchResult(
+                    provider: raw.account.provider,
                     raw: raw,
                     fetched: await UsageCache.shared.reconciled(raw)
                 ))
@@ -642,7 +692,7 @@ final class UsageStore {
             // quietly undoing the deliberate refresh its own settings pane
             // offers, a minute or two after the user pressed it.
             for result in results {
-                self.commit(result.fetched, raw: result.raw, for: AccountKey(result.provider).id)
+                self.commit(result.fetched, raw: result.raw, for: result.raw.account.id)
             }
             self.isRefreshing = false
             self.refreshStartedAt = nil
@@ -705,6 +755,7 @@ final class UsageStore {
         let ollama = OllamaCloudUsageService(cookie: key)
         let xiaomi = XiaomiMiMoUsageService(cookie: key)
         let qoder = QoderUsageService(cookie: key, site: settings.qoderSite)
+        let stepFun = StepFunUsageService(cookie: key, site: settings.stepFunSite)
         let zai = ZaiUsageService(provider: provider, enteredKey: key)
         let minimax = MiniMaxUsageService(provider: provider, enteredKey: key)
         let volcengine = VolcengineUsageService(enteredKey: key)
@@ -732,67 +783,82 @@ final class UsageStore {
             budget: settings.xaiBudget,
             browser: settings.sessionBrowser(for: account)
         )
+        let extensionService = settings.pulseExtension(for: account).map(ExtensionUsageService.init(pulseExtension:))
+        let profiled = provider.profile.map { ($0, profileContext(for: provider, key: key)) }
 
         Task { [codex, claudeCode, antigravity, cursor, grok, grokBot] in
             let raw: ProviderUsage
-            if !account.isPrimary {
+            if account.provider == .pulseExtension {
+                raw = await extensionService?.fetch() ?? .unavailable(account, reason: .extensionMissing)
+            } else if !account.isPrimary {
                 raw = await Self.fetchAdded(account, claudeCode: claudeCode, codex: codex, grok: grok, grokBot: grokBot)
+            } else if let written = provider.handWritten {
+                switch written {
+                case .codex:
+                    raw = await codex.fetch(source: source)
+                case .kiro:
+                    raw = await kiro.fetch()
+                case .claudeCode:
+                    raw = await claudeCode.fetch(source: source)
+                case .antigravity:
+                    raw = await antigravity.fetch()
+                case .cursor:
+                    raw = await cursor.fetch()
+                case .openAI:
+                    raw = await openAI.fetch()
+                case .openCodeGo:
+                    raw = await openCode.fetch()
+                case .kimiCode:
+                    raw = await kimi.fetch()
+                case .ollamaCloud:
+                    raw = await ollama.fetch()
+                case .zai, .glmCoding:
+                    raw = await zai.fetch()
+                case .minimax, .minimaxCN:
+                    raw = await minimax.fetch()
+                case .copilot:
+                    raw = await CopilotUsageService(token: key).fetch()
+                case .grok:
+                    raw = await grok.fetch()
+                case .grokBot:
+                    raw = await grokBot.fetch()
+                case .volcengine:
+                    raw = await volcengine.fetch(source: source)
+                case .commandCode:
+                    raw = await commandCode.fetch()
+                case .deepSeek:
+                    raw = await deepSeek.fetch()
+                case .devin:
+                    raw = await devinAccount.fetch(source: source)
+                case .xiaomiMiMo:
+                    raw = await xiaomi.fetch()
+                case .sub2api:
+                    raw = await sub2api.fetch()
+                case .newAPI:
+                    raw = await newAPI.fetch()
+                case .v2ex:
+                    raw = await v2ex.fetch()
+                case .qoder:
+                    raw = await qoder.fetch()
+                case .stepFun:
+                    raw = await stepFun.fetch()
+                case .xai:
+                    raw = await xai.fetch()
+                case .pulseExtension:
+                    raw = .unavailable(account, reason: .extensionMissing)
+                }
             } else {
-            switch provider {
-            case .codex:
-                raw = await codex.fetch(source: source)
-            case .kiro:
-                raw = await kiro.fetch()
-            case .claudeCode:
-                raw = await claudeCode.fetch(source: source)
-            case .antigravity:
-                raw = await antigravity.fetch()
-            case .cursor:
-                raw = await cursor.fetch()
-            case .openAI:
-                raw = await openAI.fetch()
-            case .openCodeGo:
-                raw = await openCode.fetch()
-            case .kimiCode:
-                raw = await kimi.fetch()
-            case .ollamaCloud:
-                raw = await ollama.fetch()
-            case .zai, .glmCoding:
-                raw = await zai.fetch()
-            case .minimax, .minimaxCN:
-                raw = await minimax.fetch()
-            case .copilot:
-                raw = await CopilotUsageService(token: key).fetch()
-            case .grok:
-                raw = await grok.fetch()
-            case .grokBot:
-                raw = await grokBot.fetch()
-            case .volcengine:
-                raw = await volcengine.fetch(source: source)
-            case .commandCode:
-                raw = await commandCode.fetch()
-            case .deepSeek:
-                raw = await deepSeek.fetch()
-            case .devin:
-                raw = await devinAccount.fetch(source: source)
-            case .xiaomiMiMo:
-                raw = await xiaomi.fetch()
-            case .sub2api:
-                raw = await sub2api.fetch()
-            case .newAPI:
-                raw = await newAPI.fetch()
-            case .v2ex:
-                raw = await v2ex.fetch()
-            case .qoder:
-                raw = await qoder.fetch()
-            case .xai:
-                raw = await xai.fetch()
-            }
+                raw = if let (profile, context) = profiled {
+                    await profile.fetch(context)
+                } else {
+                    .unavailable(account, reason: .loading)
+                }
             }
 
             guard pass == self.currentPass else { return }
 
-            let fetched = await UsageCache.shared.reconciled(raw)
+            let answered = self.ringed(raw)
+            let fetched = await UsageCache.shared.reconciled(answered)
             guard pass == self.currentPass else { return }
             self.commit(fetched, raw: raw, for: account.id)
 
@@ -851,7 +917,11 @@ final class UsageStore {
             AccountCredentialStore.renewed(credentials, for: account)
         }
 
-        return switch account.provider {
+        guard let written = account.provider.handWritten else {
+            return .unavailable(account, reason: .loading)
+        }
+
+        return switch written {
         case .claudeCode: await claudeCode.fetch(account: account, token: credentials.accessToken)
         case .codex: await codex.fetch(account: account, credentials: credentials)
         case .grok: await grok.fetch(account: account, token: credentials.accessToken)
@@ -860,9 +930,29 @@ final class UsageStore {
         case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
              .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
-             .v2ex, .qoder, .xai:
+             .v2ex, .qoder, .stepFun, .xai, .pulseExtension:
             .unavailable(account, reason: .loading)
         }
+    }
+
+    private func ringed(_ raw: ProviderUsage) -> ProviderUsage {
+        let account = raw.account
+        let takesRing = account.provider == .pulseExtension
+            || (account.provider.billing == .api && account.provider != .deepSeek)
+        guard takesRing else { return raw }
+        return BalanceRing.applying(
+            basis: settings.balanceBasis(for: account),
+            budget: settings.balanceBudget(for: account),
+            to: raw
+        )
+    }
+
+    private func profileContext(for provider: Provider, key: String? = nil) -> ProfileContext {
+        ProfileContext(
+            provider: provider,
+            credential: key ?? apiKeys[provider],
+            serverAddress: provider.usesServerAddress ? settings.serverAddress(for: AccountKey(provider)) : nil
+        )
     }
 
     private func runQueued() {
@@ -926,6 +1016,11 @@ final class UsageStore {
         // Before the alert rules, and regardless of whether they are on: the
         // mark's celebration is not a notification.
         resetWatch.observe(fetched, as: account)
+        if resetWatch.justReset(account), settings.primesWindows(for: account.provider) {
+            Task {
+                _ = await WindowStarter.start(account.provider)
+            }
+        }
         guard let alerts else { return }
         // Both: the panel shows the reconciled reading, and the alert rules
         // need the answer the service actually gave — `reconciled` swaps a

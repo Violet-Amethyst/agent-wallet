@@ -154,14 +154,7 @@ extension Provider {
         // than by OAuth — a second allowance is a second Cursor account. See
         // `CursorWebLogin`.
         case .claudeCode, .codex, .grok, .grokBot: true
-        // **Cursor itself is not on this list, and that is not an oversight.**
-        // The same sign-in would work, but Cursor's usage summary is read
-        // from the editor's own stored login and a second account has no
-        // editor behind it. Grok Bot needs nothing but the token.
-        case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
-             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
-             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
-             .v2ex, .qoder, .xai: false
+        default: false
         }
     }
 }

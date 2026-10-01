@@ -50,7 +50,7 @@ struct RailSlotTests {
         let names = AppSettings(providerOrder: []).orderedAccounts.map(\.provider.displayName)
 
         #expect(names == names.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
-        #expect(names.first == "Antigravity")
+        #expect(names.first == "Abacus AI")
         #expect(names.count == Provider.allCases.count)
     }
 

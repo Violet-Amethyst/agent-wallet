@@ -99,6 +99,8 @@ struct UsageDetailCard: View {
     var showsRemaining: Bool = false
     /// Say whether each limit will last its window.
     var showsForecast: Bool = false
+    /// Shows extended usage metrics, plan, and timing details.
+    var showsDetailed: Bool = false
     /// Where the pointer's tip should sit along the side facing the rail,
     /// measured from the card's own top or leading edge. The card gets pushed
     /// around by the panel's own edges (see
@@ -126,7 +128,7 @@ struct UsageDetailCard: View {
                     percentageText: window.percentText(remaining: showsRemaining),
                     isSpent: UsageTint.isSpent(window),
                     showsRemaining: showsRemaining,
-                    burn: showsForecast ? BurnRate.reading(for: window) : nil
+                    burn: (showsForecast || showsDetailed) ? BurnRate.reading(for: window) : nil
                 )
                 .transition(Self.rowTransition)
             }
@@ -189,6 +191,23 @@ struct UsageDetailCard: View {
                     value: balance,
                     valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
                 )
+            }
+
+            if showsDetailed {
+                if let plan = usage.plan, !plan.isEmpty {
+                    ValueRow(
+                        title: String.localized("Plan"),
+                        value: plan,
+                        valueColor: nil
+                    )
+                }
+                if let date = usage.observedAt {
+                    ValueRow(
+                        title: String.localized("Updated"),
+                        value: date.formatted(date: .omitted, time: .standard),
+                        valueColor: nil
+                    )
+                }
             }
 
             // The same rule for the other way a body can come out empty: a

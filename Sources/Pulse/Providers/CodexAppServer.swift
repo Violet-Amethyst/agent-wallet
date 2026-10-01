@@ -61,6 +61,13 @@ actor CodexAppServer {
         return try await send(method: "account/rateLimits/read")
     }
 
+    /// The models the account may use, as `model/list` reports them, still
+    /// encoded as JSON.
+    func models() async throws -> Data {
+        try await ensureRunning()
+        return try await send(method: "model/list")
+    }
+
     /// The account's token history, as `account/usage/read` reports it, still
     /// encoded as JSON.
     func accountUsage() async throws -> Data {
@@ -202,7 +209,7 @@ actor CodexAppServer {
     /// Where `codex` tends to live. A GUI app inherits almost no `PATH`, so
     /// the usual install locations have to be checked by hand rather than
     /// relying on the environment.
-    private static func locateCodex() -> URL? {
+    static func locateCodex() -> URL? {
         let home = NSHomeDirectory()
         var candidates: [String] = []
 

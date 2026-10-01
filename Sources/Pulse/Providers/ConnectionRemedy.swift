@@ -5,9 +5,6 @@ enum ConnectionRemedy: Equatable {
     case signIn
     case editCredential
     /// The server address, for a provider whose address is the reader's own.
-    /// Its own remedy rather than `editCredential`, which focuses the key
-    /// field — a button saying "Edit credential" under a message about an
-    /// address is a control pointing at the wrong row.
     case editAddress
     case readBrowser
     case connectStatusLine
@@ -33,9 +30,6 @@ enum ConnectionRemedy: Equatable {
         case .claudeDesktopNotSignedIn, .claudeDesktopSessionExpired: return .openApp("Claude")
         case .cursorSignInRequired, .cursorLoginExpired: return .openApp("Cursor")
         case .antigravityNotRunning, .antigravityNotAnswering: return .openApp("Antigravity")
-        // The remedy for both is the same thing: start it. A plan it has never
-        // recorded is one sign-in away, and opening the app is the step before
-        // that either way.
         case .devinAppMissing, .devinPlanUnread: return .openApp("Devin")
         case .notSignedIn, .signedOut: return .signIn
         case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCredential
@@ -44,12 +38,17 @@ enum ConnectionRemedy: Equatable {
         case .serverAddressMissing, .serverAddressRefused: return .editAddress
         case .ollamaSessionMissing, .ollamaSessionExpired,
              .xiaomiSessionMissing, .xiaomiSessionExpired,
-             .qoderSessionMissing, .qoderSessionExpired: return .readBrowser
+             .qoderSessionMissing, .qoderSessionExpired,
+             .stepFunSessionMissing, .stepFunSessionExpired: return .readBrowser
         case .claudeDesktopKeyRefused, .unreachable, .rateLimited, .serverError,
-             .codexServerFailed: return .retry
+             .codexServerFailed, .extensionTimedOut, .extensionFailed: return .retry
+        case .extensionMissing, .extensionSignedOut: return .help
+        case .sessionMissing, .sessionExpired: return .readBrowser
+        case .localLoginMissing, .localLoginExpired, .localAppMissing, .noPlan: return .help
         case .codexNotInstalled, .kiroNotInstalled, .kiroVersionUnsupported,
              .volcengineCLIMissing, .noLimitsReported,
              .grokBotNotIncluded, .zaiNoCodingPlan, .xiaomiNoCodingPlan, .qoderNoCredits,
+             .stepFunNoPlan,
              .ollamaPageChanged, .unreadableReply:
             return .help
         }
@@ -70,34 +69,43 @@ enum ConnectionRemedy: Equatable {
     }
 
     /// The user's setup page, not the provider's developer doc: where the key
-    /// comes from and where it goes. One page per link — the two providers
-    /// that share a service share a page too.
+    /// comes from and where it goes. One page per link.
     static func helpURL(for provider: Provider) -> URL {
-        let page: String = switch provider {
-        case .claudeCode: "claude-code"
-        case .codex: "codex"
-        case .openAI: "openai"
-        case .kiro: "kiro"
-        case .antigravity: "antigravity"
-        case .cursor: "cursor"
-        case .openCodeGo: "opencode-go"
-        case .kimiCode: "kimi-code"
-        case .ollamaCloud: "ollama-cloud"
-        case .xiaomiMiMo: "xiaomi-coding-plan"
-        case .zai, .glmCoding: "zai"
-        case .minimax, .minimaxCN: "minimax"
-        case .copilot: "copilot"
-        case .grok: "grok"
-        case .grokBot: "grok-bot"
-        case .volcengine: "volcengine"
-        case .commandCode: "command-code"
-        case .deepSeek: "deepseek"
-        case .devin: "devin"
-        case .sub2api: "sub2api"
-        case .newAPI: "newapi"
-        case .v2ex: "v2ex"
-        case .qoder: "qoder"
-        case .xai: "xai"
+        if provider == .pulseExtension {
+            return URL(string: "https://github.com/qunqin24/Pulse/blob/main/Docs/extensions.md")!
+        }
+        let page: String
+        if let written = provider.handWritten {
+            page = switch written {
+            case .claudeCode: "claude-code"
+            case .codex: "codex"
+            case .openAI: "openai"
+            case .kiro: "kiro"
+            case .antigravity: "antigravity"
+            case .cursor: "cursor"
+            case .openCodeGo: "opencode-go"
+            case .kimiCode: "kimi-code"
+            case .ollamaCloud: "ollama-cloud"
+            case .xiaomiMiMo: "xiaomi-coding-plan"
+            case .zai, .glmCoding: "zai"
+            case .minimax, .minimaxCN: "minimax"
+            case .copilot: "copilot"
+            case .grok: "grok"
+            case .grokBot: "grok-bot"
+            case .volcengine: "volcengine"
+            case .commandCode: "command-code"
+            case .deepSeek: "deepseek"
+            case .devin: "devin"
+            case .sub2api: "sub2api"
+            case .newAPI: "newapi"
+            case .v2ex: "v2ex"
+            case .qoder: "qoder"
+            case .stepFun: "stepfun"
+            case .xai: "xai"
+            case .pulseExtension: "extensions"
+            }
+        } else {
+            page = provider.profile?.setupSlug ?? provider.rawValue
         }
         return URL(string: "https://github.com/qunqin24/Pulse/blob/main/Docs/setup/\(page).md")!
     }
