@@ -136,17 +136,17 @@ struct UsageDetailCard: View {
             if let spend = wallet?.periodSpend {
                 ValueRow(
                     title: String.localized("Monthly spend"),
-                    value: String.localized("\(spend.spentText) spent"),
+                    value: spend.spentText,
                     valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
                 )
                 ValueRow(
                     title: String.localized("Monthly budget"),
-                    value: String.localized("of \(spend.budgetText) monthly budget"),
+                    value: spend.budgetText,
                     valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
                 )
                 ValueRow(
                     title: String.localized("Remaining budget"),
-                    value: String.localized("\(spend.remainingText) remaining"),
+                    value: spend.remainingText,
                     valueColor: wallet?.prefersMoneyRingTint == true ? .pulseMoney : nil
                 )
                 if let secondary = spend.secondarySpent, let title = spend.secondaryTitle {

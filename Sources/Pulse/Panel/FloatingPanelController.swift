@@ -52,7 +52,7 @@ final class FloatingPanelController {
             switch edge.axis {
             case .vertical:
                 return CGSize(
-                    width: reach + DockLayout.thickness(on: .vertical),
+                    width: reach + DockLayout.maximumThickness(on: .vertical),
                     // Tall enough for whichever is bigger: the rail with every
                     // provider on, or the tallest card that might be shown
                     // beside it. A card taller than the window gets sliced off
@@ -64,7 +64,7 @@ final class FloatingPanelController {
                 return CGSize(
                     // Wide enough for whichever is wider, for the same reason.
                     width: max(DockLayout.maximumLength(on: .horizontal), DetailCardLayout.width, notchSize?.width ?? 0),
-                    height: DockLayout.thickness(on: .horizontal)
+                    height: DockLayout.maximumThickness(on: .horizontal)
                         + (notchSize?.height ?? 0)
                         + DetailCardLayout.horizontalGap
                         + DetailCardLayout.pointerWidth
