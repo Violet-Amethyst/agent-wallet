@@ -32,7 +32,7 @@ enum UsageRoute: String, Codable, Sendable {
     static func soleRoute(for account: AccountKey) -> UsageRoute? {
         if !account.isPrimary { return .endpoint }
         switch account.provider {
-        case .claudeCode, .codex, .volcengine, .deepSeek, .devin: return nil
+        case .claudeCode, .codex, .volcengine, .deepSeek, .devin, .xai: return nil
         case .antigravity: return .languageServer
         // All three read a signed-in browser session rather than a key.
         case .ollamaCloud, .xiaomiMiMo, .qoder: return .webSession

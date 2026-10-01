@@ -51,7 +51,7 @@ enum BotMarkTint {
         // New API's own mark is a cyan-to-pink pair; neither end is the
         // colour, so it takes one of Pulse's own rather than half a gradient.
         case .codex, .kiro, .cursor, .openCodeGo, .ollamaCloud, .zai,
-             .copilot, .grok, .grokBot, .commandCode, .devin, .newAPI, .v2ex:
+             .copilot, .grok, .grokBot, .commandCode, .devin, .newAPI, .v2ex, .xai:
             nil
         }
     }

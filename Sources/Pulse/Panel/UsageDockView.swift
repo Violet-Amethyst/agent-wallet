@@ -219,6 +219,228 @@ enum DockLayout {
         return itemHeight + horizontalPadding * 2
     }
 
+    /// Rail width for dual-track ("五环" Olympic staggered layout).
+    static var dualTrackWidth: CGFloat { 120 * PanelMetrics.scale }
+
+    /// Spacing between items in dual-track ("五环" Olympic staggered layout).
+    /// Provides ample breathing room so alternating quota and money rings/labels
+    /// never collide or overlap along the rail run.
+    static var dualTrackItemSpacing: CGFloat { 56 * PanelMetrics.scale * PanelMetrics.spacing }
+
+    /// Maximum rail thickness across axes.
+    static func maximumThickness(on axis: PanelEdge.Axis) -> CGFloat {
+        if axis == .horizontal {
+            return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
+        }
+        return dualTrackWidth
+    }
+
+    /// Whether the items are split into dual-track ("五环") layout.
+    static func isDualTrack(quotaCount: Int, moneyCount: Int) -> Bool {
+        quotaCount > 0 && moneyCount > 0
+    }
+
+    /// Effective number of along-axis slots needed for quota and money accounts.
+    static func alongSlotCount(quotaCount: Int, moneyCount: Int) -> CGFloat {
+        if isDualTrack(quotaCount: quotaCount, moneyCount: moneyCount) {
+            return max(CGFloat(quotaCount), CGFloat(moneyCount) + 0.5)
+        } else {
+            return CGFloat(max(quotaCount + moneyCount, 1))
+        }
+    }
+
+    /// Rail thickness considering single vs dual track.
+    static func thickness(quotaCount: Int, moneyCount: Int, on axis: PanelEdge.Axis) -> CGFloat {
+        guard isDualTrack(quotaCount: quotaCount, moneyCount: moneyCount) else {
+            return thickness(on: axis)
+        }
+        if axis == .horizontal {
+            return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
+        }
+        return dualTrackWidth
+    }
+
+    /// Rail length considering single vs dual track.
+    static func length(quotaCount: Int, moneyCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
+        guard isDualTrack(quotaCount: quotaCount, moneyCount: moneyCount) else {
+            return length(for: quotaCount + moneyCount, on: axis, docked: docked)
+        }
+        let slots = alongSlotCount(quotaCount: quotaCount, moneyCount: moneyCount)
+        let spacing = dualTrackItemSpacing
+        let providerLength = endPadding(docked: docked) * 2
+            + itemLength(on: axis) * slots
+            + spacing * (slots - 1)
+        return providerLength + actionAreaLength
+    }
+
+    /// Rail size considering single vs dual track.
+    static func size(quotaCount: Int, moneyCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGSize {
+        let along = length(quotaCount: quotaCount, moneyCount: moneyCount, on: axis, docked: docked)
+        let across = thickness(quotaCount: quotaCount, moneyCount: moneyCount, on: axis)
+        return axis == .vertical
+            ? CGSize(width: across, height: along)
+            : CGSize(width: along, height: across)
+    }
+
+    /// Center along for action buttons.
+    static func actionCentre(_ index: Int, alongSlots: CGFloat, axis: PanelEdge.Axis, docked: Bool, spacing: CGFloat = itemSpacing) -> CGFloat {
+        endPadding(docked: docked) + alongSlots * itemLength(on: axis)
+            + max(0, alongSlots - 1) * spacing + actionInset
+            + actionDiameter / 2 + CGFloat(index) * (actionDiameter + actionGap)
+    }
+
+    static func actionPositions(
+        quotaCount: Int,
+        moneyCount: Int,
+        edge: PanelEdge,
+        docked: Bool
+    ) -> [CGPoint] {
+        let isDual = isDualTrack(quotaCount: quotaCount, moneyCount: moneyCount)
+        let slots = alongSlotCount(quotaCount: quotaCount, moneyCount: moneyCount)
+        let spacing = isDual ? dualTrackItemSpacing : itemSpacing
+        let along0 = actionCentre(0, alongSlots: slots, axis: edge.axis, docked: docked, spacing: spacing)
+        let along1 = actionCentre(1, alongSlots: slots, axis: edge.axis, docked: docked, spacing: spacing)
+        let railSz = size(quotaCount: quotaCount, moneyCount: moneyCount, on: edge.axis, docked: docked)
+        let midAcross = edge.isVertical ? railSz.width / 2 : railSz.height / 2
+
+        if edge.isVertical {
+            return [
+                CGPoint(x: midAcross, y: along0),
+                CGPoint(x: midAcross, y: along1)
+            ]
+        } else {
+            return [
+                CGPoint(x: along0, y: midAcross),
+                CGPoint(x: along1, y: midAcross)
+            ]
+        }
+    }
+
+    struct SlotGeometry: Equatable, Sendable {
+        let slotId: String
+        let isMoney: Bool
+        let ringCentre: CGPoint
+        let itemCentre: CGPoint
+        let along: CGFloat
+        let across: CGFloat
+    }
+
+    static func slotGeometries<T: Identifiable>(
+        for items: [T],
+        isMoney: (T) -> Bool,
+        edge: PanelEdge,
+        docked: Bool
+    ) -> [T.ID: SlotGeometry] where T.ID: Hashable {
+        let quotaItems = items.filter { !isMoney($0) }
+        let moneyItems = items.filter { isMoney($0) }
+        let dual = isDualTrack(quotaCount: quotaItems.count, moneyCount: moneyItems.count)
+
+        let firstAlong = firstRingAlong(docked: docked, on: edge.axis)
+        let step = ringStep(on: edge.axis, isDual: dual)
+        let itemLen = itemLength(on: edge.axis)
+        let intoItem = edge.axis == .vertical
+            ? ringOffsetInItem(on: edge.axis) + ringDiameter / 2
+            : itemLength(on: edge.axis) / 2
+
+        var result: [T.ID: SlotGeometry] = [:]
+
+        if !dual {
+            let singleAcross = ringCentreAcross(on: edge.axis)
+            let midAcross = thickness(on: edge.axis) / 2
+
+            for (index, item) in items.enumerated() {
+                let along = firstAlong + CGFloat(index) * step
+                let alongTop = along - intoItem
+                let itemCentreAlong = alongTop + itemLen / 2
+
+                let ringCentre = edge.isVertical
+                    ? CGPoint(x: singleAcross, y: along)
+                    : CGPoint(x: along, y: singleAcross)
+
+                let itemCentre = edge.isVertical
+                    ? CGPoint(x: midAcross, y: itemCentreAlong)
+                    : CGPoint(x: itemCentreAlong, y: midAcross)
+
+                result[item.id] = SlotGeometry(
+                    slotId: "\(item.id)",
+                    isMoney: isMoney(item),
+                    ringCentre: ringCentre,
+                    itemCentre: itemCentre,
+                    along: along,
+                    across: singleAcross
+                )
+            }
+            return result
+        }
+
+        // Dual-track "五环" layout:
+        // Side rail (both .left and .right): Quota on left (Col 1), Money on right (Col 2).
+        // Top rail (.top): Money on top (Row 1), Quota on bottom (Row 2, "如果是上面，则是额度圈在下面").
+        let quotaAcross: CGFloat
+        let moneyAcross: CGFloat
+
+        if edge.axis == .vertical {
+            quotaAcross = 34 * PanelMetrics.scale
+            moneyAcross = 86 * PanelMetrics.scale
+        } else {
+            if showsPercentages(on: .horizontal) {
+                moneyAcross = 36 * PanelMetrics.scale
+                quotaAcross = 92 * PanelMetrics.scale
+            } else {
+                moneyAcross = 34 * PanelMetrics.scale
+                quotaAcross = 86 * PanelMetrics.scale
+            }
+        }
+
+        for (i, item) in quotaItems.enumerated() {
+            let along = firstAlong + CGFloat(i) * step
+            let alongTop = along - intoItem
+            let itemCentreAlong = alongTop + itemLen / 2
+
+            let ringCentre = edge.isVertical
+                ? CGPoint(x: quotaAcross, y: along)
+                : CGPoint(x: along, y: quotaAcross)
+
+            let itemCentre = edge.isVertical
+                ? CGPoint(x: quotaAcross, y: itemCentreAlong)
+                : CGPoint(x: itemCentreAlong, y: quotaAcross)
+
+            result[item.id] = SlotGeometry(
+                slotId: "\(item.id)",
+                isMoney: false,
+                ringCentre: ringCentre,
+                itemCentre: itemCentre,
+                along: along,
+                across: quotaAcross
+            )
+        }
+
+        for (j, item) in moneyItems.enumerated() {
+            let along = firstAlong + (CGFloat(j) + 0.5) * step
+            let alongTop = along - intoItem
+            let itemCentreAlong = alongTop + itemLen / 2
+
+            let ringCentre = edge.isVertical
+                ? CGPoint(x: moneyAcross, y: along)
+                : CGPoint(x: along, y: moneyAcross)
+
+            let itemCentre = edge.isVertical
+                ? CGPoint(x: moneyAcross, y: itemCentreAlong)
+                : CGPoint(x: itemCentreAlong, y: moneyAcross)
+
+            result[item.id] = SlotGeometry(
+                slotId: "\(item.id)",
+                isMoney: true,
+                ringCentre: ringCentre,
+                itemCentre: itemCentre,
+                along: along,
+                across: moneyAcross
+            )
+        }
+
+        return result
+    }
+
     /// Rail length for a given number of providers: the padding at each end +
     /// the items + the gaps between them. Providers can be switched off in
     /// settings, so this is not a constant.
@@ -231,9 +453,7 @@ enum DockLayout {
     }
 
     static func actionCentre(_ index: Int, itemCount: Int, axis: PanelEdge.Axis, docked: Bool) -> CGFloat {
-        endPadding(docked: docked) + CGFloat(itemCount) * itemLength(on: axis)
-            + CGFloat(max(0, itemCount - 1)) * itemSpacing + actionInset
-            + actionDiameter / 2 + CGFloat(index) * (actionDiameter + actionGap)
+        actionCentre(index, alongSlots: CGFloat(itemCount), axis: axis, docked: docked)
     }
 
     /// The rail's full size, laid the way `edge` lays it.
@@ -274,8 +494,8 @@ enum DockLayout {
             : itemLength(on: axis) / 2
         return endPadding(docked: docked) + intoItem
     }
-    static func ringStep(on axis: PanelEdge.Axis) -> CGFloat {
-        itemLength(on: axis) + itemSpacing
+    static func ringStep(on axis: PanelEdge.Axis, isDual: Bool = false) -> CGFloat {
+        itemLength(on: axis) + (isDual ? dualTrackItemSpacing : itemSpacing)
     }
 
     /// Rail length with every provider switched on, which is what the panel
@@ -380,6 +600,10 @@ struct RailEntry: Identifiable, Equatable {
     var resolvedWallet: WalletSnapshot {
         wallet ?? WalletAdapter.snapshot(from: usage, title: title)
     }
+
+    var isMoney: Bool {
+        resolvedWallet.isMoney
+    }
 }
 
 /// The rail, in whatever state it is currently in — full, collapsed to a
@@ -429,7 +653,12 @@ struct UsageDockView: View {
     /// dependable inside this non-activating panel.
     var hoveredAction: Int? = nil
 
-    private var railSize: CGSize { DockLayout.size(for: entries.count, on: edge.axis, docked: isDocked) }
+    private var quotaCount: Int { entries.filter { !$0.isMoney }.count }
+    private var moneyCount: Int { entries.filter { $0.isMoney }.count }
+
+    private var railSize: CGSize {
+        DockLayout.size(quotaCount: quotaCount, moneyCount: moneyCount, on: edge.axis, docked: isDocked)
+    }
     private var currentSize: CGSize {
         isExpanded ? railSize : DockLayout.collapsedSize(on: edge.axis)
     }
@@ -528,20 +757,22 @@ struct UsageDockView: View {
     }
 
     private var rings: some View {
-        // The same items, stacked whichever way the rail runs. `AnyLayout`
-        // keeps them one set of views across the change rather than two sets
-        // swapped, so a rail that is re-docked from a side to the top carries
-        // its rings round with it instead of rebuilding them.
-        let stack = edge.isVertical
-            ? AnyLayout(VStackLayout(spacing: DockLayout.itemSpacing))
-            : AnyLayout(HStackLayout(spacing: DockLayout.itemSpacing))
+        let geometries = DockLayout.slotGeometries(
+            for: entries,
+            isMoney: { $0.isMoney },
+            edge: edge,
+            docked: isDocked
+        )
+        let actionPos = DockLayout.actionPositions(
+            quotaCount: quotaCount,
+            moneyCount: moneyCount,
+            edge: edge,
+            docked: isDocked
+        )
 
         // Dealt here because this is the one place that knows the order the
         // rings are actually in — the rail shows enabled accounts, so who sits
         // next to whom is not knowable from `Provider.allCases`.
-        // Only when something is actually drawing a mark: the deal tries
-        // forty stride-and-rotation combinations, which is cheap but not free,
-        // and a rail of logos has no use for the answer.
         let botTints = entries.contains(where: \.showsBotMark)
             ? BotMarkTint.deal(over: entries.map(\.usage.provider),
                                chosen: entries.map(\.botColour))
@@ -554,56 +785,51 @@ struct UsageDockView: View {
         // Everything worth looking at is away from the edge the rail is on.
         let gaze = BotMarkGaze(edge: edge)
 
-        let outer = edge.isVertical
-            ? AnyLayout(VStackLayout(spacing: 0))
-            : AnyLayout(HStackLayout(spacing: 0))
-        return outer {
-          stack {
+        return ZStack(alignment: .topLeading) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                UsageDockItem(
-                    entry: entry,
-                    botTint: index < botTints.count ? botTints[index] : .clear,
-                    botPersona: personas[index],
-                    botBody: entry.botBody,
-                    botGaze: gaze,
-                    botEvent: entry.botEvent,
-                    pointer: pointer,
-                    isQuiet: isQuiet,
-                    isSelected: selectedSlot == entry.slot.id,
-                    isInteractive: isExpanded,
-                    showsPercentage: DockLayout.showsPercentages(on: edge.axis),
-                    animatesActivity: animatesActivity,
-                    onEnter: { onEnter(entry) },
-                    onRefresh: { onRefresh(entry.slot.account) }
-                )
-                // **Every item takes exactly the length it was budgeted.**
-                // `DockLayout` decides the rail's size before SwiftUI lays
-                // anything out, and the hit testing steps along it in those
-                // same units — so an item allowed to take its natural size
-                // instead puts every ring after it a little further out than
-                // the hit test looks, and the error accumulates down the rail.
-                // It reached 12.6pt at eleven rings, which is a third of a
-                // ring, purely from a label rendering narrower than its budget.
-                .frame(
-                    width: edge.isVertical ? nil : DockLayout.itemLength(on: .horizontal),
-                    height: edge.isVertical ? DockLayout.itemLength(on: .vertical) : nil
-                )
+                if let geo = geometries[entry.id] {
+                    UsageDockItem(
+                        entry: entry,
+                        botTint: index < botTints.count ? botTints[index] : .clear,
+                        botPersona: personas[index],
+                        botBody: entry.botBody,
+                        botGaze: gaze,
+                        botEvent: entry.botEvent,
+                        pointer: pointer,
+                        isQuiet: isQuiet,
+                        isSelected: selectedSlot == entry.slot.id,
+                        isInteractive: isExpanded,
+                        showsPercentage: DockLayout.showsPercentages(on: edge.axis),
+                        animatesActivity: animatesActivity,
+                        onEnter: { onEnter(entry) },
+                        onRefresh: { onRefresh(entry.slot.account) }
+                    )
+                    .frame(
+                        width: edge.isVertical ? nil : DockLayout.itemLength(on: .horizontal),
+                        height: edge.isVertical ? DockLayout.itemLength(on: .vertical) : nil
+                    )
+                    .position(geo.itemCentre)
+                }
             }
-          }
-          let actions = edge.isVertical
-              ? AnyLayout(VStackLayout(spacing: DockLayout.actionGap))
-              : AnyLayout(HStackLayout(spacing: DockLayout.actionGap))
-          actions {
-                railButton(systemName: "gearshape.fill", label: String.localized("Settings…"), isHovered: hoveredAction == 0, action: onSettings)
-                railButton(systemName: "power", label: String.localized("Quit Agent Wallet"), isHovered: hoveredAction == 1, action: onQuit)
-          }
-          .padding(edge.isVertical ? .top : .leading, DockLayout.actionInset)
+
+            if actionPos.count >= 2 {
+                railButton(
+                    systemName: "gearshape.fill",
+                    label: String.localized("Settings…"),
+                    isHovered: hoveredAction == 0,
+                    action: onSettings
+                )
+                .position(actionPos[0])
+
+                railButton(
+                    systemName: "power",
+                    label: String.localized("Quit Agent Wallet"),
+                    isHovered: hoveredAction == 1,
+                    action: onQuit
+                )
+                .position(actionPos[1])
+            }
         }
-        // The padding follows the run too: the generous end padding is what
-        // the flare needs room inside, and the flare is at the rail's ends
-        // whichever way it is lying.
-        .padding(edge.isVertical ? .vertical : .horizontal, DockLayout.endPadding(docked: isDocked))
-        .padding(edge.isVertical ? .horizontal : .vertical, DockLayout.horizontalPadding)
         .frame(width: railSize.width, height: railSize.height)
     }
 
@@ -733,6 +959,7 @@ private struct UsageDockItem: View {
                 // the ring.
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+                .frame(maxWidth: 44 * PanelMetrics.scale)
                 // A spent limit colours the figure too. At ring size a fourth
                 // hue on the stroke alone would read as the third.
                 .foregroundStyle(

@@ -48,6 +48,8 @@ struct SettingsView: View {
     /// The OpenAI billing total being typed. It is the denominator for API
     /// spend, not a secret, and defaults to 100 when left blank.
     @State private var openAIBillingTotal = ""
+    @State private var xaiTeamId = ""
+    @State private var xaiBudget = ""
     /// A self-hosted gateway's address being typed, committed on Save rather
     /// than on every keystroke — a half-typed host is a request nobody meant
     /// to make.
@@ -1334,7 +1336,7 @@ struct SettingsView: View {
     private static func browserHint(_ chosen: BrowserCookies.Browser?, for provider: Provider) -> String {
         // A `localStorage` entry is not encrypted, so nothing is ever asked
         // for and the hint must not say it might be.
-        guard provider.usesSessionCookie else {
+        guard provider.usesSessionCookie || provider == .xai else {
             if let chosen { return String.localized("Only \(chosen.name).") }
             guard let first = ChromiumLocalStorage.present().first else {
                 return String.localized("Finds it in the browser you signed in with.")
@@ -1367,7 +1369,7 @@ struct SettingsView: View {
         // Devin's credential is not a cookie and is not saved: the service
         // reads it from the browser on every pass, so this button's job is to
         // say whether there is one to read and where it was found.
-        guard account.provider.usesSessionCookie else {
+        guard account.provider.usesSessionCookie || account.provider == .xai else {
             readBrowserStorage(for: account)
             return
         }
@@ -1412,6 +1414,9 @@ struct SettingsView: View {
             case .qoder:
                 hosts = settings.qoderSite.hosts
                 keep = { try? QoderCookie.normalize($0) }
+            case .xai:
+                hosts = ["x.ai", "console.x.ai"]
+                keep = { XAIWebLogin.normalize($0) }
             case .claudeCode, .codex, .kiro, .antigravity, .cursor, .openCodeGo,
                  .kimiCode, .zai, .glmCoding, .minimax, .minimaxCN, .copilot,
                  .grok, .grokBot, .volcengine, .commandCode, .deepSeek, .devin,
@@ -1431,6 +1436,12 @@ struct SettingsView: View {
             }.value
 
             if let found {
+                if account.provider == .xai,
+                   let team = XAIWebLogin.teamId(from: found.header),
+                   settings.xaiTeamId == nil || settings.xaiTeamId!.isEmpty {
+                    settings.xaiTeamId = team
+                    xaiTeamId = team
+                }
                 guard APIKeyStore.setKey(found.header, for: account.provider) else { return }
                 store.loadAPIKeys()
                 store.refresh(account)
@@ -1454,6 +1465,8 @@ struct SettingsView: View {
                     String.localized("No Xiaomi session found. Sign in at platform.xiaomimimo.com first.")
                 case .qoder:
                     String.localized("No Qoder session found. Sign in at \(settings.qoderSite.host) first.")
+                case .xai:
+                    String.localized("No xAI Console session found. Sign in at console.x.ai first.")
                 default:
                     String.localized("No Ollama session found. Sign in at ollama.com first.")
                 }
@@ -1732,6 +1745,9 @@ struct SettingsView: View {
                 if provider == .openAI {
                     openAIBillingGroup(for: account)
                 }
+                if provider == .xai {
+                    xaiSettingsGroup(for: account)
+                }
 
                 ConnectionDiagnosticsView(
                     account: account, store: store, settings: settings,
@@ -1784,6 +1800,10 @@ struct SettingsView: View {
             }
             if shown == .openAI {
                 openAIBillingTotal = Self.text(settings.openAIBillingTotal)
+            }
+            if shown == .xai {
+                xaiTeamId = settings.xaiTeamId ?? ""
+                xaiBudget = Self.text(settings.xaiBudget)
             }
             if shown.usesServerAddress {
                 serverAddress = settings.serverAddress(for: account)
@@ -2302,6 +2322,55 @@ struct SettingsView: View {
         store.refresh(account)
     }
 
+    private func xaiSettingsGroup(for account: AccountKey) -> some View {
+        SettingsGroup(String.localized("xAI Configuration")) {
+            SettingsRow(
+                String.localized("Team ID"),
+                subtitle: String.localized("Found in the console.x.ai URL: /team/{team_id}/... Blank attempts auto-detection from session or uses default.")
+            ) {
+                HStack(spacing: 8) {
+                    TextField(String.localized("UUID or blank"), text: $xaiTeamId)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: SettingsLayout.controlWidth - 70)
+                        .onSubmit { saveXAITeamId(for: account) }
+
+                    Button(String.localized("Save")) { saveXAITeamId(for: account) }
+                        .disabled(xaiTeamId == (settings.xaiTeamId ?? ""))
+                }
+            }
+
+            SettingsRowDivider()
+
+            SettingsRow(
+                String.localized("Monthly budget"),
+                subtitle: String.localized("Optional monthly spend budget in USD. When set, shows remaining credit against this limit.")
+            ) {
+                HStack(spacing: 8) {
+                    TextField(String.localized("Optional"), text: $xaiBudget)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: SettingsLayout.controlWidth - 70)
+                        .onSubmit { saveXAIBudget(for: account) }
+
+                    Button(String.localized("Save")) { saveXAIBudget(for: account) }
+                        .disabled(xaiBudget == Self.text(settings.xaiBudget))
+                }
+            }
+        }
+    }
+
+    private func saveXAITeamId(for account: AccountKey) {
+        let trimmed = xaiTeamId.trimmingCharacters(in: .whitespacesAndNewlines)
+        settings.xaiTeamId = trimmed.isEmpty ? nil : trimmed
+        xaiTeamId = settings.xaiTeamId ?? ""
+        store.refresh(account)
+    }
+
+    private func saveXAIBudget(for account: AccountKey) {
+        settings.xaiBudget = Self.money(xaiBudget)
+        xaiBudget = Self.text(settings.xaiBudget)
+        store.refresh(account)
+    }
+
     /// A figure typed into a settings field, or nil for anything that is not
     /// one.
     ///
@@ -2412,6 +2481,8 @@ struct SettingsView: View {
             .localized("From platform.deepseek.com. Stored encrypted on this Mac.")
         case .openAI:
             .localized("From OpenAI Platform Admin keys. Used only to read API billing costs; stored encrypted on this Mac.")
+        case .xai:
+            .localized("From console.x.ai -> Settings -> Management Keys, or read from your browser. Stored encrypted on this Mac.")
         // A group key from whoever runs the deployment, not an account
         // password — and it is only ever sent to the address in the row above.
         case .sub2api:
@@ -2591,9 +2662,11 @@ struct SettingsView: View {
                                 ? String.localized("API key (optional)")
                                 : account.provider == .openAI
                                     ? String.localized("Admin Key")
-                                    : account.provider == .devin
-                                        ? String.localized("Token and organization")
-                                        : String.localized("API key"),
+                                    : account.provider == .xai
+                                        ? String.localized("Management Key (optional)")
+                                        : account.provider == .devin
+                                            ? String.localized("Token and organization")
+                                            : String.localized("API key"),
                     subtitle: Self.keySubtitle(for: account.provider)
                 ) {
                     HStack(spacing: 8) {
@@ -2639,7 +2712,7 @@ struct SettingsView: View {
                                 // Devin's is in a LevelDB, which only the
                                 // Chromium browsers keep — offering Safari or
                                 // Firefox there is a choice that cannot work.
-                                ForEach(account.provider.usesSessionCookie
+                                ForEach(account.provider.usesSessionCookie || account.provider == .xai
                                     ? BrowserCookies.present()
                                     : ChromiumLocalStorage.present()) { browser in
                                     Text(browser.name).tag(BrowserCookies.Browser?.some(browser))

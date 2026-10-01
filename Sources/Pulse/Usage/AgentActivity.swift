@@ -221,7 +221,7 @@ enum AgentActivity {
             case .openAI, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
                  .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
                  .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
-                 .sub2api, .newAPI, .v2ex, .qoder:
+                 .sub2api, .newAPI, .v2ex, .qoder, .xai:
                 // None of these leaves transcripts Pulse reads, so nothing
                 // ever gets this far.
                 return .finished
@@ -414,7 +414,7 @@ enum AgentActivity {
         case .openAI, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .minimax, .minimaxCN, .copilot, .grok, .grokBot,
              .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
-             .sub2api, .newAPI, .v2ex, .qoder: nil
+             .sub2api, .newAPI, .v2ex, .qoder, .xai: nil
         }
     }
 

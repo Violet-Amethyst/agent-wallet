@@ -31,6 +31,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     case newAPI
     case v2ex
     case qoder
+    case xai
 
     var id: String { rawValue }
 
@@ -110,6 +111,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // one name, and the site is a setting of the account rather than a
         // second thing somebody subscribes to (`QoderSite`).
         case .qoder: "Qoder"
+        case .xai: "xAI"
         }
     }
 
@@ -138,7 +140,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .grok: "grok"
         // The parent brand's mark rather than Grok's own, which is the one
         // thing that tells the two apart on a rail carrying both.
-        case .grokBot: "xai"
+        case .grokBot, .xai: "xai"
         case .volcengine: "volcengine"
         // The command-key glyph from its own editor extension, rather than the
         // wordmark the site leads with: at ring size a wordmark is a grey
@@ -185,7 +187,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
              .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api,
-             .newAPI, .v2ex, .qoder: false
+             .newAPI, .v2ex, .qoder, .xai: false
         }
     }
 
@@ -199,7 +201,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .openAI, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .minimax, .minimaxCN, .copilot, .grok, .grokBot, .volcengine,
              .commandCode, .deepSeek, .devin, .xiaomiMiMo,
-             .sub2api, .newAPI, .v2ex, .qoder: false
+             .sub2api, .newAPI, .v2ex, .qoder, .xai: false
         }
     }
 
@@ -246,7 +248,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .claudeCode, .codex, .volcengine, .devin: true
         case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
-             .commandCode, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder: false
+             .commandCode, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder, .xai: false
         }
     }
 
@@ -285,7 +287,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         // about elsewhere, so there is nothing here to state.
         case .claudeCode, .codex, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
-             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder:
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder, .xai:
             nil
         }
     }
@@ -298,7 +300,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     var usesAPIKey: Bool {
         [.openAI, .openCodeGo, .kimiCode, .ollamaCloud, .zai, .glmCoding, .minimax, .minimaxCN, .volcengine,
          .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
-         .v2ex, .qoder].contains(self)
+         .v2ex, .qoder, .xai].contains(self)
     }
 
     /// Whether this Mac can see the thing this provider is billing for.
@@ -336,7 +338,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// wallet, and this asks about the provider rather than about one
     /// reading — a group with no balance simply never hands one over.
     var reportsSpendableBalance: Bool {
-        [.deepSeek, .commandCode, .sub2api, .newAPI].contains(self)
+        [.deepSeek, .commandCode, .sub2api, .newAPI, .xai].contains(self)
     }
 
     /// Whether this provider is somebody's own deployment, so Pulse has to be
@@ -378,7 +380,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// lives in a different file in a different format and — because it is not
     /// encrypted — needs no keychain permission. Both want the same row in
     /// Settings: which browser, and a button to go and look.
-    var readsBrowserStorage: Bool { usesSessionCookie || self == .devin }
+    var readsBrowserStorage: Bool { usesSessionCookie || self == .devin || self == .xai }
 
     /// Whether Pulse holds a credential of its own for this provider.
     ///

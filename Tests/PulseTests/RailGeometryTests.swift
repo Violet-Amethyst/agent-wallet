@@ -362,3 +362,194 @@ struct RailOffsetTests {
         #expect(offsets.leading <= max(tiny.width - rail.width, 0))
     }
 }
+
+@Suite("Dual-track Olympic rail geometry")
+struct DualTrackOlympicRailGeometryTests {
+    private struct TestSlot: Identifiable {
+        let id: String
+        let isMoney: Bool
+    }
+
+    private let quotaSlots = [
+        TestSlot(id: "antigravity", isMoney: false),
+        TestSlot(id: "claude", isMoney: false),
+        TestSlot(id: "chatgpt", isMoney: false),
+        TestSlot(id: "cursor", isMoney: false),
+        TestSlot(id: "qoder", isMoney: false)
+    ]
+
+    private let moneySlots = [
+        TestSlot(id: "deepseek", isMoney: true),
+        TestSlot(id: "openai_api", isMoney: true),
+        TestSlot(id: "xai", isMoney: true)
+    ]
+
+    private var allSlots: [TestSlot] {
+        quotaSlots + moneySlots
+    }
+
+    @Test("Left rail positions quota on left and money on right staggered at midlines")
+    func leftRailDualTrackPositions() {
+        let edge = PanelEdge.left
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        #expect(size.width == 120 * PanelMetrics.scale)
+
+        let railRect = PanelHitArea.rail(edge: edge, railSize: size, railTop: 0, railLeading: 0)
+        let geos = DockLayout.slotGeometries(
+            for: allSlots,
+            isMoney: { $0.isMoney },
+            edge: edge,
+            docked: docked
+        )
+
+        let firstAlong = DockLayout.firstRingAlong(docked: docked, on: edge.axis)
+        let step = DockLayout.ringStep(on: edge.axis, isDual: true)
+        let radius = DockLayout.ringDiameter / 2
+
+        // Verify quota slots: column 1 (left)
+        for (i, slot) in quotaSlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(!geo.isMoney)
+            #expect(abs(geo.across - 34 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + CGFloat(i) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+
+        // Verify money slots: column 2 (right), staggered at midlines
+        for (j, slot) in moneySlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(geo.isMoney)
+            #expect(abs(geo.across - 86 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + (CGFloat(j) + 0.5) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+    }
+
+    @Test("Right rail positions quota on left and money on right")
+    func rightRailDualTrackPositions() {
+        let edge = PanelEdge.right
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        #expect(size.width == 120 * PanelMetrics.scale)
+
+        let geos = DockLayout.slotGeometries(
+            for: allSlots,
+            isMoney: { $0.isMoney },
+            edge: edge,
+            docked: docked
+        )
+
+        // Quota rings are on the left (across = 34)
+        for slot in quotaSlots {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 34 * PanelMetrics.scale) < 0.01)
+        }
+
+        // Money rings are on the right (across = 86)
+        for slot in moneySlots {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 86 * PanelMetrics.scale) < 0.01)
+        }
+    }
+
+    @Test("Top rail positions money on top row and quota on bottom row")
+    func topRailDualTrackPositions() {
+        let edge = PanelEdge.top
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        let railRect = PanelHitArea.rail(edge: edge, railSize: size, railTop: 0, railLeading: 0)
+
+        let geos = DockLayout.slotGeometries(
+            for: allSlots,
+            isMoney: { $0.isMoney },
+            edge: edge,
+            docked: docked
+        )
+
+        let firstAlong = DockLayout.firstRingAlong(docked: docked, on: edge.axis)
+        let step = DockLayout.ringStep(on: edge.axis, isDual: true)
+        let radius = DockLayout.ringDiameter / 2
+
+        // Money rings on top row (Row 1, across = 34)
+        for (j, slot) in moneySlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 34 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + (CGFloat(j) + 0.5) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+
+        // Quota rings on bottom row (Row 2, across = 86)
+        for (i, slot) in quotaSlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 86 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + CGFloat(i) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+    }
+
+    @Test("PanelHitArea slot hits exact circle in dual track")
+    func hitTestingInDualTrack() {
+        let railSlots = allSlots.map { RailSlot(AccountKey(Provider(rawValue: $0.id) ?? .antigravity)) }
+        let edge = PanelEdge.left
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        let rail = PanelHitArea.rail(edge: edge, railSize: size, railTop: 0, railLeading: 0)
+
+        let isMoney: (RailSlot) -> Bool = { slot in
+            let id = slot.id
+            return id == "deepseek" || id == "openai_api" || id == "xai"
+        }
+
+        let geos = DockLayout.slotGeometries(
+            for: railSlots,
+            isMoney: isMoney,
+            edge: edge,
+            docked: docked
+        )
+
+        for slot in railSlots {
+            let geo = geos[slot.id]!
+            let clickPoint = CGPoint(x: rail.minX + geo.ringCentre.x, y: rail.minY + geo.ringCentre.y)
+            let hit = PanelHitArea.slot(
+                at: clickPoint,
+                edge: edge,
+                slots: railSlots,
+                isMoney: isMoney,
+                railTop: 0,
+                railLeading: 0,
+                docked: docked
+            )
+            #expect(hit?.id == slot.id)
+        }
+    }
+}
+

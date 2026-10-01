@@ -491,6 +491,7 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         case deepSeekWebLoginRequired
         case openAIWebLoginRequired
         case openAIWebSessionExpired
+        case xaiWebLoginRequired
         /// Ollama has no quota API: the figures come from its signed-in
         /// settings page, so what it needs is a browser session rather than a
         /// key, and the three ways that can fail are worth telling apart.
@@ -600,6 +601,7 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             case .deepSeekWebLoginRequired: .localized("Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings.")
             case .openAIWebLoginRequired: .localized("Add an OpenAI Platform session in Settings.")
             case .openAIWebSessionExpired: .localized("The OpenAI Platform session was refused. Sign in again and add it.")
+            case .xaiWebLoginRequired: .localized("Sign in to xAI Console in your browser, or add a Management Key in Settings.")
             case .xiaomiSessionMissing: .localized("Sign in to Xiaomi's platform in a browser to see usage.")
             case .xiaomiSessionExpired: .localized("Xiaomi's saved session expired. Sign in again in your browser.")
             case .xiaomiNoCodingPlan: .localized("No Coding Plan on this Xiaomi account.")
@@ -869,5 +871,10 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             plan: nil,
             creditBalance: nil
         )
+    }
+
+    /// Whether this usage reading resolves to a monetary balance or spend limit.
+    var isMoney: Bool {
+        WalletAdapter.snapshot(from: self, title: "").mode.isMoney
     }
 }

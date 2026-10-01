@@ -438,6 +438,12 @@ final class UsageStore {
             address: settings.serverAddress(for: AccountKey(.newAPI))
         )
         let v2ex = V2EXUsageService(enteredKey: apiKeys[.v2ex])
+        let xai = XAIUsageService(
+            managementKey: apiKeys[.xai],
+            teamId: settings.xaiTeamId,
+            budget: settings.xaiBudget,
+            browser: settings.sessionBrowser(for: AccountKey(.xai))
+        )
         // Nothing is fetched for a provider that isn't on the rail: it would
         // spend someone else's request, and read a credential, for a figure
         // nobody is going to see.
@@ -538,6 +544,9 @@ final class UsageStore {
             async let qoderUsage = wanted.contains(.qoder)
                 ? await qoder.fetch()
                 : ProviderUsage.unavailable(.qoder, reason: .loading)
+            async let xaiUsage = wanted.contains(.xai)
+                ? await xai.fetch(now: now)
+                : ProviderUsage.unavailable(.xai, reason: .loading)
 
             let (rawCodex, rawKiro, rawClaude, rawAntigravity, rawOpenAI, rawOpenCode) =
                 await (codexUsage, kiroUsage, claudeUsage, antigravityUsage, openAIUsage, openCodeUsage)
@@ -548,7 +557,7 @@ final class UsageStore {
             let (rawVolcengine, rawCommandCode) = await (volcengineUsage, commandCodeUsage)
             let (rawDeepSeek, rawDevin) = await (deepSeekUsage, devinUsage)
             let (rawSub2API, rawNewAPI, rawV2EX) = await (sub2apiUsage, newAPIUsage, v2exUsage)
-            let (rawXiaomi, rawQoder) = await (xiaomiUsage, qoderUsage)
+            let (rawXiaomi, rawQoder, rawXAI) = await (xiaomiUsage, qoderUsage, xaiUsage)
 
             // **The disowning is checked before anything is written, not just
             // before the readings are handed to the panel.** `reconciled`
@@ -595,6 +604,7 @@ final class UsageStore {
                 (.newAPI, rawNewAPI),
                 (.v2ex, rawV2EX),
                 (.qoder, rawQoder),
+                (.xai, rawXAI),
             ] where wanted.contains(provider) {
                 results.append(BatchResult(
                     provider: provider,
@@ -716,6 +726,12 @@ final class UsageStore {
             enteredKey: key, address: settings.serverAddress(for: account)
         )
         let v2ex = V2EXUsageService(enteredKey: key)
+        let xai = XAIUsageService(
+            managementKey: key,
+            teamId: settings.xaiTeamId,
+            budget: settings.xaiBudget,
+            browser: settings.sessionBrowser(for: account)
+        )
 
         Task { [codex, claudeCode, antigravity, cursor, grok, grokBot] in
             let raw: ProviderUsage
@@ -769,6 +785,8 @@ final class UsageStore {
                 raw = await v2ex.fetch()
             case .qoder:
                 raw = await qoder.fetch()
+            case .xai:
+                raw = await xai.fetch()
             }
             }
 
@@ -842,7 +860,7 @@ final class UsageStore {
         case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
              .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
-             .v2ex, .qoder:
+             .v2ex, .qoder, .xai:
             .unavailable(account, reason: .loading)
         }
     }

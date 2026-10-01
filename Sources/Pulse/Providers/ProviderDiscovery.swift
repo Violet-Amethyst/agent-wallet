@@ -42,7 +42,7 @@ extension Provider {
         // sub2api is somebody's own deployment and V2EX is a website; there
         // is nothing on this Mac that says either is in use.
         case .openAI, .kimiCode, .ollamaCloud, .zai, .minimax, .minimaxCN, .copilot,
-             .volcengine, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex:
+             .volcengine, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .xai:
             return []
         }
     }

@@ -9,7 +9,7 @@ extension Provider {
             .localized("Reads Claude Code's saved login from Keychain or its credentials file. May ask for Keychain access, including Claude Desktop's cookie storage.")
         case .codex:
             .localized("Reads ~/.codex/auth.json and may run codex app-server with its saved login. Pulse does not request Keychain access.")
-        case .openAI:
+        case .openAI, .xai:
             .localized("Uses the API key or browser session entered in Settings. No Keychain prompt.")
         case .kiro:
             .localized("Runs Kiro CLI's native ACP usage method with its saved login. Pulse does not read or store Kiro credentials.")

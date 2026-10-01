@@ -388,7 +388,7 @@ struct AlertMemory: Codable, Sendable, Equatable {
     /// anything to show".
     static func standing(of reason: ProviderUsage.Unavailability) -> Standing {
         switch reason {
-        case .deepSeekWebLoginRequired, .openAIWebLoginRequired: .neutral
+        case .deepSeekWebLoginRequired, .openAIWebLoginRequired, .xaiWebLoginRequired: .neutral
         case .claudeLoginExpired, .claudeDesktopKeyRefused, .claudeDesktopSessionExpired,
              .cursorLoginExpired, .grokLoginExpired, .signedOut, .apiKeyRefused,
              .openAIWebSessionExpired, .ollamaSessionExpired, .ollamaPageChanged,

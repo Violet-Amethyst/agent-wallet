@@ -403,7 +403,12 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
     /// The rail's size for what is actually being shown. The panel window
     /// stays at its maximum regardless, so this is what the card's placement
     /// and the pointer test have to measure against — not the window.
-    private var railSize: CGSize { DockLayout.size(for: entries.count, on: placement.edge.axis, docked: placement.isDocked) }
+    private var quotaCount: Int { entries.filter { !$0.isMoney }.count }
+    private var moneyCount: Int { entries.filter { $0.isMoney }.count }
+
+    private var railSize: CGSize {
+        DockLayout.size(quotaCount: quotaCount, moneyCount: moneyCount, on: placement.edge.axis, docked: placement.isDocked)
+    }
 
     /// Which way the rail runs, which is the axis the card slides along to
     /// stay level with the ring it belongs to.
@@ -452,11 +457,16 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
     }
 
     /// Where a ring's centre sits **along** the rail, in the coordinate space
-    /// the rail and the card share. Centres march from the rail's first-ring
-    /// offset, advancing one item plus one gap each time.
+    /// the rail and the card share.
     private func ringCentre(for index: Int) -> CGFloat {
-        DockLayout.firstRingAlong(docked: placement.isDocked, on: placement.edge.axis)
-            + CGFloat(index) * DockLayout.ringStep(on: placement.edge.axis)
+        guard index < entries.count else { return 0 }
+        let geometries = DockLayout.slotGeometries(
+            for: entries,
+            isMoney: { $0.isMoney },
+            edge: placement.edge,
+            docked: placement.isDocked
+        )
+        return geometries[entries[index].id]?.along ?? 0
     }
 
     /// The card's own extent along that same axis: its height beside the rail,
@@ -616,12 +626,15 @@ worst.isExhausted || worst.usedFraction >= UsageTint.StatusThreshold.exhausted
         guard isExpanded else { return nil }
         let edge = placement.edge
         let rail = PanelHitArea.rail(edge: edge, railSize: railSize, railTop: railTop, railLeading: railLeading)
+        let actionPos = DockLayout.actionPositions(
+            quotaCount: quotaCount,
+            moneyCount: moneyCount,
+            edge: edge,
+            docked: placement.isDocked
+        )
 
-        for index in 0..<2 {
-            let along = DockLayout.actionCentre(index, itemCount: entries.count, axis: edge.axis, docked: placement.isDocked)
-            let centre = edge.isVertical
-                ? CGPoint(x: rail.midX, y: rail.minY + along)
-                : CGPoint(x: rail.minX + along, y: rail.midY)
+        for (index, pos) in actionPos.enumerated() {
+            let centre = CGPoint(x: rail.minX + pos.x, y: rail.minY + pos.y)
             if hypot(point.x - centre.x, point.y - centre.y) <= DockLayout.actionDiameter / 2 {
                 return index
             }
@@ -754,28 +767,33 @@ enum PanelHitArea {
         at point: CGPoint,
         edge: PanelEdge,
         slots: [RailSlot],
+        isMoney: (RailSlot) -> Bool = { _ in false },
         railTop: CGFloat,
         railLeading: CGFloat,
         docked: Bool
     ) -> RailSlot? {
-        let size = DockLayout.size(for: slots.count, on: edge.axis, docked: docked)
+        let quotaCount = slots.filter { !isMoney($0) }.count
+        let moneyCount = slots.filter { isMoney($0) }.count
+        let size = DockLayout.size(quotaCount: quotaCount, moneyCount: moneyCount, on: edge.axis, docked: docked)
         let rail = rail(edge: edge, railSize: size, railTop: railTop, railLeading: railLeading)
         guard rail.contains(point) else { return nil }
 
         // Includes the selected ring's 1.06 scale and a small amount of pointer
         // forgiveness without reaching the percentage label beneath it.
         let radius = DockLayout.ringDiameter / 2 * 1.08
-        let across = DockLayout.ringCentreAcross(on: edge.axis)
+        let geometries = DockLayout.slotGeometries(
+            for: slots,
+            isMoney: isMoney,
+            edge: edge,
+            docked: docked
+        )
 
-        for (index, slot) in slots.enumerated() {
-            let along = DockLayout.firstRingAlong(docked: docked, on: edge.axis)
-                + CGFloat(index) * DockLayout.ringStep(on: edge.axis)
-            let centre = edge.isVertical
-                ? CGPoint(x: rail.minX + across, y: rail.minY + along)
-                : CGPoint(x: rail.minX + along, y: rail.minY + across)
+        let railPoint = CGPoint(x: point.x - rail.minX, y: point.y - rail.minY)
 
-            let dx = point.x - centre.x
-            let dy = point.y - centre.y
+        for slot in slots {
+            guard let geo = geometries[slot.id] else { continue }
+            let dx = railPoint.x - geo.ringCentre.x
+            let dy = railPoint.y - geo.ringCentre.y
             if dx * dx + dy * dy <= radius * radius { return slot }
         }
 

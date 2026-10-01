@@ -179,7 +179,7 @@ final class FloatingPanelController {
         panel.railFrame = { [settings, store, placement] in
             PanelHitArea.rail(
                 edge: placement.edge,
-                railSize: DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: placement.edge.axis, docked: placement.isDocked),
+                railSize: Self.shownRailSize(settings, usage: { store.usage(for: $0) }, on: placement.edge.axis, docked: placement.isDocked),
                 railTop: placement.railTop,
                 railLeading: placement.railLeading
             )
@@ -191,11 +191,11 @@ final class FloatingPanelController {
         // an edge, and measuring the old state throws the placement off by that
         // much on the frame it changes.
         panel.railSize = { [settings, store] edge, docked in
-            DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: edge.axis, docked: docked)
+            Self.shownRailSize(settings, usage: { store.usage(for: $0) }, on: edge.axis, docked: docked)
         }
         panel.grabArea = { [settings, store, placement] in
             if placement.notch != nil && !placement.isRailExpanded { return .zero }
-            let size = DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: placement.edge.axis, docked: placement.isDocked)
+            let size = Self.shownRailSize(settings, usage: { store.usage(for: $0) }, on: placement.edge.axis, docked: placement.isDocked)
             if placement.isRailExpanded {
                 let rail = PanelHitArea.rail(edge: placement.edge, railSize: size, railTop: placement.railTop, railLeading: placement.railLeading)
                 return placement.notch.map { PanelHitArea.notchSurface(rail: rail, notchSize: $0.size) } ?? rail
@@ -216,15 +216,20 @@ final class FloatingPanelController {
                 isSplit: settings.isSplit,
                 groups: { RailSlot.modelGroups(of: store.usage(for: $0)) }
             )
-            let railSize = DockLayout.size(for: slots.count, on: placement.edge.axis, docked: placement.isDocked)
+            let isMoney: (RailSlot) -> Bool = { store.usage(for: $0.account).isMoney }
+            let quotaCount = slots.filter { !isMoney($0) }.count
+            let moneyCount = slots.filter { isMoney($0) }.count
+            let railSize = DockLayout.size(quotaCount: quotaCount, moneyCount: moneyCount, on: placement.edge.axis, docked: placement.isDocked)
             let rail = PanelHitArea.rail(edge: placement.edge, railSize: railSize,
                                          railTop: placement.railTop, railLeading: placement.railLeading)
-            for index in 0..<2 {
-                let along = DockLayout.actionCentre(index, itemCount: slots.count,
-                                                     axis: placement.edge.axis, docked: placement.isDocked)
-                let centre = placement.edge.isVertical
-                    ? CGPoint(x: rail.midX, y: rail.minY + along)
-                    : CGPoint(x: rail.minX + along, y: rail.midY)
+            let actionPos = DockLayout.actionPositions(
+                quotaCount: quotaCount,
+                moneyCount: moneyCount,
+                edge: placement.edge,
+                docked: placement.isDocked
+            )
+            for (index, pos) in actionPos.enumerated() {
+                let centre = CGPoint(x: rail.minX + pos.x, y: rail.minY + pos.y)
                 if hypot(point.x - centre.x, point.y - centre.y) <= DockLayout.actionDiameter / 2 {
                     if index == 0 { onSettings() } else { onQuit() }
                     return
@@ -234,6 +239,7 @@ final class FloatingPanelController {
                 at: point,
                 edge: placement.edge,
                 slots: slots,
+                isMoney: isMoney,
                 railTop: placement.railTop,
                 railLeading: placement.railLeading,
                 docked: placement.isDocked
@@ -372,6 +378,30 @@ final class FloatingPanelController {
         ).count
     }
 
+    static func shownSlotCounts(
+        _ settings: AppSettings,
+        usage: (AccountKey) -> ProviderUsage
+    ) -> (quota: Int, money: Int) {
+        let slots = RailSlot.rail(
+            for: settings.shownAccounts,
+            isSplit: settings.isSplit,
+            groups: { RailSlot.modelGroups(of: usage($0)) }
+        )
+        let money = slots.filter { usage($0.account).isMoney }.count
+        let quota = slots.count - money
+        return (quota, money)
+    }
+
+    static func shownRailSize(
+        _ settings: AppSettings,
+        usage: (AccountKey) -> ProviderUsage,
+        on axis: PanelEdge.Axis,
+        docked: Bool
+    ) -> CGSize {
+        let (quota, money) = shownSlotCounts(settings, usage: usage)
+        return DockLayout.size(quotaCount: quota, moneyCount: money, on: axis, docked: docked)
+    }
+
     /// Parks the panel where it was last left.
     ///
     /// The rail's size is passed in because it changes under the placement —
@@ -395,8 +425,9 @@ final class FloatingPanelController {
 
         let edge = placement.edge
         placement.notch = edge == .top ? PanelScreen.notch(of: screen) : nil
-        let railSize = DockLayout.size(
-            for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }),
+        let railSize = Self.shownRailSize(
+            settings,
+            usage: { store.usage(for: $0) },
             on: edge.axis,
             docked: placement.isDocked
         )

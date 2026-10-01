@@ -146,6 +146,25 @@ final class AppSettings {
         }
     }
 
+    /// The xAI Team ID (UUID format) to query billing and usage for.
+    /// If nil, attempts to read from the browser session or defaults to "default".
+    var xaiTeamId: String? {
+        didSet {
+            guard xaiTeamId != oldValue else { return }
+            UserDefaults.standard.set(xaiTeamId, forKey: Key.xaiTeamId)
+            onChange?()
+        }
+    }
+
+    /// Optional monthly spending budget for xAI API (USD).
+    var xaiBudget: Double? {
+        didSet {
+            guard xaiBudget != oldValue else { return }
+            UserDefaults.standard.set(xaiBudget, forKey: Key.xaiBudget)
+            onChange?()
+        }
+    }
+
     /// Where Pulse sends a self-hosted gateway's request, per account.
     ///
     /// sub2api and New API are somebody's own deployments, so unlike every
@@ -1005,6 +1024,8 @@ final class AppSettings {
         deepSeekBudget: Double? = nil,
         openAIBillingTotal: Double? = nil,
         deepSeekCurrency: String? = nil,
+        xaiTeamId: String? = nil,
+        xaiBudget: Double? = nil,
         qoderSite: QoderSite = (QoderCNSession.isInstalled || (Locale.current.language.languageCode?.identifier == "zh")) ? .china : .international,
         serverAddresses: [String: String] = [:],
         lowBalanceAlerts: [String: Double] = [:],
@@ -1056,6 +1077,8 @@ final class AppSettings {
         self.deepSeekBudget = deepSeekBudget
         self.openAIBillingTotal = openAIBillingTotal
         self.deepSeekCurrency = deepSeekCurrency
+        self.xaiTeamId = xaiTeamId
+        self.xaiBudget = xaiBudget
         self.qoderSite = qoderSite
         self.serverAddresses = serverAddresses
         self.lowBalanceAlerts = lowBalanceAlerts
@@ -1338,6 +1361,8 @@ final class AppSettings {
             deepSeekBudget: defaults.object(forKey: Key.deepSeekBudget) as? Double,
             openAIBillingTotal: defaults.object(forKey: Key.openAIBillingTotal) as? Double,
             deepSeekCurrency: defaults.string(forKey: Key.deepSeekCurrency),
+            xaiTeamId: defaults.string(forKey: Key.xaiTeamId),
+            xaiBudget: defaults.object(forKey: Key.xaiBudget) as? Double,
             qoderSite: defaults.string(forKey: Key.qoderSite)
                 .flatMap(QoderSite.init(rawValue:))
                 ?? (QoderCNSession.isInstalled || (Locale.current.language.languageCode?.identifier == "zh") ? .china : .international),
@@ -1475,6 +1500,8 @@ final class AppSettings {
         static let deepSeekBudget = "settings.deepSeekBudget"
         static let openAIBillingTotal = "settings.openAIBillingTotal"
         static let deepSeekCurrency = "settings.deepSeekCurrency"
+        static let xaiTeamId = "settings.xaiTeamId"
+        static let xaiBudget = "settings.xaiBudget"
         static let qoderSite = "settings.qoderSite"
         static let serverAddresses = "settings.serverAddresses"
         static let lowBalanceAlerts = "settings.lowBalanceAlerts"

@@ -39,7 +39,7 @@ enum ConnectionRemedy: Equatable {
         case .devinAppMissing, .devinPlanUnread: return .openApp("Devin")
         case .notSignedIn, .signedOut: return .signIn
         case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCredential
-        case .deepSeekWebLoginRequired: return .editCredential
+        case .deepSeekWebLoginRequired, .xaiWebLoginRequired: return .editCredential
         case .openAIWebLoginRequired, .openAIWebSessionExpired: return .readBrowser
         case .serverAddressMissing, .serverAddressRefused: return .editAddress
         case .ollamaSessionMissing, .ollamaSessionExpired,
@@ -97,6 +97,7 @@ enum ConnectionRemedy: Equatable {
         case .newAPI: "newapi"
         case .v2ex: "v2ex"
         case .qoder: "qoder"
+        case .xai: "xai"
         }
         return URL(string: "https://github.com/qunqin24/Pulse/blob/main/Docs/setup/\(page).md")!
     }

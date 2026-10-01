@@ -19,6 +19,11 @@ struct WalletSnapshot: Equatable, Sendable {
         case singleQuota
         /// Prepaid cash/credits, or a period spend against a budget.
         case money(MoneyKind)
+
+        var isMoney: Bool {
+            if case .money = self { return true }
+            return false
+        }
     }
 
     enum MoneyKind: Equatable, Sendable {
@@ -122,6 +127,9 @@ struct WalletSnapshot: Equatable, Sendable {
         self.periodSpendShowsRemaining = periodSpendShowsRemaining
         self.isFixture = isFixture
     }
+
+    /// Whether this snapshot represents a currency balance or spend limit.
+    var isMoney: Bool { mode.isMoney }
 
     /// What the rail prints under the ring: short remaining only.
     var railCaption: String {
@@ -373,7 +381,7 @@ enum WalletAdapter {
         }
 
         if let spend = spendWindows.first {
-            let showsRemaining = usage.provider == .openAI && spend.estimate == .yourBudget
+            let showsRemaining = (usage.provider == .openAI || usage.provider == .xai) && spend.estimate == .yourBudget
             return WalletSnapshot(
                 mode: .money(.periodSpend),
                 displayName: title,

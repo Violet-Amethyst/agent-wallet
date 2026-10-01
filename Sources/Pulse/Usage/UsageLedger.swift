@@ -630,7 +630,7 @@ actor UsageLedgerReader {
         case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
              .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
-             .sub2api, .newAPI, .v2ex, .qoder: nil
+             .sub2api, .newAPI, .v2ex, .qoder, .xai: nil
         }
 
         guard let root else { return [] }
@@ -678,7 +678,7 @@ actor UsageLedgerReader {
         case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
              .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
-             .sub2api, .newAPI, .v2ex, .qoder: return Scanned()
+             .sub2api, .newAPI, .v2ex, .qoder, .xai: return Scanned()
         }
     }
 
