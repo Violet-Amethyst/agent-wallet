@@ -336,8 +336,10 @@ enum PanelMetrics {
     /// It lives here beside the scale for the same reason — the AppKit frame
     /// is worked out from it before SwiftUI lays anything out — and getting it
     /// wrong slices the end off the rail, which is exactly what happened the
-    /// first time a seventh account existed.
-    nonisolated(unsafe) private static var storedCapacity = Provider.allCases.count
+    /// Replaced at launch by `AppSettings.restored()`; this is only what a
+    /// preview or a test starts from, and it is long enough for the longest
+    /// rail either of them draws.
+    nonisolated(unsafe) private static var storedCapacity = 25
 
     static var scale: CGFloat { lock.withLock { stored } }
     static var spacing: CGFloat { lock.withLock { storedSpacing } }
@@ -367,6 +369,24 @@ enum PanelMetrics {
         lock.withLock { storedLabelAboveRing = above }
     }
 
+    /// `AppSettings.showsWindowClock`: the arc outside the ring pushes the
+    /// figures further off (`DockLayout.ringToTextSpacing`).
+    nonisolated(unsafe) private static var storedWindowClock = false
+
+    static func showWindowClock(_ shows: Bool) {
+        lock.withLock { storedWindowClock = shows }
+    }
+
+    static var showsWindowClock: Bool { lock.withLock { storedWindowClock } }
+
+    nonisolated(unsafe) private static var storedFreeAcrossBeside = false
+
+    static func putFreeAcrossFiguresBeside(_ beside: Bool) {
+        lock.withLock { storedFreeAcrossBeside = beside }
+    }
+
+    static var freeAcrossFiguresBeside: Bool { lock.withLock { storedFreeAcrossBeside } }
+
     static func useRoundEnds(_ uses: Bool) {
         lock.withLock { storedRoundEnds = uses }
     }
@@ -382,6 +402,18 @@ enum PanelMetrics {
         lock.withLock { storedForecast = shows }
     }
     static var showsForecast: Bool { lock.withLock { storedForecast } }
+
+    nonisolated(unsafe) private static var storedDetailedCard = false
+    static func showDetailedCard(_ shows: Bool) {
+        lock.withLock { storedDetailedCard = shows }
+    }
+    static var showsDetailedCard: Bool { lock.withLock { storedDetailedCard } }
+
+    nonisolated(unsafe) private static var storedDualTrack = false
+    static var usesDualTrack: Bool { lock.withLock { storedDualTrack } }
+    static func useDualTrack(_ uses: Bool) {
+        lock.withLock { storedDualTrack = uses }
+    }
 
 
     static func makeRoom(for accounts: Int) {

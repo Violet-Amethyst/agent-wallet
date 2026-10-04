@@ -28,6 +28,42 @@ final class AppSettings {
         }
     }
 
+    /// Whether the menu bar item also shows the tightest limit: the mark of
+    /// the account whose ring is fullest, and its percentage.
+    var showsUsageInMenuBar = false {
+        didSet {
+            guard showsUsageInMenuBar != oldValue else { return }
+            UserDefaults.standard.set(showsUsageInMenuBar, forKey: Key.showsUsageInMenuBar)
+            onMenuBarIconChange?()
+        }
+    }
+
+    /// Whether the menu bar item's menu opens on the usage dashboard.
+    var showsMenuDashboard = false {
+        didSet {
+            guard showsMenuDashboard != oldValue else { return }
+            UserDefaults.standard.set(showsMenuDashboard, forKey: Key.showsMenuDashboard)
+        }
+    }
+
+    /// The account the menu bar speaks for, by id. Nil is whichever ring is fullest.
+    var menuBarAccount: String? {
+        didSet {
+            guard menuBarAccount != oldValue else { return }
+            UserDefaults.standard.set(menuBarAccount, forKey: Key.menuBarAccount)
+            onMenuBarIconChange?()
+        }
+    }
+
+    /// How the menu bar draws the account: figure, ring, or split.
+    var menuBarStyle: MenuBarStyle = .figure {
+        didSet {
+            guard menuBarStyle != oldValue else { return }
+            UserDefaults.standard.set(menuBarStyle.rawValue, forKey: Key.menuBarStyle)
+            onMenuBarIconChange?()
+        }
+    }
+
     /// Whether the floating panel stays out of other apps' full-screen Spaces.
     ///
     /// On by default: a usage glance is useful on the desktop, but sitting over
@@ -130,6 +166,12 @@ final class AppSettings {
         }
     }
 
+    /// The same choice read straight from the defaults, for a reader off the
+    /// main actor (the detailed card's DeepSeek history, whose money follows it).
+    nonisolated static var storedDeepSeekCurrency: String? {
+        UserDefaults.standard.string(forKey: Key.deepSeekCurrency)
+    }
+
     /// Which Qoder site the saved session belongs to.
     ///
     /// `qoder.com` and `qoder.com.cn` are two sign-ins on two hosts, and a
@@ -171,10 +213,43 @@ final class AppSettings {
         if on { primedProviders.insert(provider.rawValue) } else { primedProviders.remove(provider.rawValue) }
     }
 
+    private(set) var primerRunTimes: [String: Double] = [:]
+    private(set) var primerRunOutcomes: [String: String] = [:]
+    var primerHours: PrimerHours = .default {
+        didSet {
+            guard primerHours != oldValue else { return }
+            UserDefaults.standard.set(primerHours.start, forKey: Key.primerStart)
+            UserDefaults.standard.set(primerHours.end, forKey: Key.primerEnd)
+        }
+    }
+
+    func lastPrimerRun(for provider: Provider) -> (date: Date, outcome: WindowStarter.Outcome)? {
+        guard let time = primerRunTimes[provider.rawValue],
+              let outcome = primerRunOutcomes[provider.rawValue].flatMap(WindowStarter.Outcome.init(rawValue:))
+        else { return nil }
+        return (Date(timeIntervalSince1970: time), outcome)
+    }
+
+    func recordPrimerRun(for provider: Provider, outcome: WindowStarter.Outcome, at date: Date) {
+        primerRunTimes[provider.rawValue] = date.timeIntervalSince1970
+        primerRunOutcomes[provider.rawValue] = outcome.rawValue
+        UserDefaults.standard.set(primerRunTimes, forKey: Key.primerRunTimes)
+        UserDefaults.standard.set(primerRunOutcomes, forKey: Key.primerRunOutcomes)
+    }
+
+    var showsCodexResetCredits = false {
+        didSet {
+            guard showsCodexResetCredits != oldValue else { return }
+            UserDefaults.standard.set(showsCodexResetCredits, forKey: Key.showsCodexResetCredits)
+            onChange?()
+        }
+    }
+
     /// Accounts showing detailed card with usage history and metrics.
     var detailedCards: Set<String> = [] {
         didSet {
             guard detailedCards != oldValue else { return }
+            PanelMetrics.showDetailedCard(!detailedCards.isEmpty)
             UserDefaults.standard.set(Array(detailedCards), forKey: Key.detailedCards)
             onChange?()
         }
@@ -769,6 +844,28 @@ final class AppSettings {
         }
     }
 
+    /// Whether a rail lying free across puts each figure beside its ring
+    /// rather than under it.
+    var freeAcrossFiguresBeside: Bool {
+        didSet {
+            guard freeAcrossFiguresBeside != oldValue else { return }
+            PanelMetrics.putFreeAcrossFiguresBeside(freeAcrossFiguresBeside)
+            UserDefaults.standard.set(freeAcrossFiguresBeside, forKey: Key.freeAcrossFiguresBeside)
+            onChange?()
+        }
+    }
+
+    /// Whether the dock rail uses dual-track staggered layout for quota and money accounts.
+    /// Default is true to maintain the signature Olympic dock layout while allowing switching to classic single rail.
+    var usesDualTrackDock: Bool {
+        didSet {
+            guard usesDualTrackDock != oldValue else { return }
+            PanelMetrics.useDualTrack(usesDualTrackDock)
+            UserDefaults.standard.set(usesDualTrackDock, forKey: Key.usesDualTrackDock)
+            onChange?()
+        }
+    }
+
     /// Whether each ring also shows how far through its window the clock is.
     ///
     /// Off by default. It is a genuinely useful second reading — 80% spent a
@@ -1176,7 +1273,9 @@ final class AppSettings {
         topRailShowsPercentages: Bool = false,
         sideRailShowsPercentages: Bool = true,
         labelAboveRing: Bool = false,
+        freeAcrossFiguresBeside: Bool = false,
         usesRoundEnds: Bool = false,
+        usesDualTrackDock: Bool = true,
         showsWindowClock: Bool = false,
         windowClockDirection: WindowClockDirection = .default,
         showsRemaining: Bool = false,
@@ -1240,7 +1339,9 @@ final class AppSettings {
         self.topRailShowsPercentages = topRailShowsPercentages
         self.sideRailShowsPercentages = sideRailShowsPercentages
         self.labelAboveRing = labelAboveRing
+        self.freeAcrossFiguresBeside = freeAcrossFiguresBeside
         self.usesRoundEnds = usesRoundEnds
+        self.usesDualTrackDock = usesDualTrackDock
         self.showsWindowClock = showsWindowClock
         self.windowClockDirection = windowClockDirection
         self.showsRemaining = showsRemaining
@@ -1528,7 +1629,9 @@ final class AppSettings {
             topRailShowsPercentages: defaults.object(forKey: Key.topRailShowsPercentages) as? Bool ?? false,
             sideRailShowsPercentages: defaults.object(forKey: Key.sideRailShowsPercentages) as? Bool ?? true,
             labelAboveRing: defaults.object(forKey: Key.labelAboveRing) as? Bool ?? false,
+            freeAcrossFiguresBeside: defaults.object(forKey: Key.freeAcrossFiguresBeside) as? Bool ?? false,
             usesRoundEnds: defaults.object(forKey: Key.usesRoundEnds) as? Bool ?? false,
+            usesDualTrackDock: defaults.object(forKey: Key.usesDualTrackDock) as? Bool ?? true,
             showsWindowClock: defaults.object(forKey: Key.showsWindowClock) as? Bool ?? false,
             windowClockDirection: Self.storedWindowClockDirection(in: defaults),
             showsRemaining: defaults.object(forKey: Key.showsRemaining) as? Bool ?? false,
@@ -1555,6 +1658,21 @@ final class AppSettings {
         settings.detectedProviders = detected
         settings.suggestedProviders = selection.suggestedProviders
         settings.applyLanguage()
+        settings.showsCodexResetCredits = defaults.bool(forKey: Key.showsCodexResetCredits)
+        settings.showsUsageInMenuBar = defaults.bool(forKey: Key.showsUsageInMenuBar)
+        settings.showsMenuDashboard = defaults.bool(forKey: Key.showsMenuDashboard)
+        settings.primerRunTimes = defaults.dictionary(forKey: Key.primerRunTimes) as? [String: Double] ?? [:]
+        settings.primerRunOutcomes = defaults.dictionary(forKey: Key.primerRunOutcomes) as? [String: String] ?? [:]
+        if let start = defaults.object(forKey: Key.primerStart) as? Int,
+           let end = defaults.object(forKey: Key.primerEnd) as? Int,
+           (0...23).contains(start), (0...23).contains(end) {
+            settings.primerHours = PrimerHours(start: start, end: end)
+        }
+        settings.menuBarAccount = defaults.string(forKey: Key.menuBarAccount)
+        if let rawStyle = defaults.string(forKey: Key.menuBarStyle),
+           let style = MenuBarStyle(rawValue: rawStyle) {
+            settings.menuBarStyle = style
+        }
         if defaults.object(forKey: Key.walletV0Applied) == nil {
             settings.showsRemaining = true
             settings.showsSecondRing = true
@@ -1566,8 +1684,12 @@ final class AppSettings {
         PanelMetrics.showTopPercentages(settings.topRailShowsPercentages)
         PanelMetrics.showSidePercentages(settings.sideRailShowsPercentages)
         PanelMetrics.putLabelAboveRing(settings.labelAboveRing)
+        PanelMetrics.putFreeAcrossFiguresBeside(settings.freeAcrossFiguresBeside)
         PanelMetrics.useRoundEnds(settings.usesRoundEnds)
+        PanelMetrics.useDualTrack(settings.usesDualTrackDock)
+        PanelMetrics.showWindowClock(settings.showsWindowClock)
         PanelMetrics.showForecast(settings.showsForecast)
+        PanelMetrics.showDetailedCard(!settings.detailedCards.isEmpty)
         settings.rescanExtensions()
         PanelMetrics.makeRoom(for: settings.railSlotCount)
         return settings
@@ -1666,7 +1788,9 @@ final class AppSettings {
         static let topRailShowsPercentages = "settings.topRailShowsPercentages"
         static let sideRailShowsPercentages = "settings.sideRailShowsPercentages"
         static let labelAboveRing = "settings.labelAboveRing"
+        static let freeAcrossFiguresBeside = "settings.freeAcrossFiguresBeside"
         static let usesRoundEnds = "settings.usesRoundEnds"
+        static let usesDualTrackDock = "settings.usesDualTrackDock"
         static let showsWindowClock = "settings.showsWindowClock"
         static let windowClockDirection = "settings.windowClockDirection"
         static let botMarks = "settings.botMarks"
@@ -1693,5 +1817,14 @@ final class AppSettings {
         static let balanceBases = "settings.balanceBases"
         static let balanceBudgets = "settings.balanceBudgets"
         static let extensionNames = "settings.extensionNames"
+        static let showsCodexResetCredits = "settings.showsCodexResetCredits"
+        static let showsUsageInMenuBar = "settings.showsUsageInMenuBar"
+        static let showsMenuDashboard = "settings.showsMenuDashboard"
+        static let primerStart = "settings.primerStart"
+        static let primerEnd = "settings.primerEnd"
+        static let primerRunTimes = "settings.primerRunTimes"
+        static let primerRunOutcomes = "settings.primerRunOutcomes"
+        static let menuBarAccount = "settings.menuBarAccount"
+        static let menuBarStyle = "settings.menuBarStyle"
     }
 }

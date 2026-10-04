@@ -674,5 +674,7 @@
 "Monthly spend" = "本月花费";
 "Monthly budget" = "本月预算";
 "Remaining budget" = "剩余预算";
+"Dual-track layout" = "双轨悬浮栏布局";
+"Separate quota and balance accounts into two staggered columns." = "将额度类与余额类账号拆分为交错的双列排布。";
 
 

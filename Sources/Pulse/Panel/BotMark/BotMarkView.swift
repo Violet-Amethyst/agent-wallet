@@ -120,7 +120,7 @@ enum BotMarkGaze: Sendable {
         switch edge {
         case .right: self = .left
         case .left: self = .right
-        case .top: self = .ahead
+        case .top, .bottom: self = .ahead
         }
     }
 }

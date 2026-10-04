@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// Tokens of each kind, which is what a price list needs to become money.
@@ -37,6 +38,69 @@ struct TokenTally: Codable, Sendable, Equatable {
 
     func cost(at price: ModelPrice) -> Double {
         costBreakdown(at: price).total
+    }
+}
+
+/// How long replies took to come back, and how much they wrote — what an
+/// output speed is worked out from.
+///
+/// **Request sent to reply finished**, the only span both CLIs' logs bracket:
+/// the line that sent the request (the user's message, or the last tool
+/// result) and the last line of the reply. It includes the wait for the first
+/// token, so it reads a little under the model's pure generation speed. Only
+/// replies long enough for that wait not to dominate are counted
+/// (`minimumOutput`), and none that took longer than `longest` — a retry or a
+/// stall, not a speed.
+///
+/// **The wait for the first token** is a separate figure, and only Codex's:
+/// it writes `time_to_first_token_ms` for the first request of each turn.
+/// Claude Code's transcript has no such field — its first line is written
+/// when a whole content block is done — so its latency is left unsaid rather
+/// than guessed.
+struct ReplyTiming: Codable, Sendable, Equatable {
+    var outputTokens = 0
+    var seconds = 0.0
+    var replies = 0
+    var firstTokenSeconds = 0.0
+    var firstTokenTurns = 0
+
+    static let minimumOutput = 100
+    static let longest: TimeInterval = 10 * 60
+    /// A first token later than this is a stall or a retry, not a latency.
+    static let longestFirstToken: TimeInterval = 2 * 60
+
+    /// One turn's wait for its first token, as the CLI measured it.
+    static func firstToken(after seconds: Double) -> ReplyTiming? {
+        guard seconds > 0, seconds <= longestFirstToken else { return nil }
+        return ReplyTiming(firstTokenSeconds: seconds, firstTokenTurns: 1)
+    }
+
+    /// One reply, or nothing when it cannot stand for a speed.
+    init?(output: Int, from sent: Date, to finished: Date) {
+        let seconds = finished.timeIntervalSince(sent)
+        guard output >= Self.minimumOutput, seconds > 0, seconds <= Self.longest else { return nil }
+        self.init(outputTokens: output, seconds: seconds, replies: 1)
+    }
+
+    init(
+        outputTokens: Int = 0, seconds: Double = 0, replies: Int = 0,
+        firstTokenSeconds: Double = 0, firstTokenTurns: Int = 0
+    ) {
+        self.outputTokens = outputTokens
+        self.seconds = seconds
+        self.replies = replies
+        self.firstTokenSeconds = firstTokenSeconds
+        self.firstTokenTurns = firstTokenTurns
+    }
+
+    static func + (lhs: ReplyTiming, rhs: ReplyTiming) -> ReplyTiming {
+        ReplyTiming(
+            outputTokens: lhs.outputTokens + rhs.outputTokens,
+            seconds: lhs.seconds + rhs.seconds,
+            replies: lhs.replies + rhs.replies,
+            firstTokenSeconds: lhs.firstTokenSeconds + rhs.firstTokenSeconds,
+            firstTokenTurns: lhs.firstTokenTurns + rhs.firstTokenTurns
+        )
     }
 }
 
@@ -128,6 +192,12 @@ struct UsageLedger: Sendable, Equatable {
         /// cannot be trusted, rather than dividing the whole agent's usage by
         /// whatever model happened to be named.
         var models: [String: TokenTally] = [:]
+        /// The quarter-hour's timed replies by **raw model id** — only the
+        /// readers that can tell when a request went out and when its reply
+        /// finished (Claude Code's and Codex's transcripts). Kept per slot,
+        /// not per day, because a speed is only worth reading while it is
+        /// recent (`outputSpeedsByModel(since:)`).
+        var timings: [String: ReplyTiming] = [:]
     }
 
     /// Ascending by date, gaps closed so the chart reads as a calendar.
@@ -150,6 +220,11 @@ struct UsageLedger: Sendable, Equatable {
         /// Asked of the provider, so it covers the whole account. One token
         /// total per model and no money behind it.
         case providerStatistics
+        /// The provider's own log of every request on the account — OpenCode's
+        /// console — with the tokens of each kind and **the cost it charged**.
+        /// Whole account like the statistics, and unlike them priced: the
+        /// money is reported, not worked out from a price list.
+        case providerLogs
 
         /// Whether a ledger with this origin may appear in the token spend
         /// pane. Records read or imported here can; a provider's own
@@ -158,12 +233,17 @@ struct UsageLedger: Sendable, Equatable {
         var supportsTokenSpend: Bool {
             switch self {
             case .localTranscripts, .importedRecords: true
-            case .providerStatistics: false
+            case .providerStatistics, .providerLogs: false
             }
         }
     }
 
     var origin: Origin = .localTranscripts
+
+    /// What the money is counted in. Nil is dollars — the price lists and
+    /// OpenCode's console are — and DeepSeek's console charges a CNY account
+    /// in yuan, which a dollar sign would misstate by seven times.
+    var currency: String?
 
     /// Whether some of this work has only session- or report-level timing, so
     /// the hour profile cannot be trusted.
@@ -264,6 +344,34 @@ struct UsageLedger: Sendable, Equatable {
         }
     }
 
+    /// What went through between two moments, with the quarter-hours at
+    /// either edge counted for the share of them inside — the figure a
+    /// window's worth divides.
+    ///
+    /// **Not `spend(since:)`.** That drops the quarter-hour a window opened in
+    /// and counts everything up to now; the percentage it is set against was
+    /// read at one moment, and a five-hour window's first requests — the ones
+    /// that write the whole context to the cache — sit in the quarter-hour it
+    /// opened in. Work inside a quarter-hour is taken as even, which is an
+    /// approximation; leaving it out or counting it whole is a worse one.
+    func cost(from start: Date, to end: Date) -> Double {
+        share(from: start, to: end) { $0.cost }
+    }
+
+    /// The tokens in the same span, the same way — priced or not, which is
+    /// what tells "nothing happened here" from "nothing here has a price".
+    func tokens(from start: Date, to end: Date) -> Double {
+        share(from: start, to: end) { Double($0.tokens) }
+    }
+
+    private func share(from start: Date, to end: Date, of value: (Slot) -> Double) -> Double {
+        let quarter: TimeInterval = 15 * 60
+        return slots.reduce(0) { total, slot in
+            let overlap = min(slot.start.addingTimeInterval(quarter), end).timeIntervalSince(max(slot.start, start))
+            return overlap > 0 ? total + value(slot) * min(overlap / quarter, 1) : total
+        }
+    }
+
     var today: LedgerDay? {
         days.last.flatMap { Calendar.current.isDateInToday($0.date) ? $0 : nil }
     }
@@ -283,6 +391,122 @@ struct UsageLedger: Sendable, Equatable {
     }
 
     func recent(_ count: Int) -> [LedgerDay] { Array(days.suffix(count)) }
+
+    /// How much of the input over a span was served from the prompt cache:
+    /// cache reads over every input token — fresh, written to the cache, and
+    /// read from it. Output is not input and is left out.
+    ///
+    /// **Only where every token was sorted into its kind.** A source that
+    /// reports a bare total leaves tokens no kind can claim, and dividing
+    /// around them would state a rate for part of the work as though it were
+    /// the whole; so would a store that cannot prove its counts are complete.
+    /// Nil then, and nil with no input at all.
+    func cacheHitRate(overLast count: Int) -> Double? {
+        guard !hasPartialCounts else { return nil }
+        let span = days.suffix(count)
+        let tally = span.reduce(TokenTally()) { $0 + $1.tally }
+        let tokens = span.reduce(0) { $0 + $1.tokens }
+        let input = tally.input + tally.cacheWrite + tally.cacheRead
+        guard input > 0, tally.total == tokens else { return nil }
+        return Double(tally.cacheRead) / Double(input)
+    }
+
+    /// One model's cache hit rate over a span, and how much input it is
+    /// measured over — the order they are listed in.
+    struct ModelCacheRate: Equatable, Sendable {
+        let name: String
+        let rate: Double
+        let inputTokens: Int
+    }
+
+    /// `cacheHitRate` for each model, most input first.
+    ///
+    /// Grouped by **display name**, the way the top model is: several raw ids
+    /// can be one model. A model is left out when any of its tokens in the
+    /// span cannot be vouched for by kind — a day that counted it with no
+    /// split kept (read before the split was), or tokens its source could not
+    /// classify — so no model's rate is worked out over part of its work.
+    func cacheHitRatesByModel(overLast count: Int) -> [ModelCacheRate] {
+        guard !hasPartialCounts else { return [] }
+        var tallies: [String: TokenTally] = [:]
+        var unvouched: Set<String> = []
+        for day in days.suffix(count) {
+            for (raw, tokens) in day.models where tokens > 0 {
+                let name = modelNames[raw] ?? raw
+                guard let tally = day.modelTallies[raw], (day.modelUnclassifiedTokens[raw] ?? 0) == 0 else {
+                    unvouched.insert(name)
+                    continue
+                }
+                tallies[name, default: TokenTally()] = (tallies[name] ?? TokenTally()) + tally
+            }
+        }
+        return tallies.compactMap { name, tally in
+            let input = tally.input + tally.cacheWrite + tally.cacheRead
+            guard !unvouched.contains(name), input > 0 else { return nil }
+            return ModelCacheRate(name: name, rate: Double(tally.cacheRead) / Double(input), inputTokens: input)
+        }
+        .sorted { $0.inputTokens != $1.inputTokens ? $0.inputTokens > $1.inputTokens : $0.name < $1.name }
+    }
+
+    /// One model's output speed over a span — output tokens per second across
+    /// its timed replies — and its average wait for the first token. Either
+    /// is nil when too few were timed.
+    struct ModelSpeed: Equatable, Sendable {
+        let name: String
+        let tokensPerSecond: Double?
+        let firstToken: TimeInterval?
+        let outputTokens: Int
+    }
+
+    /// Fewer timed replies (or turns) than this and a model's figure is one or
+    /// two requests' luck, so it is left out.
+    static let fewestTimedReplies = 5
+
+    /// How far back a speed is read: the last day, rolling. A month's
+    /// average says how the model was, not how it is.
+    static let speedSpan: TimeInterval = 24 * 3600
+
+    /// `ReplyTiming` added up per model since a moment, most output first.
+    ///
+    /// **All output over all time**, not an average of each reply's speed: a
+    /// short reply and a long one weigh what they wrote. The first-token wait
+    /// is the mean over turns. Grouped by display name like the cache rates.
+    /// A quarter-hour straddling `start` is left out.
+    func outputSpeedsByModel(since start: Date) -> [ModelSpeed] {
+        var timings: [String: ReplyTiming] = [:]
+        for slot in slots where slot.start >= start {
+            for (raw, timing) in slot.timings {
+                let name = modelNames[raw] ?? raw
+                timings[name, default: ReplyTiming()] = (timings[name] ?? ReplyTiming()) + timing
+            }
+        }
+        return timings.compactMap { name, timing in
+            let speed = timing.replies >= Self.fewestTimedReplies && timing.seconds > 0
+                ? Double(timing.outputTokens) / timing.seconds : nil
+            let firstToken = timing.firstTokenTurns >= Self.fewestTimedReplies
+                ? timing.firstTokenSeconds / Double(timing.firstTokenTurns) : nil
+            guard speed != nil || firstToken != nil else { return nil }
+            return ModelSpeed(
+                name: name, tokensPerSecond: speed, firstToken: firstToken,
+                outputTokens: speed == nil ? 0 : timing.outputTokens
+            )
+        }
+        .sorted { $0.outputTokens != $1.outputTokens ? $0.outputTokens > $1.outputTokens : $0.name < $1.name }
+    }
+
+    /// Each model's share of the tokens over a span, largest first — the
+    /// whole list `topModel` is the head of, grouped by display name.
+    func modelShares(overLast count: Int) -> [(name: String, tokens: Int, share: Double)] {
+        var totals: [String: Int] = [:]
+        for day in days.suffix(count) {
+            for (raw, tokens) in day.models where tokens > 0 { totals[modelNames[raw] ?? raw, default: 0] += tokens }
+        }
+        let overall = totals.values.reduce(0, +)
+        guard overall > 0 else { return [] }
+        return totals
+            .map { (name: $0.key, tokens: $0.value, share: Double($0.value) / Double(overall)) }
+            .sorted { $0.tokens != $1.tokens ? $0.tokens > $1.tokens : $0.name < $1.name }
+    }
 
     /// The heaviest day in a span. Scoped rather than all-time so it sits
     /// beside the other figures on the card without quietly changing the
@@ -345,7 +569,7 @@ actor UsageLedgerReader {
         if let suppliedPrices { prices = suppliedPrices }
         else { prices = await ModelPrices.shared.prices() }
         guard !Task.isCancelled else { return .empty }
-        var ledger = Self.priced(scanned.buckets, with: prices, calendar: .current)
+        var ledger = Self.priced(scanned.buckets, with: prices, calendar: .current, timings: scanned.timings)
         ledger.sessions = sessions(scanned.files, provider: provider, prices: prices)
         guard !Task.isCancelled else { return .empty }
         cached[provider] = ledger
@@ -407,7 +631,8 @@ actor UsageLedgerReader {
         _ buckets: Buckets,
         with prices: [String: ModelPrice],
         calendar: Calendar,
-        vendor: String? = nil
+        vendor: String? = nil,
+        timings: [String: [String: ReplyTiming]] = [:]
     ) -> UsageLedger {
         guard !buckets.isEmpty else { return .empty }
 
@@ -424,6 +649,7 @@ actor UsageLedgerReader {
         var dayModelTallies: [Date: [String: TokenTally]] = [:]
         var dayModelCosts: [Date: [String: TokenCost]] = [:]
         var dayTally: [Date: TokenTally] = [:]
+        var lookup = ModelPriceLookup(prices)
 
         for (key, models) in buckets {
             guard !Task.isCancelled else { return .empty }
@@ -443,7 +669,7 @@ actor UsageLedgerReader {
                     (dayModelTallies[day]?[model] ?? TokenTally()) + tally
                 dayTally[day, default: TokenTally()] = (dayTally[day] ?? TokenTally()) + tally
 
-                if let price = ModelPrices.price(for: model, in: prices, vendor: vendor) {
+                if let price = lookup.price(for: model, vendor: vendor) {
                     let money = tally.costBreakdown(at: price)
                     cost += money.total
                     dayModelCosts[day, default: [:]][model, default: TokenCost()] =
@@ -455,7 +681,10 @@ actor UsageLedgerReader {
                 }
             }
 
-            slots.append(UsageLedger.Slot(start: start, tokens: tokens, cost: cost, unpricedTokens: unpricedTokens, models: models))
+            slots.append(UsageLedger.Slot(
+                start: start, tokens: tokens, cost: cost, unpricedTokens: unpricedTokens,
+                models: models, timings: timings[key] ?? [:]
+            ))
 
             dayTokens[day, default: 0] += tokens
             dayCost[day, default: 0] += cost
@@ -502,40 +731,78 @@ actor UsageLedgerReader {
 
     // MARK: - Scanning
 
-    private func scan(_ provider: Provider) -> (buckets: Buckets, files: [String: FileCache.Entry]) {
+    private func scan(
+        _ provider: Provider
+    ) -> (buckets: Buckets, timings: [String: [String: ReplyTiming]], files: [String: FileCache.Entry]) {
         var cache = FileCache.load(for: provider, directory: cacheDirectory)
         var buckets: Buckets = [:]
+        var timings: [String: [String: ReplyTiming]] = [:]
         var fresh: [String: FileCache.Entry] = [:]
+        var changed = false
 
         for file in Self.logFiles(for: provider, home: home) {
-            guard !Task.isCancelled else { return ([:], [:]) }
+            guard !Task.isCancelled else { return ([:], [:], [:]) }
             guard let stamp = FileCache.Stamp(file) else { continue }
             let key = file.path
 
             // A log file is rewritten only by being appended to, so size and
             // modification date together are enough to know nothing changed.
-            let entry: FileCache.Entry
             if let known = cache.files.removeValue(forKey: key), known.stamp == stamp {
-                entry = known
+                fresh[key] = known
             } else {
+                changed = true
                 let scanned = autoreleasepool { parse(file, provider: provider) }
-                guard !Task.isCancelled else { return ([:], [:]) }
-                entry = FileCache.Entry(
-                    stamp: stamp, days: scanned.days, title: scanned.title, cwd: scanned.cwd
+                guard !Task.isCancelled else { return ([:], [:], [:]) }
+                fresh[key] = FileCache.Entry(
+                    stamp: stamp, days: scanned.days, title: scanned.title, cwd: scanned.cwd,
+                    timings: scanned.timings, replies: scanned.replies
                 )
             }
+        }
 
-            fresh[key] = entry
-            for (day, models) in entry.days {
+        // Each reply once, for the file it appeared in first — the original
+        // conversation, not a resumed or forked copy of its history. Files are
+        // taken oldest work first, then by path, so the choice is stable.
+        let ordered = fresh.map { (key: $0.key, entry: $0.value, first: $0.value.firstSlot ?? "") }.sorted { lhs, rhs in
+            lhs.first != rhs.first ? lhs.first < rhs.first : lhs.key < rhs.key
+        }
+        var claimed: Set<String> = []
+        var counted: [String: FileCache.Entry] = [:]
+        for (key, entry, _) in ordered {
+            guard !Task.isCancelled else { return ([:], [:], [:]) }
+            var days = entry.days
+            var fileTimings = entry.timings ?? [:]
+            for (id, reply) in entry.replies ?? [:] where claimed.insert(id).inserted {
+                days[reply.slot, default: [:]][reply.model] = (days[reply.slot]?[reply.model] ?? TokenTally()) + reply.tally
+                if let timing = reply.timing {
+                    fileTimings[reply.slot, default: [:]][reply.model] =
+                        (fileTimings[reply.slot]?[reply.model] ?? ReplyTiming()) + timing
+                }
+            }
+            counted[key] = FileCache.Entry(
+                stamp: entry.stamp, days: days, title: entry.title, cwd: entry.cwd, timings: fileTimings
+            )
+            for (day, models) in days {
                 for (model, tally) in models {
                     buckets[day, default: [:]][model] = (buckets[day]?[model] ?? TokenTally()) + tally
                 }
             }
+            for (day, models) in fileTimings {
+                for (model, timing) in models {
+                    timings[day, default: [:]][model] = (timings[day]?[model] ?? ReplyTiming()) + timing
+                }
+            }
         }
 
-        cache.files = fresh
-        cache.save(for: provider, directory: cacheDirectory)
-        return (buckets, fresh)
+        // Entries left in the old cache are deleted files. Repricing unchanged
+        // transcripts does not change this raw-token cache or warrant a write.
+        if changed || !cache.files.isEmpty {
+            cache.files = fresh
+            cache.save(for: provider, directory: cacheDirectory)
+        }
+        // The sessions are cut from the counted entries, so a resumed
+        // conversation's row holds only what was done in it.
+        return (buckets, timings, counted)
     }
 
     /// One row per transcript, priced the same way the days are.
@@ -549,6 +816,7 @@ actor UsageLedgerReader {
         prices: [String: ModelPrice]
     ) -> [UsageLedger.Session] {
         var sessions: [UsageLedger.Session] = []
+        var lookup = ModelPriceLookup(prices)
 
         for (path, entry) in files {
             guard !Task.isCancelled else { return [] }
@@ -570,7 +838,7 @@ actor UsageLedgerReader {
                 for (model, tally) in models {
                     tokens += tally.total
                     slotTokens += tally.total
-                    if let price = ModelPrices.price(for: model, in: prices) {
+                    if let price = lookup.price(for: model) {
                         let money = tally.cost(at: price)
                         cost += money
                         slotCost += money
@@ -622,10 +890,18 @@ actor UsageLedgerReader {
     }
 
     private static func logFiles(for provider: Provider, home: URL) -> [URL] {
-        let root: URL? = switch provider {
+        // None of the profiled providers leaves transcripts here either.
+        guard let written = provider.handWritten else { return [] }
+        let root: URL? = switch written {
         case .claudeCode: home.appending(path: ".claude/projects")
         case .codex: home.appending(path: ".codex/sessions")
-        default: nil
+        // Antigravity is an editor and keeps nothing; OpenCode keeps its own
+        // store rather than the JSONL these two parsers read.
+        case .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
+             .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
+             .sub2api, .newAPI, .v2ex, .qoder, .stepFun, .pulseExtension,
+             .openAI, .xai: nil
         }
 
         guard let root else { return [] }
@@ -663,14 +939,60 @@ actor UsageLedgerReader {
         /// reversed — a folder whose own name contains a dash is
         /// indistinguishable from a separator, and this Mac has several.
         var cwd: String?
+        /// Timed replies by quarter-hour and then model (`ReplyTiming`).
+        var timings: [String: [String: ReplyTiming]] = [:]
+        /// Claude Code's replies by message id, kept apart from `days` so that
+        /// `scan` can count each **once across files** (`ScannedReply`).
+        var replies: [String: ScannedReply] = [:]
+
+        /// `days` with the replies folded in — one file's own figures.
+        var allDays: [String: [String: TokenTally]] {
+            var days = days
+            for reply in replies.values {
+                days[reply.slot, default: [:]][reply.model] = (days[reply.slot]?[reply.model] ?? TokenTally()) + reply.tally
+            }
+            return days
+        }
+
+        /// `timings` with the replies' own folded in.
+        var allTimings: [String: [String: ReplyTiming]] {
+            var timings = timings
+            for reply in replies.values {
+                guard let timing = reply.timing else { continue }
+                timings[reply.slot, default: [:]][reply.model] = (timings[reply.slot]?[reply.model] ?? ReplyTiming()) + timing
+            }
+            return timings
+        }
+    }
+
+    /// One Claude Code reply: where it landed, on which model, what it cost
+    /// in tokens, and how long it took where that could be timed.
+    ///
+    /// **Kept by message id because a reply can be in more than one file.**
+    /// Resuming or forking a conversation starts a new transcript that opens
+    /// with a copy of the old one's history — the same message ids at the same
+    /// times. Added up file by file, every resumed session counted its history
+    /// again: on the Mac this was found on, 1,768 replies sat in two or more
+    /// files and 28% of the tokens counted were copies.
+    struct ScannedReply: Codable, Sendable, Equatable {
+        let slot: String
+        let model: String
+        let tally: TokenTally
+        var timing: ReplyTiming?
     }
 
     // Internal for the on-disk streaming/cancellation regression fixtures.
     func parse(_ file: URL, provider: Provider) -> Scanned {
-        switch provider {
+        // No profiled provider leaves a transcript this reads either.
+        guard let written = provider.handWritten else { return Scanned() }
+        switch written {
         case .claudeCode: return parseClaudeCode(LogLines(at: file))
         case .codex: return parseCodex(LogLines(at: file))
-        default: return Scanned()
+        case .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
+             .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo,
+             .sub2api, .newAPI, .v2ex, .qoder, .stepFun, .pulseExtension,
+             .openAI, .xai: return Scanned()
         }
     }
 
@@ -714,12 +1036,25 @@ actor UsageLedgerReader {
     private func parseClaudeCode(_ lines: LogLines) -> Scanned {
         var scanned = Scanned()
         var days: [String: [String: TokenTally]] = [:]
-        // Retries and resumed sessions can write the same reply twice; the
-        // message id identifies it. This only catches repeats within a file,
-        // which is where they actually happen.
-        var seen: Set<String> = []
+        // **A reply is written over several lines**, one per content block,
+        // each carrying the usage so far — the output count climbs to the
+        // last. Kept by message id with the last line's counts, which also
+        // absorbs the repeats retries write within a file; copies in other
+        // files are `scan`'s to drop (`ScannedReply`). Keeping the first
+        // line's, as this did, missed about a quarter of the output.
+        var replies: [String: ScannedReply] = [:]
+        var clock = ReplyClock()
 
         lines.forEachLine { line in
+            // A request goes out on the user's message or the last tool
+            // result. Only the time is wanted, and a tool result can be a
+            // whole file, so it is cut out of the line rather than parsed.
+            // The top-level `type` and `timestamp` are the only ones a user
+            // line has unescaped.
+            if contains(line, "\"type\":\"user\""), let sent = timestamp(in: line).flatMap(date(fromISO8601:)) {
+                clock.sent(at: sent)
+            }
+
             // What the session is called and where it ran. **A user-set title
             // can arrive long after the opening prompt** — Claude Code writes
             // `customTitle` when the conversation is renamed — so that one is
@@ -761,12 +1096,9 @@ actor UsageLedgerReader {
                 // request was made, so there is nothing to price.
                 model != "<synthetic>",
                 let timestamp = root["timestamp"] as? String,
-                let slot = slot(fromISO8601: timestamp)
+                let at = date(fromISO8601: timestamp)
             else { return }
-
-            if let id = message["id"] as? String {
-                guard seen.insert(id).inserted else { return }
-            }
+            let slot = slot(of: at)
 
             let tally = TokenTally(
                 input: int(usage["input_tokens"]),
@@ -774,13 +1106,65 @@ actor UsageLedgerReader {
                 cacheRead: int(usage["cache_read_input_tokens"]),
                 output: int(usage["output_tokens"])
             )
-            guard tally.total > 0 else { return }
 
-            days[slot, default: [:]][model] = (days[slot]?[model] ?? TokenTally()) + tally
+            guard let id = message["id"] as? String else {
+                if tally.total > 0 { days[slot, default: [:]][model] = (days[slot]?[model] ?? TokenTally()) + tally }
+                return
+            }
+            // Placed at its first line, counted at its last.
+            let placed = replies[id]?.slot ?? slot
+            replies[id] = ScannedReply(slot: placed, model: model, tally: tally)
+            clock.reply(id, model: model, slot: placed, output: tally.output, at: at)
+        }
+        clock.finish()
+
+        for (id, timing) in clock.timings { replies[id]?.timing = timing }
+        scanned.days = days
+        scanned.replies = replies.filter { $0.value.tally.total > 0 }
+        return scanned
+    }
+
+    /// Times Claude Code's replies as their lines go by: from the last line
+    /// that sent a request to the last line of the reply.
+    ///
+    /// **Not before the previous reply finished.** A tool result can land
+    /// between two lines of the reply that asked for it (seen in a few
+    /// hundred replies here); the next request still waits for the reply to
+    /// end.
+    private struct ReplyClock {
+        /// By message id, so the timing travels with its reply (`ScannedReply`).
+        private(set) var timings: [String: ReplyTiming] = [:]
+        private var pending: Date?
+        private var open: (id: String, model: String, slot: String, sent: Date?, finished: Date, output: Int)?
+        private var lastFinished: Date?
+        private var done: Set<String> = []
+
+        mutating func sent(at date: Date) { pending = date }
+
+        mutating func reply(_ id: String, model: String, slot: String, output: Int, at date: Date) {
+            if open?.id == id {
+                open?.finished = date
+                open?.output = output
+                return
+            }
+            finish()
+            // A reply seen again after another — a resumed session's copy —
+            // was timed the first time.
+            guard !done.contains(id) else { return }
+            let sent = pending.map { start in lastFinished.map { max($0, start) } ?? start }
+            pending = nil
+            open = (id, model, slot, sent, date, output)
         }
 
-        scanned.days = days
-        return scanned
+        mutating func finish() {
+            guard let reply = open else { return }
+            open = nil
+            done.insert(reply.id)
+            lastFinished = reply.finished
+            guard let sent = reply.sent,
+                  let timing = ReplyTiming(output: reply.output, from: sent, to: reply.finished) else { return }
+            timings[reply.id] = timing
+        }
     }
 
     /// Codex reports a running total for the session rather than a figure per
@@ -793,8 +1177,23 @@ actor UsageLedgerReader {
         var days: [String: [String: TokenTally]] = [:]
         var model: String?
         var previous: [String: Int]?
+        var clock = CodexReplyClock()
+        var lastCountSlot: String?
 
         lines.forEachLine { line in
+            // What a reply's timing needs: when each request went out (a
+            // tool's output, or the user's message) and when the model last
+            // wrote. Cut out of the line, as Claude Code's are — a tool's
+            // output can be long.
+            if contains(line, "\"type\":\"response_item\""),
+               let at = timestamp(in: line).flatMap(date(fromISO8601:)) {
+                if contains(line, "_call_output\"") || contains(line, "\"role\":\"user\"") {
+                    clock.sent(at: at)
+                } else if Self.codexModelItems.contains(where: { contains(line, $0) }) {
+                    clock.wrote(at: at)
+                }
+            }
+
             if scanned.title == nil || scanned.cwd == nil {
                 // The directory is stated once in the session header; the
                 // opening prompt is a `response_item` whose payload is a
@@ -816,6 +1215,21 @@ actor UsageLedgerReader {
                         }
                     }
                 }
+            }
+
+            // Codex's own measure of the wait for the first token, once per
+            // turn, put down to the model in force.
+            if contains(line, "\"task_complete\""),
+               let root = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+               let payload = root["payload"] as? [String: Any],
+               payload["type"] as? String == "task_complete",
+               let wait = (payload["time_to_first_token_ms"] as? NSNumber)?.doubleValue,
+               let model {
+                // Put with the turn's last count, so it lands in a quarter-hour
+                // that has the turn's tokens — slots hold only work.
+                let slot = lastCountSlot ?? (root["timestamp"] as? String).flatMap(slot(fromISO8601:))
+                if let slot { clock.firstToken(after: wait / 1000, slot: slot, model: model) }
+                return
             }
 
             let isCount = contains(line, "\"token_count\"")
@@ -859,10 +1273,61 @@ actor UsageLedgerReader {
             guard tally.total > 0 else { return }
 
             days[slot, default: [:]][model] = (days[slot]?[model] ?? TokenTally()) + tally
+            lastCountSlot = slot
+            clock.counted(output: tally.output, slot: slot, model: model)
         }
 
         scanned.days = days
+        scanned.timings = clock.timings
         return scanned
+    }
+
+    /// What the model writes in a Codex rollout, as opposed to what is
+    /// handed to it. `"function_call"` with its closing quote is not
+    /// `"function_call_output"`.
+    private static let codexModelItems = [
+        "\"role\":\"assistant\"", "\"type\":\"reasoning\"", "\"type\":\"function_call\"",
+        "\"type\":\"custom_tool_call\"", "\"type\":\"web_search_call\"", "\"type\":\"local_shell_call\""
+    ]
+
+    /// Times Codex's replies: from the request to the model's last item.
+    ///
+    /// **The count arrives late.** Codex writes a reply's `token_count` once
+    /// the tool it asked for has run, after that tool's output — which is
+    /// also the next request going out. So a request closes the reply before
+    /// it, and the count that follows is paired with that reply.
+    private struct CodexReplyClock {
+        private(set) var timings: [String: [String: ReplyTiming]] = [:]
+        private var sent: Date?
+        private var wrote: Date?
+        private var closed: (sent: Date, finished: Date)?
+
+        mutating func sent(at date: Date) {
+            if let sent, let wrote, wrote > sent { closed = (sent, wrote) }
+            sent = date
+            wrote = nil
+        }
+
+        mutating func wrote(at date: Date) {
+            if sent != nil { wrote = date }
+        }
+
+        mutating func firstToken(after seconds: Double, slot: String, model: String) {
+            guard let timing = ReplyTiming.firstToken(after: seconds) else { return }
+            timings[slot, default: [:]][model] = (timings[slot]?[model] ?? ReplyTiming()) + timing
+        }
+
+        mutating func counted(output: Int, slot: String, model: String) {
+            var span = closed
+            closed = nil
+            if span == nil, let sent, let wrote, wrote > sent {
+                span = (sent, wrote)
+                self.sent = nil
+                self.wrote = nil
+            }
+            guard let span, let timing = ReplyTiming(output: output, from: span.sent, to: span.finished) else { return }
+            timings[slot, default: [:]][model] = (timings[slot]?[model] ?? ReplyTiming()) + timing
+        }
     }
 
     // MARK: - Line helpers
@@ -879,8 +1344,23 @@ actor UsageLedgerReader {
 
     /// The quarter-hour a timestamp falls in, as a local-time key.
     private func slot(fromISO8601 text: String) -> String? {
-        guard let date = isoWithFraction.date(from: text) ?? iso.date(from: text) else { return nil }
+        date(fromISO8601: text).map(slot(of:))
+    }
 
+    private func date(fromISO8601 text: String) -> Date? {
+        isoWithFraction.date(from: text) ?? iso.date(from: text)
+    }
+
+    /// The first `"timestamp":"…"` value in a line, cut out without parsing
+    /// the rest of it.
+    private func timestamp(in line: Data) -> String? {
+        let key = Data("\"timestamp\":\"".utf8)
+        guard let start = line.range(of: key)?.upperBound,
+              let end = line[start...].firstIndex(of: 0x22) else { return nil }
+        return String(data: line[start..<end], encoding: .utf8)
+    }
+
+    private func slot(of date: Date) -> String {
         let quarter = 15.0 * 60
         let floored = Date(timeIntervalSince1970: (date.timeIntervalSince1970 / quarter).rounded(.down) * quarter)
         return slotFormatter.string(from: floored)
@@ -930,6 +1410,19 @@ private struct FileCache: Codable {
         /// predates them.
         var title: String?
         var cwd: String?
+        /// Optional for the same reason; `ledger-5` is what makes it present.
+        var timings: [String: [String: ReplyTiming]]?
+        /// Claude Code's replies by id (`ScannedReply`), counted across files
+        /// by `scan`; `ledger-6` is what makes it present.
+        var replies: [String: UsageLedgerReader.ScannedReply]?
+
+        /// The earliest quarter-hour with work in it.
+        var firstSlot: String? {
+            let day = days.keys.min()
+            let reply = replies?.values.lazy.map(\.slot).min()
+            if let day, let reply { return min(day, reply) }
+            return day ?? reply
+        }
     }
 
     var files: [String: Entry] = [:]
@@ -966,6 +1459,17 @@ private struct FileCache: Codable {
         // after that was dropped — and a transcript that has not changed is
         // never opened again, so the fix to the parser alone could not reach
         // them. Renaming the file forces the one rescan that rereads them.
-        (directory ?? PulseStorage.directory).appending(path: "ledger-4-\(provider.rawValue).json")
+        //
+        // **`ledger-5`: Claude Code's output was short, and replies untimed.**
+        // A reply written over several lines carries a running output count,
+        // and the first line's was kept — about a quarter of the output went
+        // uncounted. Entries also gained `timings`. Both need every file read
+        // once more.
+        //
+        // **`ledger-6`: a reply counted once across files.** A resumed or
+        // forked conversation's transcript opens with a copy of the old one's
+        // history; entries now keep Claude Code's replies by id so `scan` can
+        // drop the copies.
+        (directory ?? PulseStorage.directory).appending(path: "ledger-6-\(provider.rawValue).json")
     }
 }

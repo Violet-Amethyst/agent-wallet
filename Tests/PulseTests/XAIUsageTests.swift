@@ -180,6 +180,27 @@ struct XAIUsageTests {
         }
     }
 
+    @Test("WalletSnapshot carries extra metrics like monthly spend")
+    func walletSnapshotCarriesExtras() {
+        var usage = ProviderUsage(
+            account: AccountKey(.xai),
+            windows: [],
+            observedAt: Date(),
+            state: .live,
+            plan: "xAI API",
+            creditBalance: "$7.05",
+            creditRemaining: .init(amount: 7.05, currency: "USD")
+        )
+        usage.extras = [
+            .init(title: "Monthly spend", value: "$7.95")
+        ]
+
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "xAI")
+        #expect(snapshot.extras.count == 1)
+        #expect(snapshot.extras[0].title == "Monthly spend")
+        #expect(snapshot.extras[0].value == "$7.95")
+    }
+
     @Test("Live Edge session discovery and balance test")
     func liveSessionDiscovery() async {
         guard let session = XAIWebLogin.session() else { return }

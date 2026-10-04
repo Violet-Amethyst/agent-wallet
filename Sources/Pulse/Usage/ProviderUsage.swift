@@ -723,6 +723,8 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
     var isCached = false
     /// Only the latest fetch carries attempts; the cache stores the origin alone.
     var attempts: [ConnectionDiagnostic.Attempt] = []
+    /// Extra metrics to display in wallet / detail card (e.g. cycle usage, 30d spend, total deposit).
+    var extras: [WalletSnapshot.ExtraMetric] = []
 
     /// Whether two readings of this account must agree on their source scope
     /// before one may stand in for the other.

@@ -310,7 +310,7 @@ struct RailOffsetTests {
 
     @Test("Offsets put the rail where the layout meant it to be")
     func offsetsRoundTripAgainstTheGrantedFrame() {
-        let placement = PanelPlacement(dock: .floating, horizontalRatio: 0.8, verticalRatio: 0.44)
+        let placement = PanelPlacement(dock: .floating(.vertical), horizontalRatio: 0.8, verticalRatio: 0.44)
         let layout = placement.layout(in: visible, topEdge: 1134, panel: panel, rail: rail)
 
         // Granted as asked: the rail's top lands exactly where layout put it.
@@ -323,7 +323,7 @@ struct RailOffsetTests {
     /// The refusal this suite exists for, with the numbers the probe recorded.
     @Test("A frame the window was refused does not move the rail")
     func aRefusedFrameDoesNotMoveTheRail() {
-        let placement = PanelPlacement(dock: .floating, horizontalRatio: 0.8, verticalRatio: 0.44)
+        let placement = PanelPlacement(dock: .floating(.vertical), horizontalRatio: 0.8, verticalRatio: 0.44)
         let layout = placement.layout(in: visible, topEdge: 1134, panel: panel, rail: rail)
 
         // What AppKit actually grants: the top pinned under the menu bar.
@@ -363,7 +363,7 @@ struct RailOffsetTests {
     }
 }
 
-@Suite("Dual-track Olympic rail geometry")
+@Suite("Dual-track Olympic rail geometry", .serialized)
 struct DualTrackOlympicRailGeometryTests {
     private struct TestSlot: Identifiable {
         let id: String
@@ -372,15 +372,15 @@ struct DualTrackOlympicRailGeometryTests {
 
     private let quotaSlots = [
         TestSlot(id: "antigravity", isMoney: false),
-        TestSlot(id: "claude", isMoney: false),
-        TestSlot(id: "chatgpt", isMoney: false),
+        TestSlot(id: "claudeCode", isMoney: false),
+        TestSlot(id: "copilot", isMoney: false),
         TestSlot(id: "cursor", isMoney: false),
         TestSlot(id: "qoder", isMoney: false)
     ]
 
     private let moneySlots = [
-        TestSlot(id: "deepseek", isMoney: true),
-        TestSlot(id: "openai_api", isMoney: true),
+        TestSlot(id: "deepSeek", isMoney: true),
+        TestSlot(id: "openAI", isMoney: true),
         TestSlot(id: "xai", isMoney: true)
     ]
 
@@ -392,7 +392,11 @@ struct DualTrackOlympicRailGeometryTests {
     func leftRailDualTrackPositions() {
         let originalEnds = PanelMetrics.usesRoundEnds
         PanelMetrics.useRoundEnds(false)
-        defer { PanelMetrics.useRoundEnds(originalEnds) }
+        PanelMetrics.useDualTrack(true)
+        defer {
+            PanelMetrics.useRoundEnds(originalEnds)
+            PanelMetrics.useDualTrack(false)
+        }
 
         let edge = PanelEdge.left
         let docked = true
@@ -446,6 +450,9 @@ struct DualTrackOlympicRailGeometryTests {
 
     @Test("Right rail positions quota on left and money on right")
     func rightRailDualTrackPositions() {
+        PanelMetrics.useDualTrack(true)
+        defer { PanelMetrics.useDualTrack(false) }
+
         let edge = PanelEdge.right
         let docked = true
         let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
@@ -473,6 +480,9 @@ struct DualTrackOlympicRailGeometryTests {
 
     @Test("Top rail positions money on top row and quota on bottom row")
     func topRailDualTrackPositions() {
+        PanelMetrics.useDualTrack(true)
+        defer { PanelMetrics.useDualTrack(false) }
+
         let edge = PanelEdge.top
         let docked = true
         let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
@@ -522,6 +532,9 @@ struct DualTrackOlympicRailGeometryTests {
 
     @Test("PanelHitArea slot hits exact circle in dual track")
     func hitTestingInDualTrack() {
+        PanelMetrics.useDualTrack(true)
+        defer { PanelMetrics.useDualTrack(false) }
+
         let railSlots = allSlots.map { RailSlot(AccountKey(Provider(rawValue: $0.id) ?? .antigravity)) }
         let edge = PanelEdge.left
         let docked = true
@@ -530,7 +543,7 @@ struct DualTrackOlympicRailGeometryTests {
 
         let isMoney: (RailSlot) -> Bool = { slot in
             let id = slot.id
-            return id == "deepseek" || id == "openai_api" || id == "xai"
+            return id == "deepSeek" || id == "openAI" || id == "xai"
         }
 
         let geos = DockLayout.slotGeometries(

@@ -659,3 +659,8 @@
 "No Qoder session found. Sign in at %@ first." = "找不到 Qoder 的登入資訊，請先在 %@ 登入。";
 "Site" = "網站";
 "Where you signed in. Changing it clears the saved session." = "你在哪個網站登入的。切換後會清除已儲存的登入資訊。";
+"Monthly spend" = "本月花費";
+"Monthly budget" = "本月預算";
+"Remaining budget" = "剩餘預算";
+"Dual-track layout" = "雙軌懸浮列佈局";
+"Separate quota and balance accounts into two staggered columns." = "將額度類與餘額類帳號拆分為交錯的雙列排布。";

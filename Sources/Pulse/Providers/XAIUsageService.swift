@@ -122,7 +122,16 @@ struct XAIUsageService: Sendable {
             windows = []
         }
 
-        let usage = ProviderUsage(
+        var extras: [WalletSnapshot.ExtraMetric] = []
+        let spend = max(usedCredits, spend30d)
+        if spend > 0 && budget == nil {
+            extras.append(.init(
+                title: String.localized("Monthly spend"),
+                value: ProviderUsage.CreditAmount(amount: spend, currency: "USD").railText()
+            ))
+        }
+
+        var usage = ProviderUsage(
             account: AccountKey(.xai),
             windows: windows,
             observedAt: now,
@@ -131,6 +140,7 @@ struct XAIUsageService: Sendable {
             creditBalance: ProviderUsage.CreditAmount(amount: effectiveBalance, currency: "USD").railText(),
             creditRemaining: .init(amount: effectiveBalance, currency: "USD")
         )
+        usage.extras = extras
 
         return usage.recording(route)
     }

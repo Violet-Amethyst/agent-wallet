@@ -565,6 +565,21 @@ struct SettingsView: View {
                 SettingsRowDivider()
 
                 SettingsRow(
+                    String.localized("Dual-track layout"),
+                    subtitle: String.localized("Separate quota and balance accounts into two staggered columns.")
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { settings.usesDualTrackDock },
+                        set: { settings.usesDualTrackDock = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!settings.isPanelVisible)
+                }
+
+                SettingsRowDivider()
+
+                SettingsRow(
                     String.localized("Liquid Glass"),
                     subtitle: glassSubtitle
                 ) {
@@ -637,8 +652,8 @@ struct SettingsView: View {
                 SettingsRowDivider()
 
                 SettingsRow(
-                    String.localized("Percentages on top"),
-                    subtitle: String.localized("Only when the panel is docked to the top.")
+                    String.localized("Percentages across"),
+                    subtitle: String.localized("When the panel lies across: docked to the top or bottom, or free.")
                 ) {
                     Toggle("", isOn: Binding(
                         get: { settings.topRailShowsPercentages },
@@ -647,6 +662,21 @@ struct SettingsView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .disabled(!settings.isPanelVisible)
+                }
+
+                SettingsRowDivider()
+
+                SettingsRow(
+                    String.localized("Figures beside the rings"),
+                    subtitle: String.localized("Only when the panel lies free across. A thinner, longer panel.")
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { settings.freeAcrossFiguresBeside },
+                        set: { settings.freeAcrossFiguresBeside = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!settings.isPanelVisible || !settings.topRailShowsPercentages)
                 }
 
                 SettingsRowDivider()
@@ -844,12 +874,17 @@ struct SettingsView: View {
                     )) {
                         Text(localized: "Left").tag(PanelDock.edge(.left))
                         Text(localized: "Top").tag(PanelDock.edge(.top))
-                        Text(localized: "Free").tag(PanelDock.floating)
+                        Text(localized: "Bottom").tag(PanelDock.edge(.bottom))
+                        Text(localized: "Free across").tag(PanelDock.floating(.horizontal))
+                        Text(localized: "Free upright").tag(PanelDock.floating(.vertical))
                         Text(localized: "Right").tag(PanelDock.edge(.right))
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
+                    // Six segments do not fit the usual ceiling without
+                    // truncating both free ones, so this one is as wide as
+                    // its labels.
+                    .fixedSize()
                 }
 
                 SettingsRowDivider()
@@ -2006,48 +2041,54 @@ struct SettingsView: View {
     @ViewBuilder
     private func estimatedValue(for account: AccountKey) -> some View {
         let ledger = ledgers[account.provider] ?? .empty
-        let estimates = store.usage(for: account).windows.compactMap { window in
-            BudgetEstimator.estimate(for: window, ledger: ledger).map { (window, $0) }
+        let usage = store.usage(for: account)
+        // A window seen spent off this Mac keeps its row, saying why there is
+        // no figure — a value that quietly vanished would read as a bug.
+        let entries: [(UsageWindow, BudgetEstimate?)] = usage.windows.compactMap { window in
+            if store.usedElsewhere(window, account: account) { return (window, nil) }
+            return BudgetEstimator.estimate(for: window, ledger: ledger, observedAt: usage.observedAt).map { (window, $0) }
         }
 
-        if !estimates.isEmpty {
+        if !entries.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 SettingsGroup(String.localized("Estimated value")) {
-                    ForEach(Array(estimates.enumerated()), id: \.element.0.id) { index, entry in
+                    ForEach(Array(entries.enumerated()), id: \.element.0.id) { index, entry in
                         if index > 0 { SettingsRowDivider() }
 
-                        SettingsRow(
-                            entry.0.name,
-                            subtitle: String.localized("\(Self.approximateMoney(entry.1.spent)) used so far")
-                        ) {
-                            // Just what the whole window is worth. The
-                            // remainder used to sit here too, but it is only
-                            // the other two numbers subtracted — and the
-                            // percentage it comes from is already on screen,
-                            // in "Current usage" directly above.
-                            Text(Self.approximateMoney(entry.1.full))
-                                .font(.system(size: 13, weight: .medium))
-                                .monospacedDigit()
+                        if let estimate = entry.1 {
+                            SettingsRow(
+                                entry.0.name,
+                                subtitle: String.localized("\(BudgetEstimator.approximate(estimate.spent)) used so far")
+                            ) {
+                                // Just what the whole window is worth. The
+                                // remainder used to sit here too, but it is only
+                                // the other two numbers subtracted — and the
+                                // percentage it comes from is already on screen,
+                                // in "Current usage" directly above.
+                                Text(BudgetEstimator.approximate(estimate.full))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .monospacedDigit()
+                            }
+                        } else {
+                            SettingsRow(
+                                entry.0.name,
+                                subtitle: String.localized("Also used somewhere this Mac's logs can't see")
+                            ) {
+                                Text(localized: "Not estimated")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
 
-                Text(localized: "An estimate, not a reported figure: what this Mac spent since each window opened, divided by the percentage the provider says is used. Work done on other machines isn't counted, which would put these low. Windows with too little use to extrapolate from are left out.")
+                Text(localized: "An estimate, not a reported figure: what this Mac spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this Mac spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
             }
         }
-    }
-
-    private static func approximateMoney(_ amount: Double) -> String {
-        let text = amount.formatted(
-            .currency(code: "USD")
-                .precision(.fractionLength(amount >= 100 ? 0 : 2))
-                .locale(LocalizationSource.locale)
-        )
-        return "≈\(text)"
     }
 
     /// What has actually been spent over time, as opposed to how much of the

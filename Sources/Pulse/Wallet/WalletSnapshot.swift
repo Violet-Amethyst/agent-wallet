@@ -373,7 +373,7 @@ enum WalletAdapter {
                 prepaid: usage.creditRemaining,
                 creditCount: nil,
                 periodSpend: nil,
-                extras: [],
+                extras: usage.extras,
                 updatedAt: usage.observedAt,
                 periodSpendShowsRemaining: false,
                 isFixture: isFixture
@@ -395,7 +395,7 @@ enum WalletAdapter {
                     from: spend,
                     credit: usage.creditRemaining
                 ),
-                extras: [],
+                extras: usage.extras,
                 updatedAt: usage.observedAt,
                 periodSpendShowsRemaining: showsRemaining,
                 isFixture: isFixture
@@ -412,7 +412,7 @@ enum WalletAdapter {
             prepaid: usage.creditRemaining,
             creditCount: nil,
             periodSpend: nil,
-            extras: [],
+            extras: usage.extras,
             updatedAt: usage.observedAt,
             periodSpendShowsRemaining: false,
             isFixture: isFixture

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// What one model charges, per million tokens.
@@ -18,10 +19,9 @@ struct ModelPrice: Codable, Sendable, Equatable {
 
 /// The price list, fetched from models.dev and kept on disk.
 ///
-/// models.dev covers every provider in one 4MB document; only the two Pulse
-/// reads usage for are kept, which leaves a few kilobytes to cache. It is
-/// re-fetched once a day — list prices change on the order of months, and the
-/// cached copy is what makes the settings pane work on a plane.
+/// Only the providers and plan vendors below are kept. The table is refreshed
+/// on the next read after 24 hours, and the cached copy keeps the settings
+/// pane working offline. Failed downloads may retry after five minutes.
 ///
 /// Prices are the base rates. Some models charge more above a long-context
 /// threshold, and that tier isn't applied here: the logs record how many
@@ -30,8 +30,25 @@ struct ModelPrice: Codable, Sendable, Equatable {
 actor ModelPrices {
     static let shared = ModelPrices()
 
-    private var table: [String: ModelPrice]?
+    private var cached: Cache?
+    /// The successful fetch's expiry, or a short retry delay after failure.
+    /// Retrying does not change the snapshot's original `fetchedAt`.
+    private var nextFetchAt: Date?
     private var inFlight: Task<[String: ModelPrice], Never>?
+    private let cacheDirectory: URL
+    private let now: @Sendable () -> Date
+    private let downloadPrices: @Sendable () async -> [String: ModelPrice]?
+
+    /// Isolated cache and clock/network boundaries for lifecycle tests.
+    init(
+        cacheDirectory: URL = PulseStorage.directory,
+        now: @escaping @Sendable () -> Date = { Date() },
+        download: @escaping @Sendable () async -> [String: ModelPrice]? = { await ModelPrices.download() }
+    ) {
+        self.cacheDirectory = cacheDirectory
+        self.now = now
+        self.downloadPrices = download
+    }
 
     /// Providers whose models Pulse can see usage for, **in priority order**.
     ///
@@ -81,33 +98,47 @@ actor ModelPrices {
 
     private static let source = URL(string: "https://models.dev/api.json")!
     private static let refreshAfter: TimeInterval = 24 * 3600
+    private static let retryAfter: TimeInterval = 5 * 60
 
     func prices() async -> [String: ModelPrice] {
-        if let table { return table }
-
-        if let cached = Self.readCache(), cached.age < Self.refreshAfter {
-            table = cached.prices
-            return cached.prices
-        }
-
-        // One download even if several panes ask at once.
         if let inFlight { return await inFlight.value }
 
-        let task = Task<[String: ModelPrice], Never> {
-            if let fetched = await Self.download() {
-                Self.writeCache(fetched)
-                return fetched
+        let at = now()
+        if let nextFetchAt, at < nextFetchAt { return cached?.prices ?? [:] }
+
+        if cached == nil {
+            if let saved = Self.readCache(in: cacheDirectory) {
+                cached = saved
+                let expiresAt = saved.fetchedAt.addingTimeInterval(Self.refreshAfter)
+                if at < expiresAt {
+                    nextFetchAt = expiresAt
+                    return saved.prices
+                }
+            } else {
+                // A pre-vendor table is useful offline, but even a recent one
+                // must not suppress the upgrade download.
+                cached = Self.readCache(in: cacheDirectory, allowPreviousVersion: true)
             }
-            // Offline: an old copy beats no prices at all, since list prices
-            // barely move.
-            return Self.readCache(allowPreviousVersion: true)?.prices ?? [:]
+        }
+
+        // One task owns the download and commits its result before releasing
+        // the waiters, so none can return while the cache is still out of date.
+        let task = Task<[String: ModelPrice], Never> {
+            if let fetched = await downloadPrices() {
+                let snapshot = Cache(fetchedAt: now(), prices: fetched)
+                cached = snapshot
+                nextFetchAt = snapshot.fetchedAt.addingTimeInterval(Self.refreshAfter)
+                writeCache(snapshot)
+            } else {
+                // Keep the last table without renewing its age or writing it
+                // back as a new download. Repeated reads offline are bounded.
+                nextFetchAt = now().addingTimeInterval(Self.retryAfter)
+            }
+            inFlight = nil
+            return cached?.prices ?? [:]
         }
         inFlight = task
-
-        let result = await task.value
-        inFlight = nil
-        if !result.isEmpty { table = result }
-        return result
+        return await task.value
     }
 
     // MARK: - Network
@@ -189,34 +220,33 @@ actor ModelPrices {
         in table: [String: ModelPrice],
         vendor: String? = nil
     ) -> ModelPrice? {
-        if let price = firstParty(model, table) { return price }
+        if let price = table[model] { return price }
+        return resolve(for: model, vendor: vendor, exact: { table[$0] }, folded: { lowered in
+            table.first(where: { $0.key.lowercased() == lowered })?.value
+        })
+    }
+
+    /// Shared by single lookups and the indexed, scan-local lookup. The order
+    /// is significant: every first-party spelling precedes every vendor rate.
+    static func resolve(
+        for model: String, vendor: String?,
+        exact: (String) -> ModelPrice?, folded: (String) -> ModelPrice?
+    ) -> ModelPrice? {
+        if let price = exact(model) ?? folded(model.lowercased()) { return price }
+        let candidates = aliases(for: model)
+        for candidate in candidates {
+            if let price = exact(candidate) ?? folded(candidate.lowercased()) { return price }
+        }
 
         // Only now, and only for the vendor asked about: the plan the tokens
         // were bought on is the last word, never the first.
         guard let vendor else { return nil }
-        if let exact = table[vendorKey(vendor, model)] { return exact }
+        if let price = exact(vendorKey(vendor, model)) { return price }
         let lowered = vendorKey(vendor, model).lowercased()
-        if let match = table.first(where: { $0.key.lowercased() == lowered })?.value { return match }
-        for candidate in aliases(for: model) {
-            if let match = table[vendorKey(vendor, candidate)] { return match }
+        if let price = folded(lowered) { return price }
+        for candidate in candidates {
+            if let price = exact(vendorKey(vendor, candidate)) { return price }
         }
-        return nil
-    }
-
-    private static func firstParty(_ model: String, _ table: [String: ModelPrice]) -> ModelPrice? {
-        if let exact = table[model] { return exact }
-
-        // MiniMax writes `MiniMax-M3` and the agents that call it write
-        // `minimax-m3`. Case is the only difference.
-        let lowered = model.lowercased()
-        if let match = table.first(where: { $0.key.lowercased() == lowered })?.value { return match }
-
-        for candidate in aliases(for: model) {
-            if let match = table[candidate] { return match }
-            let folded = candidate.lowercased()
-            if let match = table.first(where: { $0.key.lowercased() == folded })?.value { return match }
-        }
-
         return nil
     }
 
@@ -275,11 +305,9 @@ actor ModelPrices {
     // MARK: - Cache
 
     // Internal for isolated upgrade-cache tests; no test reads the user's table.
-    struct Cache: Codable {
+    struct Cache: Codable, Sendable {
         let fetchedAt: Date
         let prices: [String: ModelPrice]
-
-        var age: TimeInterval { Date().timeIntervalSince(fetchedAt) }
     }
 
     /// Version 4 includes namespaced plan-vendor rates. A version 3 table can
@@ -302,10 +330,10 @@ actor ModelPrices {
         return nil
     }
 
-    private static func writeCache(_ prices: [String: ModelPrice]) {
-        PulseStorage.prepare()
-        guard let data = try? JSONEncoder().encode(Cache(fetchedAt: Date(), prices: prices)) else { return }
-        try? data.write(to: cacheFile, options: .atomic)
+    private func writeCache(_ cache: Cache) {
+        try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? data.write(to: cacheDirectory.appending(path: Self.cacheFile.lastPathComponent), options: .atomic)
     }
 }
 
@@ -327,7 +355,11 @@ enum PulseStorage {
     private static let superseded = [
         "ledger-claudeCode.json",   // day buckets, before quarter-hours
         "ledger-codex.json",
-        "model-prices.json"         // before model display names were kept
+        "model-prices.json",        // before model display names were kept
+        "ledger-4-claudeCode.json", // first-line output counts, no reply timings
+        "ledger-4-codex.json",
+        "ledger-5-claudeCode.json", // a resumed session's copied history counted again
+        "ledger-5-codex.json"
     ]
 
     static func removeSupersededFiles() {

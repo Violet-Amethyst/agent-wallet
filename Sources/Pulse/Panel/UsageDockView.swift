@@ -46,7 +46,13 @@ enum DockLayout {
     static var ringDiameter: CGFloat { 36 * PanelMetrics.scale }
     static var ringLineWidth: CGFloat { 4 * PanelMetrics.scale }
     /// Gap between a ring and the percent label beneath it.
-    static var ringToTextSpacing: CGFloat { 6 * PanelMetrics.scale }
+    ///
+    /// Further with the time-until-reset arc on: it is drawn 5pt outside the
+    /// ring's edge (`UsageRingView.clockGap` + its stroke), and a figure at
+    /// the usual 6pt sat on it — under the ring, beside it, across or down a
+    /// side. The extra keeps the same clear gap from the arc as from a ring
+    /// without one.
+    static var ringToTextSpacing: CGFloat { (PanelMetrics.showsWindowClock ? 11 : 6) * PanelMetrics.scale }
     static var percentFontSize: CGFloat { 13 * PanelMetrics.scale }
     /// Rendered line height of the percent label, and its width at "100%".
     ///
@@ -198,25 +204,50 @@ enum DockLayout {
     /// 1.1pt at small / standard / large — so a top rail was built about a
     /// point short per ring, the stack was squeezed, and the only thing in an
     /// item that can compress is the text: every label rendered as "10…".
-    static func itemLength(on axis: PanelEdge.Axis) -> CGFloat {
+    static func itemLength(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
         guard showsPercentages(on: axis) else { return ringDiameter }
+        if labelsBeside(on: axis, docked: docked) { return ringDiameter + ringToTextSpacing + percentTextWidth }
         return axis == .vertical ? itemHeight : max(ringDiameter, percentTextWidth)
+    }
+
+    /// A rail lying across and standing free, with labels on — which is
+    /// laid out in one of two proportions of its own, never the top dock's.
+    static func freeAcrossWithLabels(on axis: PanelEdge.Axis, docked: Bool) -> Bool {
+        axis == .horizontal && !docked && showsPercentages(on: .horizontal)
+    }
+
+    /// The free lying rail's labels **beside** their rings
+    /// (`AppSettings.freeAcrossFiguresBeside`): the rail is the upright one's
+    /// thickness and reads as the same object turned over, but longer.
+    static func labelsBeside(on axis: PanelEdge.Axis, docked: Bool) -> Bool {
+        freeAcrossWithLabels(on: axis, docked: docked) && PanelMetrics.freeAcrossFiguresBeside
+    }
+
+    /// The free lying rail's labels **under** their rings, the default: the
+    /// rings closer together and more room above and below than the top dock.
+    static func labelsStackedFree(on axis: PanelEdge.Axis, docked: Bool) -> Bool {
+        freeAcrossWithLabels(on: axis, docked: docked) && !PanelMetrics.freeAcrossFiguresBeside
+    }
+
+    /// The gap between items along the rail. Tighter on a free lying rail,
+    /// whose items already sit apart by their labels' width.
+    static func gap(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
+        if labelsBeside(on: axis, docked: docked) { return 18 * PanelMetrics.scale * PanelMetrics.spacing }
+        if labelsStackedFree(on: axis, docked: docked) { return 20 * PanelMetrics.scale * PanelMetrics.spacing }
+        return itemSpacing
+    }
+
+    /// The room either side of the items **across** the rail.
+    static func crossPadding(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
+        labelsStackedFree(on: axis, docked: docked) ? 14 * PanelMetrics.scale : horizontalPadding
     }
 
     /// The rail's extent **across** its run: its width down a side, its height
     /// across the top.
-    ///
-    /// `width` is deliberately more than a ring and its padding — the rail has
-    /// always been drawn wider than its contents — so a top rail without
-    /// labels keeps exactly the same proportion by using the same number. With
-    /// labels there is a second line to make room for.
-    /// Down a side this is always `width`, labels or not: the berth's flare
-    /// and its corners share that measurement (`cornerRadius + flareWidth <=
-    /// width`), so narrowing the rail when the labels go would fold the shape
-    /// in on itself. Only the rail's *length* changes there.
-    static func thickness(on axis: PanelEdge.Axis) -> CGFloat {
-        guard axis == .horizontal, showsPercentages(on: .horizontal) else { return width }
-        return itemHeight + horizontalPadding * 2
+    static func thickness(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
+        guard axis == .horizontal, showsPercentages(on: .horizontal),
+              !labelsBeside(on: axis, docked: docked) else { return width }
+        return itemHeight + crossPadding(on: axis, docked: docked) * 2
     }
 
     /// Rail width for dual-track ("五环" Olympic staggered layout).
@@ -228,16 +259,19 @@ enum DockLayout {
     static var dualTrackItemSpacing: CGFloat { 56 * PanelMetrics.scale * PanelMetrics.spacing }
 
     /// Maximum rail thickness across axes.
-    static func maximumThickness(on axis: PanelEdge.Axis) -> CGFloat {
-        if axis == .horizontal {
-            return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
+    static func maximumThickness(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
+        if PanelMetrics.usesDualTrack {
+            if axis == .horizontal {
+                return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
+            }
+            return dualTrackWidth
         }
-        return dualTrackWidth
+        return thickness(on: axis, docked: docked)
     }
 
     /// Whether the items are split into dual-track ("五环") layout.
     static func isDualTrack(quotaCount: Int, moneyCount: Int) -> Bool {
-        quotaCount > 0 && moneyCount > 0
+        PanelMetrics.usesDualTrack && quotaCount > 0 && moneyCount > 0
     }
 
     /// Effective number of along-axis slots needed for quota and money accounts.
@@ -250,9 +284,9 @@ enum DockLayout {
     }
 
     /// Rail thickness considering single vs dual track.
-    static func thickness(quotaCount: Int, moneyCount: Int, on axis: PanelEdge.Axis) -> CGFloat {
+    static func thickness(quotaCount: Int, moneyCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
         guard isDualTrack(quotaCount: quotaCount, moneyCount: moneyCount) else {
-            return thickness(on: axis)
+            return thickness(on: axis, docked: docked)
         }
         if axis == .horizontal {
             return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
@@ -268,7 +302,7 @@ enum DockLayout {
         let slots = alongSlotCount(quotaCount: quotaCount, moneyCount: moneyCount)
         let spacing = dualTrackItemSpacing
         let providerLength = endPadding(docked: docked) * 2
-            + itemLength(on: axis) * slots
+            + itemLength(on: axis, docked: docked) * slots
             + spacing * (slots - 1)
         return providerLength + actionAreaLength
     }
@@ -276,7 +310,7 @@ enum DockLayout {
     /// Rail size considering single vs dual track.
     static func size(quotaCount: Int, moneyCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGSize {
         let along = length(quotaCount: quotaCount, moneyCount: moneyCount, on: axis, docked: docked)
-        let across = thickness(quotaCount: quotaCount, moneyCount: moneyCount, on: axis)
+        let across = thickness(quotaCount: quotaCount, moneyCount: moneyCount, on: axis, docked: docked)
         return axis == .vertical
             ? CGSize(width: across, height: along)
             : CGSize(width: along, height: across)
@@ -336,17 +370,21 @@ enum DockLayout {
         let dual = isDualTrack(quotaCount: quotaItems.count, moneyCount: moneyItems.count)
 
         let firstAlong = firstRingAlong(docked: docked, on: edge.axis)
-        let step = ringStep(on: edge.axis, isDual: dual)
-        let itemLen = itemLength(on: edge.axis)
-        let intoItem = edge.axis == .vertical
-            ? ringOffsetInItem(on: edge.axis) + ringDiameter / 2
-            : itemLength(on: edge.axis) / 2
+        let step = ringStep(on: edge.axis, docked: docked, isDual: dual)
+        let itemLen = itemLength(on: edge.axis, docked: docked)
+        let intoItem = if labelsBeside(on: edge.axis, docked: docked) {
+            ringDiameter / 2
+        } else if edge.axis == .vertical {
+            ringOffsetInItem(on: edge.axis) + ringDiameter / 2
+        } else {
+            itemLength(on: edge.axis, docked: docked) / 2
+        }
 
         var result: [T.ID: SlotGeometry] = [:]
 
         if !dual {
-            let singleAcross = ringCentreAcross(on: edge.axis)
-            let midAcross = thickness(on: edge.axis) / 2
+            let singleAcross = ringCentreAcross(on: edge.axis, docked: docked)
+            let midAcross = thickness(on: edge.axis, docked: docked) / 2
 
             for (index, item) in items.enumerated() {
                 let along = firstAlong + CGFloat(index) * step
@@ -446,10 +484,8 @@ enum DockLayout {
     /// settings, so this is not a constant.
     static func length(for itemCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
         let count = CGFloat(max(itemCount, 1))
-        let providerLength = endPadding(docked: docked) * 2
-            + itemLength(on: axis) * count
-            + itemSpacing * (count - 1)
-        return providerLength + actionAreaLength
+        return endPadding(docked: docked) * 2 + itemLength(on: axis, docked: docked) * count
+            + gap(on: axis, docked: docked) * (count - 1)
     }
 
     static func actionCentre(_ index: Int, itemCount: Int, axis: PanelEdge.Axis, docked: Bool) -> CGFloat {
@@ -459,50 +495,54 @@ enum DockLayout {
     /// The rail's full size, laid the way `edge` lays it.
     static func size(for itemCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGSize {
         let along = length(for: itemCount, on: axis, docked: docked)
-        let across = thickness(on: axis)
+        let across = thickness(on: axis, docked: docked)
         return axis == .vertical
             ? CGSize(width: across, height: along)
             : CGSize(width: along, height: across)
     }
 
     /// Where a ring's centre sits **across** the rail.
-    ///
-    /// The items are centred in the rail's thickness, and how thick an item is
-    /// depends on whether it carries a label — so this is not simply half the
-    /// rail. Down a side only the ring is ever as wide as this, the label being
-    /// narrower; across the top the label is stacked under the ring and counts.
-    static func ringCentreAcross(on axis: PanelEdge.Axis) -> CGFloat {
+    static func ringCentreAcross(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
+        if labelsBeside(on: axis, docked: docked) { return thickness(on: axis, docked: docked) / 2 }
         let item = axis == .vertical
             ? ringDiameter
             : (showsPercentages(on: axis) ? itemHeight : ringDiameter)
         let lead = axis == .horizontal ? ringOffsetInItem(on: axis) : 0
-        return (thickness(on: axis) - item) / 2 + lead + ringDiameter / 2
+        return (thickness(on: axis, docked: docked) - item) / 2 + lead + ringDiameter / 2
     }
 
     /// How far along the rail the first ring's centre sits, and the step from
     /// one to the next.
     static func firstRingAlong(docked: Bool = true, on axis: PanelEdge.Axis = .vertical) -> CGFloat {
-        // How far into its item the ring's centre sits, **along the rail**.
-        //
-        // Down a side the item is the ring stacked over its label, so this is
-        // the label's share when it leads plus half a ring. Across the top the
-        // stack runs the other way and the ring is simply centred in the
-        // item's width — which is *not* half a ring once the item is as wide
-        // as the label, and the label is the wider of the two.
-        let intoItem = axis == .vertical
-            ? ringOffsetInItem(on: axis) + ringDiameter / 2
-            : itemLength(on: axis) / 2
+        let intoItem = if labelsBeside(on: axis, docked: docked) {
+            ringDiameter / 2
+        } else if axis == .vertical {
+            ringOffsetInItem(on: axis) + ringDiameter / 2
+        } else {
+            itemLength(on: axis, docked: docked) / 2
+        }
         return endPadding(docked: docked) + intoItem
     }
-    static func ringStep(on axis: PanelEdge.Axis, isDual: Bool = false) -> CGFloat {
-        itemLength(on: axis) + (isDual ? dualTrackItemSpacing : itemSpacing)
+    static func ringStep(on axis: PanelEdge.Axis, docked: Bool = true, isDual: Bool = false) -> CGFloat {
+        if isDual {
+            return itemLength(on: axis, docked: docked) + dualTrackItemSpacing
+        }
+        return itemLength(on: axis, docked: docked) + gap(on: axis, docked: docked)
     }
 
     /// Rail length with every provider switched on, which is what the panel
     /// has to leave room for. Measured docked, which is the longer of the two —
     /// the window never needs to shrink, only the rail drawn inside it.
-    static func maximumLength(on axis: PanelEdge.Axis) -> CGFloat {
-        length(for: PanelMetrics.railCapacity, on: axis, docked: true)
+    static func maximumLength(on axis: PanelEdge.Axis, capacity: Int = PanelMetrics.railCapacity) -> CGFloat {
+        if PanelMetrics.usesDualTrack {
+            let quotaCap = (capacity + 1) / 2
+            let moneyCap = capacity / 2
+            return max(
+                length(quotaCount: quotaCap, moneyCount: moneyCap, on: axis, docked: true),
+                length(quotaCount: quotaCap, moneyCount: moneyCap, on: axis, docked: false)
+            )
+        }
+        return max(length(for: capacity, on: axis, docked: true), length(for: capacity, on: axis, docked: false))
     }
 
     /// Kept for the vertical rail, which is what every existing caller means.
@@ -800,13 +840,14 @@ struct UsageDockView: View {
                         isSelected: selectedSlot == entry.slot.id,
                         isInteractive: isExpanded,
                         showsPercentage: DockLayout.showsPercentages(on: edge.axis),
+                        labelBeside: DockLayout.labelsBeside(on: edge.axis, docked: isDocked),
                         animatesActivity: animatesActivity,
                         onEnter: { onEnter(entry) },
                         onRefresh: { onRefresh(entry.slot.account) }
                     )
                     .frame(
-                        width: edge.isVertical ? nil : DockLayout.itemLength(on: .horizontal),
-                        height: edge.isVertical ? DockLayout.itemLength(on: .vertical) : nil
+                        width: edge.isVertical ? nil : DockLayout.itemLength(on: .horizontal, docked: isDocked),
+                        height: edge.isVertical ? DockLayout.itemLength(on: .vertical, docked: isDocked) : nil
                     )
                     .position(geo.itemCentre)
                 }
@@ -875,6 +916,8 @@ private struct UsageDockItem: View {
     /// False for a rail lying across the top with the labels switched off,
     /// which is the default there — see `AppSettings.topRailShowsPercentages`.
     var showsPercentage: Bool = true
+    /// The label beside the ring rather than under it (`DockLayout.labelsBeside`).
+    var labelBeside: Bool = false
     /// Whether this ring turns while its CLI is working or being refreshed.
     var animatesActivity: Bool = true
     let onEnter: () -> Void
@@ -884,15 +927,15 @@ private struct UsageDockItem: View {
     private var headline: UsageWindow? { entry.headline }
 
     var body: some View {
-        // The label goes above or below on a setting. `ringOffsetInItem` is
-        // the same swap expressed as a number, and the hit testing runs on
-        // that — the two must not be allowed to disagree.
-        VStack(spacing: DockLayout.ringToTextSpacing) {
-            if DockLayout.labelLeads { percentLabel }
+        let layout = labelBeside
+            ? AnyLayout(HStackLayout(spacing: DockLayout.ringToTextSpacing))
+            : AnyLayout(VStackLayout(spacing: DockLayout.ringToTextSpacing))
+        layout {
+            if DockLayout.labelLeads && !labelBeside { sizedLabel }
 
             ring
 
-            if !DockLayout.labelLeads { percentLabel }
+            if !DockLayout.labelLeads || labelBeside { sizedLabel }
         }
         .contentShape(.rect)
         .background {
@@ -943,6 +986,15 @@ private struct UsageDockItem: View {
             secondIsSpent: wallet.outerIsSpent
         )
         .scaleEffect(isSelected ? 1.06 : 1)
+    }
+
+    @ViewBuilder
+    private var sizedLabel: some View {
+        if labelBeside {
+            percentLabel.frame(width: DockLayout.percentTextWidth, alignment: .leading)
+        } else {
+            percentLabel
+        }
     }
 
     /// An em dash rather than 0% when nothing is known: a zero would read as
@@ -1066,6 +1118,15 @@ struct DockBerthShape: Shape {
         case .left:
             return facingRight(in: rect).applying(
                 CGAffineTransform(translationX: rect.width, y: 0).scaledBy(x: -1, y: 1)
+            )
+
+        case .bottom:
+            // A quarter turn clockwise, which carries the flare from the
+            // right-hand edge to the bottom one — the top dock's drawing
+            // turned the other way, so the winding is preserved here too.
+            let canonical = CGRect(x: 0, y: 0, width: rect.height, height: rect.width)
+            return facingRight(in: canonical).applying(
+                CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: rect.width, ty: 0)
             )
 
         case .top:

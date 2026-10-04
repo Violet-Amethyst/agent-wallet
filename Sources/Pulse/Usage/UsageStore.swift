@@ -91,10 +91,16 @@ final class UsageStore {
     /// Watches live readings for a limit turning over, so the rail's mark can
     /// celebrate one. Independent of the alert rules; see `ResetWatch`.
     private let resetWatch = ResetWatch()
+    /// Whether a limit is being spent where this Mac's logs cannot see, which
+    /// takes the value estimate off it. The app's own; previews and tests
+    /// pass none, so they neither read the real transcripts nor write the file.
+    let elsewhere: ElsewhereWatch?
 
-    init(settings: AppSettings, alerts: UsageAlerts? = nil, activity: AgentActivityMonitor = AgentActivityMonitor()) {
+    init(settings: AppSettings, alerts: UsageAlerts? = nil, activity: AgentActivityMonitor = AgentActivityMonitor(),
+         elsewhere: ElsewhereWatch? = nil) {
         self.settings = settings
         self.activity = activity
+        self.elsewhere = elsewhere
         networkProxy = settings.networkProxy
         self.alerts = alerts
         codex = CodexUsageService(server: appServer)
@@ -132,6 +138,28 @@ final class UsageStore {
         return .unavailable(account, reason: reason)
     }
 
+    /// How many limit reset credits Codex's first account has, for its card —
+    /// nil while the switch is off or before the first answer. Asked beside
+    /// every Codex refresh rather than inside it: it is a second call to a
+    /// different route, and a slow app server must not hold the ring up.
+    private(set) var codexResetCredits: CodexResetCredits?
+    /// Which ask is the latest.
+    private var codexResetCreditsAsk = 0
+
+    func refreshCodexResetCredits() {
+        codexResetCreditsAsk += 1
+        let ask = codexResetCreditsAsk
+        guard settings.showsCodexResetCredits, settings.isEnabled(AccountKey(.codex)) else {
+            codexResetCredits = nil
+            return
+        }
+        Task { [weak self, appServer] in
+            let credits = await CodexAccountUsageService(server: appServer).resetCredits()
+            guard let self, ask == self.codexResetCreditsAsk, self.settings.showsCodexResetCredits else { return }
+            self.codexResetCredits = credits
+        }
+    }
+
     /// Codex's reset credits and account totals, which only its app server
     /// reports. Fetched when the settings pane asks rather than on the refresh
     /// loop: nothing on the rail shows them, and the call starts a process.
@@ -142,6 +170,8 @@ final class UsageStore {
 
     /// Picks up a key that was just entered, or one that changed.
     func loadAPIKeys() {
+        OpenCodeConsole.refreshSession()
+        DeepSeekConsole.refreshSession()
         apiKeys = Dictionary(
             uniqueKeysWithValues: Provider.allCases
                 .filter { $0.keepsOwnCredential && settings.isEnabled(AccountKey($0)) }
@@ -1016,6 +1046,7 @@ final class UsageStore {
         // Before the alert rules, and regardless of whether they are on: the
         // mark's celebration is not a notification.
         resetWatch.observe(fetched, as: account)
+        elsewhere?.observe(fetched, as: account)
         if resetWatch.justReset(account), settings.primesWindows(for: account.provider) {
             Task {
                 _ = await WindowStarter.start(account.provider)
@@ -1057,6 +1088,11 @@ final class UsageStore {
             alerts.observe(reading, raw: reading, as: account)
         }
         if needsRefresh { refresh() }
+    }
+
+    /// Whether this window's current cycle has been seen spent off this Mac.
+    func usedElsewhere(_ window: UsageWindow, account: AccountKey) -> Bool {
+        elsewhere?.usedElsewhere(window, account: account) ?? false
     }
 
     func usage(for account: AccountKey) -> ProviderUsage {
