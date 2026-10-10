@@ -4,10 +4,11 @@ Pulse is a macOS menu-bar app. There is no linter; there is a test target (`swif
 
 ## Workflow
 
-1. Read the **topic doc** for the area you are changing ([Docs/README.md](Docs/README.md)). If the change is about *why* something is the way it is, also read the linked decision.
-2. Change code and the **authoritative topic doc in the same patch**. Do not leave CLAUDE.md as a second source of truth, and do not grow it with new architecture.
-3. Run the verification that area needs ([Docs/development.md](Docs/development.md), [Docs/build-from-source.md](Docs/build-from-source.md)). At minimum, a Swift 6 warning-clean build if you touched Swift, and `./Scripts/check-localization.sh` if you touched user-visible strings.
-4. Do not claim a behaviour is verified unless you used a method that can actually see it. See evidence levels below.
+1. Open an issue before starting a new feature or substantial change, and wait for a maintainer to accept the direction. Acceptance of the problem does not automatically approve a particular implementation. A large PR submitted without prior agreement may be closed even if the implementation is complete.
+2. Read the **topic doc** for the area you are changing ([Docs/README.md](Docs/README.md)). If the change is about *why* something is the way it is, also read the linked decision.
+3. Change code and the **authoritative topic doc in the same patch**. Do not leave CLAUDE.md as a second source of truth, and do not grow it with new architecture.
+4. Run the verification that area needs ([Docs/development.md](Docs/development.md), [Docs/build-from-source.md](Docs/build-from-source.md)). At minimum, a Swift 6 warning-clean build if you touched Swift, and `./Scripts/check-localization.sh` if you touched user-visible strings.
+5. Do not claim a behaviour is verified unless you used a method that can actually see it. See evidence levels below.
 
 Provider routes, auth, cookies, and extra-account login belong in [Docs/providers/README.md](Docs/providers/README.md), not in UI or architecture docs.
 
@@ -19,7 +20,7 @@ Provider routes, auth, cookies, and extra-account login belong in [Docs/provider
 | How it works *now* | Topic docs under `Docs/` | Same patch as the code |
 | Why / what failed / measured once | [Docs/decisions/](Docs/decisions/README.md) | When the *reason* changes, or a new lesson is worth keeping |
 | Human process | This file | When the process changes |
-| User-facing product copy | [README.md](README.md) and [README.zh-CN.md](README.zh-CN.md) | Keep bilingual parity |
+| User-facing product copy | [README.md](README.md) with its [zh-CN](README.zh-CN.md) / [zh-Hant](README.zh-Hant.md) / [ja](README.ja.md) / [ko](README.ko.md) translations | Keep all five in parity |
 
 `Docs/` is the capitalized directory. Do not add a second `docs/` tree.
 
@@ -53,9 +54,24 @@ Before merging a docs-or-behaviour change:
 - [ ] Provider/auth/cookie detail is only in `Docs/providers/` (or a provider investigation note it points at).
 - [ ] Current facts (counts, intervals, which accounts are multi) match the code you just read.
 - [ ] Historical measurements are labelled historical.
-- [ ] README and README.zh-CN.md still match if you touched user-facing claims.
+- [ ] README and its zh-CN / zh-Hant / ja / ko translations still match if you touched user-facing claims.
 - [ ] Links from CLAUDE.md’s “Read by task” table still resolve.
 - [ ] You did not add build or shipping instructions that contradict [Docs/build-from-source.md](Docs/build-from-source.md) / [Docs/releasing.md](Docs/releasing.md).
+
+## Answering an issue
+
+**Reply in the language it was reported in, and keep it to what was asked.**
+The interface, the READMEs and the issue templates are in five languages
+because they are read by everybody; a reply is read by one person, and
+translating it for them is noise. Nothing in this repo asks for bilingual
+comments — that was inferred once from the rest of the project and it was wrong.
+
+Length follows the same rule. A reporter who diagnosed the bug themselves does
+not need it explained back to them: "fixed in x.y.z, thanks" is the whole reply.
+Save the full account — cause, what changed, what it is tested against — for
+the commit message and the topic doc, which are where somebody goes looking for
+it later. A draft written before the fix shipped is not the reply to send after
+it shipped; write the short one instead of trimming the long one.
 
 ## Code of the house (short)
 

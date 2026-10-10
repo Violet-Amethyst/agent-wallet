@@ -1,15 +1,24 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 import Observation
 
 @MainActor
 @Observable
 final class SettingsNavigation {
-    var pane: SettingsPane = .general
+    /// The first pane in the sidebar, which is where the panel is dressed.
+    var pane: SettingsPane = .appearance
+    var isWindowVisible = false
     private(set) var requestID = UUID()
+
+    /// Goes to a pane, as a link does.
+    func open(_ pane: SettingsPane) {
+        self.pane = pane
+        requestID = UUID()
+    }
 
     func open(_ link: PulseLink, accounts: [AccountKey]) {
         switch link {
-        case .settings: pane = .general
+        case .settings: pane = .appearance
         case .integrations: pane = .integrations
         case .account(let account):
             // A removed account's old link must not recreate an account pane.

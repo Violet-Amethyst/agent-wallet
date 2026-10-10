@@ -22,12 +22,16 @@ This was silent first, with a changelog note saying to add a sound in System Set
 
 One rule for all of them rather than sound only for the consequential ones. macOS offers one switch per app, so a distinction drawn here would be one nobody could turn off and nobody could discover. And a silent banner on a second display, or behind a full-screen window, is a message that was never delivered — which is the opposite of the test these four had to pass to be here.
 
-### A `balance` window is not a limit
+### A `balance` window is not a limit, and neither is a `topUp` one
 
 `Kind.balance` is prepaid credit, and two rules here assumed things that are only true of limits. Both are now guarded on the kind, and `AlertMemoryTests` pins them:
 
 - **It never resets** — `resetsAt` is nil, so `movedOn` can never be true and the reset test fell back to "the fraction dropped forty points". That fraction is a setting on DeepSeek, not a reading.
 - **Only `isExhausted` may call it spent** — the step rule otherwise reaches 100 from a clamp against a denominator that is Pulse's own observation or the reader's own typed figure.
+
+**`Kind.topUp` is guarded by both, for the same reasons in a different currency.** V2EX's 加油包 is an allowance bought on top of the window's, with no expiry and no clock ([providers/v2ex.md](providers/v2ex.md)). Buying a second pack drops the fraction by well over forty points with nothing having turned over, and "this limit has reset" about a purchase is a notification for something that did not happen. And only V2EX's own `remaining_tokens` may say the pack is gone.
+
+**`Kind.credits` and `Kind.sharedCredits` reset only when the reset date moves.** Qoder's allowance is the plan plus any pack bought on top ([providers/qoder.md](providers/qoder.md)), so a purchase raises the limit and drops the fraction forty points with nothing turned over — the top-up case inside a figure that does also reset. The forty-point fall is not evidence for these kinds; a `nextResetAt` that moved forward is. A team pool, which states no reset, is therefore never announced as reset.
 
 ### Low balance is about money, not a share of anything
 
@@ -57,7 +61,9 @@ The copy is a **status, not an event** — "92% used", never "just passed 90%" �
 
 **A push route going quiet is never a failure.** Claude Code's status line writes only while a session runs, so its capture is marked stale ten minutes after the last response — which says nobody has used Claude Code since lunch, not that a check failed. Counted as an outage it posted *"the last few checks didn't get through"* over a route where every check got through: an alert about something Pulse did not witness. `UsageSource.reportsOnlyWhenUsed(for:)` is the flag, and `AlertMemory` takes it as `staleMeansFailure`.
 
-**It is a property of the route, not of the provider**, and asking it of the provider was a bug of its own: Claude Code has four routes and only one is a push. `.endpoint` and `.desktopApp` ask a server on every pass, and an **added** account has no status line at all — it is reached over HTTP and nothing else. Spared wholesale, a real outage went unreported for the provider Pulse is most about, while the identical outage on Codex still alerted. Only a primary Claude Code account on `.automatic` or `.tooling` is spared. `.automatic` remains conservative: the exemption still uses the configured route, not the provenance now retained for connection diagnostics. Older cache entries have no origin, and a capture remains eligible to answer.
+**A reading out of an app's own saved state is spared the same way.** Devin's figures are written when its app launches and not again while it runs, so a stale reading means nobody has relaunched it, not that a check failed. `UsageAlerts.staleMeansFailure(route:raw:for:)` spares `UsageRoute.appCache` as well as the push route, so an old saved plan never posts "the last few checks didn't get through" over a route that answered every time. It is the *origin* that is spared, not the provider: an `.endpoint` failure on Devin still counts, and only the failing route's own answer is classified.
+
+**It is a property of the route, not of the provider**, and asking it of the provider was a bug of its own: Claude Code has four routes and only one is a push. `.endpoint` and `.desktopApp` ask a server on every pass, and an **added** account has no status line at all — it is reached over HTTP and nothing else. The Claude push exemption applies only to its primary account on `.automatic` or `.tooling`. Its `.automatic` rule remains conservative and uses the configured route because a capture remains eligible to answer. The separate app-cache exemption above uses the raw reading's recorded origin; neither exemption excuses an endpoint failure.
 
 **`.stale` on its own is not a failure** for the rest, and this is the trap. `UsageCache.reconciled` hands back a stale reading for a *successful* fetch too: the status-line route calls its capture live for ten minutes, so a good capture can be older than what the endpoint banked a minute ago, and the newer banked one is returned instead — marked stale, every pass, for an account that is working. Counting that would have put "Claude Code can't be read" on screen for the provider most likely to hit it.
 

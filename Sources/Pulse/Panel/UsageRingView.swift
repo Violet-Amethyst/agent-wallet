@@ -3,6 +3,9 @@ import SwiftUI
 
 struct UsageRingView: View {
     let provider: Provider
+    /// Used by a temporary wallet adapter when the backing Pulse provider is
+    /// not the product shown to the reader.
+    var iconResource: String? = nil
     /// How much of the tightest limit is gone, or nil when there is no
     /// fraction to draw — an empty track then says "nothing known" rather than
     /// "nothing used".
@@ -44,9 +47,37 @@ struct UsageRingView: View {
     /// Whether Pulse is fetching a fresh usage reading. This rotates the
     /// coloured usage arc itself, keeping white reserved for CLI activity.
     var isRefreshing: Bool = false
+    /// Whether `isBusy`/`isRefreshing` are allowed to turn anything.
+    ///
+    /// On by default — see `AppSettings.animatesRingActivity`. Off, the two
+    /// facts above are still tracked but draw nothing extra: no travelling
+    /// mark, no refresh sweep, and the usage arc stays at full opacity while
+    /// a reading is fetched instead of dimming for the turn to sit in.
+    var animatesActivity: Bool = true
+    /// Whether this ring's logo is replaced by an animated mark, which is a
+    /// per-account choice — see `AppSettings.botMarks`.
+    var showsBotMark: Bool = false
+    /// The mark's body colour, dealt across the rail so no two rings next to
+    /// each other look alike. Nil falls back to this provider's own colour,
+    /// for the places that draw one ring on its own.
+    var botTint: Color?
+    /// Which character the mark is. Nil means whichever the rail dealt it.
+    var botPersona: BotMarkPersona?
+    /// The shape the mark wears. Round unless the reader picked otherwise.
+    var botBody: BotMarkBody = .default
+    /// Which way the mark looks, which the rail's edge decides.
+    var botGaze: BotMarkGaze = .ahead
+    /// A one-shot the mark plays once: a limit reset, a turn finished.
+    var botEvent: BotMarkEvent?
+    /// The pointer in panel coordinates. The mark works out where that is
+    /// relative to itself and looks at it.
+    var botPointer: CGPoint?
+    /// Whether no CLI has written for a while. Only the sleepy persona uses
+    /// this for its occasional night-time doze.
+    var botQuiet = false
     /// Whether this ring is the one being pointed at.
     var highlight: Bool = false
-    /// How much of the window has gone by, 0...1, or nil to leave it out.
+    /// How much of the window clock to draw, 0...1, or nil to leave it out.
     ///
     /// Drawn as a thin arc **outside** the usage ring. Outside because the
     /// circle inside is spoken for — the CLI-activity mark rides there — and
@@ -55,62 +86,76 @@ struct UsageRingView: View {
     /// hairline at a different radius reads as a different measurement
     /// without claiming a status of its own, and cannot clash with a colour
     /// somebody chose for the ring.
-    var elapsedFraction: Double?
+    var windowClockFraction: Double?
 
-    /// The next-fullest limit, drawn as a smaller ring inside this one.
+    /// The long-quota ring, drawn **outside** the short one.
     ///
-    /// Inside rather than outside, which is where the clock arc goes: two
-    /// usage arcs have to read as the same kind of measurement, and the one
-    /// that matters most should stay the outer, bigger, thicker one. Nil for a
-    /// provider that reports a single limit — an empty second ring reads as a
-    /// limit at zero, or as a fault.
+    /// Pulse put the tightest limit on the outer, thicker stroke. Agent Wallet
+    /// inverts that: weekly/monthly is the quieter halo, and the five-hour
+    /// window is the thicker inner ring. Nil draws a single ring.
     /// **`let`, not `var`.** An optional `var` gets an implicit `nil` in the
     /// memberwise initializer, so leaving this off the call site compiles
-    /// perfectly and draws nothing — which is exactly what happened: the wire
-    /// from the rail was written, lost to a bad patch, and the build stayed
-    /// green while the setting did nothing. A `let` has no default, so the
-    /// next person who forgets it is told.
+    /// perfectly and draws nothing.
     let secondFraction: Double?
     let secondIsSpent: Bool
 
     @State private var spinning = false
     @State private var refreshSpinning = false
 
-    /// Gap between the progress ring and the dark disc it encircles.
-    private static let centreGap: CGFloat = 4
-    /// The icon's share of that dark disc. Sizing the icon from the disc
-    /// rather than from the full diameter keeps the margin around it steady
-    /// even if the ring's stroke gets thicker or thinner.
-    private static let iconScale: CGFloat = 0.8
+    /// Where red begins, as the panel has been set. See `WarningThreshold`.
+    @Environment(\.usageWarningThreshold) private var warningThreshold
 
-    private var centreDiameter: CGFloat {
-        // The disc gives up two points a side to the second ring, which needs
-        // the band the disc's margin was using. Only when it is actually
-        // drawn: a provider with one limit keeps the icon it always had.
-        let squeeze = secondFraction == nil ? 0 : Self.secondRingSqueeze * PanelMetrics.scale
-        return max(diameter - (lineWidth + Self.centreGap) * 2 - squeeze * 2, 0)
+
+    /// Gap between the progress ring and the dark disc it encircles.
+    /// Dual ring uses a tighter clearance to maximise center logo size.
+    private var centreGap: CGFloat {
+        (isDual ? 2.6 : 4.0) * PanelMetrics.scale
+    }
+    /// The icon's share of that dark disc.
+    private var iconScale: CGFloat {
+        isDual ? 0.88 : 0.8
     }
 
-    /// How much the icon's disc shrinks to make room, per side.
-    private static let secondRingSqueeze: CGFloat = 2
+    /// The animated mark's share of the same disc, which is **larger than a
+    /// logo's on purpose** — and larger than the disc itself.
+    ///
+    /// Two things make a mark look smaller than the glyph it replaced. It
+    /// draws into the upstream's viewBox, 259 units around a 229-unit body, so
+    /// an eleventh of its canvas is margin the character moves inside — the
+    /// idle bob, the lean, the squash. And a logo is a flat shape that reads
+    /// at any size, where a face needs room for two eyes to be two eyes.
+    ///
+    /// So the mark is sized against the **ring's inner edge** rather than the
+    /// disc: at 1.4 the canvas is the full 28pt inside a standard 36pt ring,
+    /// which puts the body at about 25pt with 1.6pt of clearance from the
+    /// stroke. That is wider than the 20pt disc behind it, deliberately — the
+    /// disc is near-black on a near-black rail and reads as a shadow, while
+    /// the ring is the edge a reader actually sees. The gap the activity mark
+    /// used to ride is free here: a ring drawing a mark does not draw that arc.
+    ///
+    /// It still scales with the disc, so the 2pt a side the disc gives up to
+    /// the second ring takes the mark with it and the two cannot collide.
+    private static let botScale: CGFloat = 1.4
+
+    private var isDual: Bool { secondFraction != nil }
+
+    /// Inner (short) ring when dual; the only ring otherwise.
+    private var primaryDiameter: CGFloat {
+        isDual ? DockLayout.innerRingDiameter : diameter
+    }
+
+    private var primaryLineWidth: CGFloat {
+        isDual ? DockLayout.innerRingLineWidth : lineWidth
+    }
+
+    private var centreDiameter: CGFloat {
+        max(primaryDiameter - (primaryLineWidth + centreGap) * 2, 0)
+    }
 
     /// The busy arc rides the empty ring between the icon's disc and the
     /// usage ring — halfway between the two, so it touches neither.
-    ///
-    /// It goes *there* rather than on the ring itself for the same reason the
-    /// ring is not drawn in the provider's brand colour: on this panel colour
-    /// on that circle means one thing, how much of the limit is gone. A white
-    /// arc laid over it would cover the answer while claiming to be about
-    /// something else entirely.
     private var busyDiameter: CGFloat {
-        // **The second ring takes this band.** The mark and the ring would be
-        // stroked at the same radius otherwise — and the providers that report
-        // two limits are exactly the two whose CLIs make this spin. With the
-        // ring there the mark rides just outside the disc instead.
-        guard secondFraction == nil else {
-            return max(centreDiameter + Self.secondRingSqueeze * PanelMetrics.scale, 0)
-        }
-        return max(diameter - lineWidth * 1.5 - Self.centreGap, 0)
+        max(centreDiameter + centreGap, 0)
     }
 
     /// How much of the circle the arc covers. Short enough to read as a
@@ -138,45 +183,36 @@ struct UsageRingView: View {
         diameter + lineWidth + (Self.clockGap + Self.clockLineWidth / 2) * 2 * PanelMetrics.scale
     }
 
-    /// The next-fullest limit, as a thinner ring inside the first.
-    ///
-    /// Same colour language, deliberately: two arcs measuring the same kind of
-    /// thing must be read the same way, and a second hue would be a second
-    /// vocabulary for one idea. What tells them apart is size and weight — the
-    /// limit that matters most is the outer, thicker one, and stays where a
-    /// single ring has always been so nothing moves for somebody who leaves
-    /// this off.
+    /// The long-quota halo: thinner, larger, lower weight than the inner ring.
     @ViewBuilder
-    private func secondRing(_ fraction: Double) -> some View {
+    private func outerRing(_ fraction: Double) -> some View {
         let used = min(max(fraction, 0), 1)
         let spent = secondIsSpent || used >= 1
         let shown = showsRemaining && !spent ? 1 - used : used
         let colour = chosenTint.flatMap { spent ? nil : $0 }
-            ?? UsageTint.color(for: used, isExhausted: spent)
+            ?? UsageTint.color(for: used, isExhausted: spent, warningAt: warningThreshold)
+        let stroke = DockLayout.outerRingLineWidth
 
         ZStack {
             Circle()
-                .stroke(Color.primary.opacity(0.18), lineWidth: DockLayout.secondRingLineWidth)
+                .stroke(Color.primary.opacity(0.18), lineWidth: stroke)
 
             Circle()
-                // Full when spent, whichever way it counts — the same rule the
-                // outer ring gets, and for the same reason: the most urgent
-                // state must not be the one with the least ink.
                 .trim(from: 0, to: spent ? 1 : max(shown, 0))
                 .stroke(
                     colour,
-                    style: StrokeStyle(lineWidth: DockLayout.secondRingLineWidth, lineCap: .round)
+                    style: StrokeStyle(lineWidth: stroke, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
                 .animation(.easeOut(duration: 0.35), value: shown)
         }
-        .frame(width: DockLayout.secondRingDiameter, height: DockLayout.secondRingDiameter)
+        .frame(width: diameter, height: diameter)
     }
 
     /// What the arc and the halo are drawn in.
     private var arcColour: Color {
         let spent = isSpent || (usedFraction ?? 0) >= 1
-        let automatic = UsageTint.color(for: usedFraction ?? 0, isExhausted: spent)
+        let automatic = UsageTint.color(for: usedFraction ?? 0, isExhausted: spent, warningAt: warningThreshold)
 
         // Spent is the one state a chosen colour does not get to hide.
         guard let chosenTint, !spent else { return automatic }
@@ -205,38 +241,67 @@ struct UsageRingView: View {
 
     var body: some View {
         ZStack {
+            if let secondFraction {
+                outerRing(secondFraction)
+                    .opacity(isRefreshing ? 0.3 : 1)
+            }
+
             Circle()
-                .stroke(Color.primary.opacity(0.18), lineWidth: lineWidth)
+                .stroke(Color.primary.opacity(0.18), lineWidth: primaryLineWidth)
+                .frame(width: primaryDiameter, height: primaryDiameter)
 
             usageArc
+                .frame(width: primaryDiameter, height: primaryDiameter)
                 .rotationEffect(.degrees(-90))
                 // Quietened while a reading is being fetched, never moved.
                 // The arc starts at twelve o'clock and that is what makes it a
                 // gauge; turning it takes the reading away for as long as the
                 // refresh lasts, and puts it back with a jump when the spin
                 // stops at whatever angle it had reached.
-                .opacity(isRefreshing ? 0.3 : 1)
+                .opacity(isRefreshing && animatesActivity ? 0.3 : 1)
 
-            if isRefreshing { refreshMark }
+            if isRefreshing && animatesActivity { refreshMark }
 
-            LobeIconView(
-                provider: provider,
-                size: centreDiameter * Self.iconScale
-            )
-            // Dimmed while there is no reading, so the rail shows at a glance
-            // which providers it actually has data for.
-            .foregroundStyle(.primary.opacity(hasReading ? 1 : 0.35))
-
-            if let secondFraction {
-                secondRing(secondFraction)
+            if showsBotMark {
+                // The mark has its own unavailable expression; keep it legible
+                // instead of dimming the face into the dark disc.
+                let body = botTint ?? BotMarkTint.body(for: provider)
+                BotMarkView(
+                    mood: BotMarkMood.resolve(isBusy: isBusy, isRefreshing: isRefreshing,
+                                              isSpent: isSpent || (usedFraction ?? 0) >= 1,
+                                              hasReading: hasReading),
+                    persona: botPersona ?? .calm,
+                    bodyShape: botBody,
+                    gaze: botGaze,
+                    event: botEvent,
+                    pointer: botPointer,
+                    isPointedAt: highlight,
+                    isQuiet: botQuiet,
+                    tint: body,
+                    eyeTint: BotMarkTint.eyes(on: body),
+                    size: centreDiameter * Self.botScale
+                )
+            } else {
+                LobeIconView(
+                    provider: provider,
+                    resource: iconResource,
+                    size: centreDiameter * iconScale
+                )
+                // Dimmed while there is no reading, so the rail shows at a
+                // glance which providers it actually has data for.
+                .foregroundStyle(.primary.opacity(hasReading ? 1 : 0.35))
             }
 
-            if isBusy {
+            // **Not while the mark is animated.** The travelling mark and the
+            // bot's working state are one fact drawn twice, and the white arc
+            // is the half that says nothing about which provider it belongs
+            // to. The mark keeps it; the arc goes.
+            if isBusy && !showsBotMark && animatesActivity {
                 Circle()
                     .trim(from: 0, to: Self.busySweep)
                     .stroke(
                         Color.primary,
-                        style: StrokeStyle(lineWidth: max(lineWidth * 0.5, 1.5), lineCap: .round)
+                        style: StrokeStyle(lineWidth: max(primaryLineWidth * 0.5, 1.5), lineCap: .round)
                     )
                     .frame(width: busyDiameter, height: busyDiameter)
                     .rotationEffect(.degrees(spinning ? 360 : 0))
@@ -268,11 +333,11 @@ struct UsageRingView: View {
         .accessibilityHidden(true)
     }
 
-    /// How far through the window the clock has run: a hairline outside the
-    /// usage ring, in a neutral rather than a second hue.
+    /// The selected side of the window clock: a hairline outside the usage
+    /// ring, in a neutral rather than a second hue.
     @ViewBuilder
     private var windowClock: some View {
-        if let elapsedFraction {
+        if let windowClockFraction {
             ZStack {
                 // Its own faint track, so an arc a tenth of the way round
                 // still reads as a proportion of something rather than as a
@@ -281,17 +346,17 @@ struct UsageRingView: View {
                     .stroke(Color.primary.opacity(0.16), lineWidth: Self.clockLineWidth * PanelMetrics.scale)
 
                 Circle()
-                    .trim(from: 0, to: elapsedFraction)
+                    .trim(from: 0, to: windowClockFraction)
                     .stroke(
                         Color.primary.opacity(0.7),
                         style: StrokeStyle(lineWidth: Self.clockLineWidth * PanelMetrics.scale, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
                     // It moves in minutes, so it is never worth animating from
-                    // one reading to the next — but a window that has just
-                    // reset drops from full to nothing, and that should not
-                    // look like a glitch.
-                    .animation(.easeOut(duration: 0.35), value: elapsedFraction)
+                    // one reading to the next — but a reset jumps between the
+                    // two ends in either direction, and should not look like a
+                    // glitch.
+                    .animation(.easeOut(duration: 0.35), value: windowClockFraction)
             }
             .frame(width: clockDiameter, height: clockDiameter)
         }
@@ -313,8 +378,9 @@ struct UsageRingView: View {
             .trim(from: 0, to: Self.refreshSweep)
             .stroke(
                 arcColour,
-                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                style: StrokeStyle(lineWidth: primaryLineWidth, lineCap: .round)
             )
+            .frame(width: primaryDiameter, height: primaryDiameter)
             .rotationEffect(.degrees(-90 + (refreshSpinning ? 360 : 0)))
             // Core Animation drives it, for the same reason the activity mark
             // does — and the reset on the way out matters just as much, or a
@@ -337,7 +403,7 @@ struct UsageRingView: View {
                 // Colour says how full the limit is, not which provider this
                 // is — the icon already says that.
                 arcColour,
-                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                style: StrokeStyle(lineWidth: primaryLineWidth, lineCap: .round)
             )
             // The pointed-at halo belongs to the *arc*, not to the ring view as
             // a whole. Hung on the whole view it is drawn behind everything,
@@ -391,12 +457,27 @@ struct UsageRingView: View {
 }
 
 struct LobeIconView: View {
-    let provider: Provider
+    let resource: String
     let size: CGFloat
+
+    init(provider: Provider, size: CGFloat) {
+        self.resource = provider.iconResource
+        self.size = size
+    }
+
+    init(provider: Provider, resource: String? = nil, size: CGFloat) {
+        self.resource = resource ?? provider.iconResource
+        self.size = size
+    }
+
+    init(resource: String, size: CGFloat) {
+        self.resource = resource
+        self.size = size
+    }
 
     var body: some View {
         Group {
-            if let image = LobeIconStore.image(for: provider) {
+            if let image = LobeIconStore.image(named: resource) {
                 Image(nsImage: image)
                     .resizable()
                     .renderingMode(.template)
@@ -424,46 +505,72 @@ struct LobeIconView: View {
 /// size up front. They are also marked as template images: the artwork is a
 /// solid `currentColor` fill, and only its alpha matters once
 /// `LobeIconView` tints it.
+///
+/// Not `private` so `AgentIconTests` can ask whether a named mark actually
+/// loads — a test's own `Bundle.module` is the test target's, so the only way
+/// to ask about Pulse's resources is through Pulse. Do not tidy it back.
 @MainActor
-private enum LobeIconStore {
+enum LobeIconStore {
     /// Comfortably above any size the app draws these at, so scaling only
     /// ever goes downwards.
     private static let renderSize = NSSize(width: 256, height: 256)
 
-    private static let images: [Provider: NSImage] = Dictionary(
-        uniqueKeysWithValues: Provider.allCases.compactMap { provider in
-            guard
-                let url = Bundle.module.url(
-                    forResource: provider.iconResource,
-                    withExtension: "svg"
-                ),
-                let image = NSImage(contentsOf: url)
-            else {
-                return nil
-            }
-            image.size = renderSize
-            image.isTemplate = true
-            return (provider, image)
+    /// Keyed by **resource name**, not by `Provider`.
+    private static var images: [String: NSImage] = [:]
+
+    static func image(named name: String) -> NSImage? {
+        if let cached = images[name] { return cached }
+        guard
+            let url = Bundle.module.url(forResource: name, withExtension: "svg"),
+            let image = NSImage(contentsOf: url)
+        else {
+            return nil
         }
-    )
+        image.size = renderSize
+        image.isTemplate = true
+        images[name] = image
+        return image
+    }
+
+    static func image(for resource: String) -> NSImage? {
+        image(named: resource)
+    }
 
     static func image(for provider: Provider) -> NSImage? {
-        images[provider]
+        image(named: provider.iconResource)
     }
 }
 
 #Preview("Usage rings") {
     HStack(spacing: 20) {
-        ForEach(Provider.allCases) { provider in
-            UsageRingView(
-                provider: provider,
-                usedFraction: 0.42,
-                diameter: 68,
-                lineWidth: 6,
-                secondFraction: 0.18,
-                secondIsSpent: false
-            )
-        }
+        UsageRingView(
+            provider: .codex,
+            usedFraction: 0,
+            showsRemaining: true,
+            diameter: 68,
+            lineWidth: 6,
+            secondFraction: 0.33,
+            secondIsSpent: false
+        )
+        UsageRingView(
+            provider: .commandCode,
+            usedFraction: 0,
+            showsRemaining: true,
+            diameter: 68,
+            lineWidth: 6,
+            secondFraction: nil,
+            secondIsSpent: false
+        )
+        UsageRingView(
+            provider: .deepSeek,
+            usedFraction: nil,
+            hasReading: true,
+            showsRemaining: true,
+            diameter: 68,
+            lineWidth: 6,
+            secondFraction: nil,
+            secondIsSpent: false
+        )
     }
     .padding()
     .background(.black)

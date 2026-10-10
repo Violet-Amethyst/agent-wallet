@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// A read-only adapter for Ollama's signed-in settings page, not a public API.
@@ -167,7 +168,7 @@ struct OllamaCloudClient: Sendable {
     }
 
     func fetch(cookie: String) async throws -> OllamaCloudSnapshot {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = NetworkSession.configured(.ephemeral)
         configuration.httpShouldSetCookies = false
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil

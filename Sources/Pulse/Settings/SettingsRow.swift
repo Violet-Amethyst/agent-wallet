@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import SwiftUI
 
 /// A titled group of settings rows, drawn as one rounded card.
@@ -30,37 +31,70 @@ struct SettingsGroup<Content: View>: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
+                    // Decoration must not sit above the chart's hover target.
+                    .allowsHitTesting(false)
             }
         }
     }
 }
 
 /// One line inside a `SettingsGroup`: a label on the left, its control on the
-/// right, and an optional explanation underneath the label.
+/// right, and an optional explanation underneath the label — or, with
+/// `controlBelow`, the control under the label, for a control too wide to
+/// leave the label room beside it.
 struct SettingsRow<Control: View>: View {
     let title: String
     let subtitle: String?
-    /// A provider's mark before the title. Used where the row *is* a provider
-    /// — reordering the rail, say, where the icons are what is being arranged.
-    let icon: Provider?
+    /// A mark before the title, named by its SVG in `Resources`. Used where
+    /// the row *is* the thing the mark stands for — reordering the rail, say,
+    /// where the icons are what is being arranged, or a spend row naming the
+    /// client that produced it.
+    ///
+    /// A resource name rather than a `Provider` because the spend pane draws
+    /// clients that are not providers at all; see `SpendAgent.iconResource`.
+    let icon: String?
+    let controlBelow: Bool
     @ViewBuilder let control: Control
 
     init(
         _ title: String,
         subtitle: String? = nil,
-        icon: Provider? = nil,
+        icon: String? = nil,
+        controlBelow: Bool = false,
         @ViewBuilder control: () -> Control
     ) {
         self.title = title
         self.subtitle = subtitle
         self.icon = icon
+        self.controlBelow = controlBelow
         self.control = control()
     }
 
     var body: some View {
+        Group {
+            if controlBelow {
+                VStack(alignment: .leading, spacing: 9) {
+                    label
+                    control
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center, spacing: 16) {
+                    label
+                    Spacer(minLength: 0)
+                    control
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(minHeight: 44)
+    }
+
+    private var label: some View {
         HStack(alignment: .center, spacing: 16) {
             if let icon {
-                LobeIconView(provider: icon, size: 15)
+                LobeIconView(resource: icon, size: 15)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -74,14 +108,7 @@ struct SettingsRow<Control: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            Spacer(minLength: 0)
-
-            control
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(minHeight: 44)
     }
 }
 

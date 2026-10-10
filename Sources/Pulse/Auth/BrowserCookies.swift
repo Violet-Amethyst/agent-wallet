@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import AppKit
 import CommonCrypto
 import Foundation
@@ -175,7 +176,7 @@ enum BrowserCookies {
         ].filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    private static func chromiumRoot(_ browser: Browser) -> URL? {
+    static func chromiumRoot(_ browser: Browser) -> URL? {
         let support = home.appending(path: "Library/Application Support")
         return switch browser {
         case .chrome: support.appending(path: "Google/Chrome")

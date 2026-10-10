@@ -1,10 +1,11 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// `Pulse --json`: the app's last readings, on stdout, for anything that isn't
 /// the panel — a tmux status line, sketchybar, Raycast, a shell prompt.
 ///
 /// **It prints the cache and never fetches.** A status line polls every couple
-/// of seconds; seventeen providers cannot be asked at that rate, and a command
+/// of seconds; seventy-seven providers cannot be asked at that rate, and a command
 /// that opened network connections and touched the keychain every time a
 /// terminal redrew would be a worse citizen than no command at all. So this
 /// reads what the running app last banked, and says how old it is — every
@@ -144,6 +145,10 @@ enum UsageReport {
         /// A stable token, not the localized name the card shows.
         let kind: String
         let scope: String?
+        /// An extension's own name for this limit. Absent for every built-in
+        /// provider, whose limits are named by `kind`. The program's words, so
+        /// never translated.
+        let label: String?
         /// The figure the ring shows — the display rule, so a status line
         /// built from this agrees with the panel.
         let usedPercent: Int
@@ -164,11 +169,17 @@ enum UsageReport {
         /// the wording shown on the card is, this is not.
         let estimatedFrom: String?
         let resetsAt: Date?
+        /// The soonest part of the allowance to lapse — not a reset, the
+        /// opposite: `expiringAmount` in the allowance's own unit goes away at
+        /// `expiresAt`. Absent where the provider states no expiry.
+        let expiresAt: Date?
+        let expiringAmount: Double?
 
         init(_ window: UsageWindow) {
             id = window.id
             kind = Self.token(for: window.kind)
             scope = window.scope
+            label = window.label
             usedPercent = window.percentValue()
             usedFraction = window.usedFraction
             exhausted = window.isExhausted
@@ -177,6 +188,8 @@ enum UsageReport {
             estimated = window.isEstimated
             estimatedFrom = window.estimate?.rawValue
             resetsAt = window.resetsAt
+            expiresAt = window.nextExpiry?.at
+            expiringAmount = window.nextExpiry?.amount
         }
 
         /// `UsageWindow.Kind` is `Codable`, but its synthesised form is an
@@ -189,7 +202,12 @@ enum UsageReport {
             case .weekly: "weekly"
             case .spend: "spend"
             case .balance: "balance"
+            case .daily: "daily"
+            case .messages: "messages"
             case .monthly: "monthly"
+            case .topUp: "topUp"
+            case .credits: "credits"
+            case .sharedCredits: "sharedCredits"
             case .other(let seconds): "other:\(seconds)"
             }
         }

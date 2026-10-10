@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 import Observation
 import UserNotifications
@@ -294,30 +295,11 @@ struct AlertMemory: Codable, Sendable, Equatable {
             var memory = seen ?? Window()
 
             if let seen {
-                let movedOn = window.resetsAt.map { new in
-                    // A minute of slack: a reset time is often rounded, and a
-                    // second of jitter is not a new window.
-                    seen.resetsAt.map { new.timeIntervalSince($0) > 60 } ?? false
-                } ?? false
-                // Said only when the evidence is unambiguous. `fell` alone is
-                // not: a rolling window — Kimi's week, which can reset anywhere
-                // inside it — slides down a few points at a time without
-                // anything having reset, and announcing that is worse than
-                // staying quiet. A reset time that has moved forward is the
-                // provider saying so; a figure that has dropped by forty points
-                // has not slid, it has turned over.
-                // **Never for a balance.** `Kind.balance` is prepaid credit
-                // and its own doc says it is not a limit: there is no window
-                // to turn over, `resetsAt` is always nil, so `movedOn` can
-                // never be true and the whole test collapses to "the fraction
-                // dropped 40 points". On DeepSeek that fraction is a *setting*
-                // — both modes emit the window id "balance" — so switching
-                // "My budget" to "Since top-up", or lowering the full-tank
-                // figure, posted "This limit has reset" about money that had
-                // not moved, within a second of touching the picker.
-                let unambiguous = window.kind != .balance
-                    && (movedOn || seen.fraction - window.usedFraction >= 0.4)
-
+                // Said only when the evidence is unambiguous — the rule, and
+                // why it is that rule, live on `UsageWindow.hasTurnedOver`.
+                // The rail's mark asks the same question of the same code.
+                let unambiguous = window.hasTurnedOver(since: seen.fraction,
+                                                       resetsAt: seen.resetsAt)
                 // **The step is cleared by the same evidence that would
                 // announce, not by the drop alone.** Clearing on any 5-point
                 // dip re-armed a window that had not reset: a rolling weekly
@@ -372,10 +354,14 @@ struct AlertMemory: Codable, Sendable, Equatable {
         // is spent, which is what the provider's own doc promises, and this is
         // where that promise is kept: a ¥100 full-tank with the balance at zero
         // announced "This limit is spent" while the account could still pay.
+        // A top-up pack joins the balance here for the same reason: it is
+        // prepaid rather than granted, its fraction moves when a pack is
+        // bought, and nothing but the provider's own word may call it spent.
         let reached = window.isExhausted
             ? 100
-            : (window.kind == .balance ? min(99, Int((window.usedFraction * 100).rounded(.down)))
-                                       : Int((window.usedFraction * 100).rounded(.down)))
+            : (window.kind == .balance || window.kind == .topUp
+                ? min(99, Int((window.usedFraction * 100).rounded(.down)))
+                : Int((window.usedFraction * 100).rounded(.down)))
         if reached >= 100 { return 100 }
         if let percent = threshold.percent, reached >= percent { return percent }
         return nil
@@ -405,9 +391,15 @@ struct AlertMemory: Codable, Sendable, Equatable {
         switch reason {
         case .claudeLoginExpired, .claudeDesktopKeyRefused, .claudeDesktopSessionExpired,
              .cursorLoginExpired, .grokLoginExpired, .signedOut, .apiKeyRefused,
-             .ollamaSessionExpired, .ollamaPageChanged,
+             .ollamaSessionExpired, .ollamaPageChanged, .xiaomiSessionExpired,
+             .qoderSessionExpired, .stepFunSessionExpired, .openAIWebSessionExpired,
              .unreachable, .unreadableReply, .rateLimited, .serverError,
-             .codexServerFailed:
+             .codexServerFailed,
+             // An extension that answered before and has stopped: the same
+             // news as any route going down.
+             .extensionTimedOut, .extensionFailed, .extensionSignedOut,
+             // A credential that worked and has stopped.
+             .sessionExpired, .localLoginExpired:
             .failure
 
         // The provider replied. "No limits on this plan" and "your Cursor plan
@@ -420,7 +412,14 @@ struct AlertMemory: Codable, Sendable, Equatable {
              // for the life of the record and the *next* real outage said
              // nothing — the exact failure the three-way split exists to
              // prevent.
-             .zaiNoCodingPlan:
+             .zaiNoCodingPlan,
+             // And the same again for Xiaomi: the session worked and the
+             // account simply has no plan on it.
+             .xiaomiNoCodingPlan,
+             // And for Qoder: the session worked and the account holds no
+             // credits. An answer, not an outage. StepFun's no-plan likewise.
+             .qoderNoCredits, .stepFunNoPlan,
+             .noPlan:
             .answered
 
         // Never set up, never signed in, or an app that simply is not
@@ -428,10 +427,27 @@ struct AlertMemory: Codable, Sendable, Equatable {
         // of them worth a banner on a timer.
         case .loading, .notConnected, .awaitingResponse,
              .signInRequired, .claudeSignInRequired, .claudeDesktopNotSignedIn,
-             .codexNotInstalled, .antigravityNotRunning, .antigravityNotAnswering,
+             .codexNotInstalled, .kiroNotInstalled, .kiroVersionUnsupported,
+             .kiroSignInRequired, .antigravityNotRunning, .antigravityNotAnswering,
              .cursorSignInRequired, .grokSignInRequired, .notSignedIn,
-             .ollamaSessionMissing, .apiKeyMissing, .volcengineCLIMissing,
-             .volcengineSignInRequired:
+             .deepSeekWebLoginRequired, .openAIWebLoginRequired, .xaiWebLoginRequired,
+             .ollamaSessionMissing, .xiaomiSessionMissing, .qoderSessionMissing, .stepFunSessionMissing,
+             .apiKeyMissing, .volcengineCLIMissing,
+             .volcengineSignInRequired,
+             // A program taken out of its folder is a setup change somebody
+             // made, not an outage.
+             .extensionMissing,
+             // Nothing set up yet, for a profiled provider.
+             .sessionMissing, .localLoginMissing, .localAppMissing,
+             // An app that was never installed or never signed in, which is
+             // the same standing as a CLI that is not there: true until
+             // somebody does something, and not an outage to announce.
+             .devinAppMissing, .devinPlanUnread, .devinOrganizationMissing,
+             // A self-hosted service with no address yet, or one whose address
+             // Pulse will not send a key to. Both are setup steps nobody has
+             // finished, and neither is evidence about whether anything can be
+             // reached — nothing was ever asked.
+             .serverAddressMissing, .serverAddressRefused:
             .neutral
         }
     }
@@ -463,7 +479,7 @@ struct AlertMemory: Codable, Sendable, Equatable {
 /// the card — and a silent banner on a second display, or behind a full-screen
 /// window, is a message that was never delivered.
 ///
-/// One rule for all four rather than sound for the consequential two: macOS
+/// One rule for all of them rather than sound for the consequential ones: macOS
 /// offers one switch per app, so a distinction Pulse drew here would be one
 /// nobody could turn off, and one nobody could discover either.
 @MainActor
@@ -486,33 +502,63 @@ final class UsageAlerts {
     private let settings: AppSettings
     // Read-only outside this type so tests can verify no warning is consumed during authorization.
     private(set) var memory: AlertMemory
+    private(set) var outages: OutageMemory
     private var tapHandler: NotificationTapHandler?
     private var authorizationRequest: Task<Bool, Never>?
+    private var outageCheck: Task<Void, Never>?
+    private var outageTimer: Task<Void, Never>?
     private let memoryFile: URL
+    private let outageFile: URL
 
     private static var file: URL {
         PulseStorage.directory.appending(path: "alerts.json")
     }
 
-    init(settings: AppSettings, file: URL = UsageAlerts.file) {
+    private static var outagesFile: URL {
+        PulseStorage.directory.appending(path: "status-alerts.json")
+    }
+
+    init(settings: AppSettings, file: URL = UsageAlerts.file, outageFile: URL = UsageAlerts.outagesFile) {
         self.settings = settings
         memoryFile = file
+        self.outageFile = outageFile
         memory = (try? Data(contentsOf: file))
             .flatMap { try? JSONDecoder().decode(AlertMemory.self, from: $0) } ?? AlertMemory()
+        outages = (try? Data(contentsOf: outageFile))
+            .flatMap { try? JSONDecoder().decode(OutageMemory.self, from: $0) } ?? OutageMemory()
     }
 
     /// Wires up what happens when one is clicked, and reads the current grant.
     /// Called once at launch — asking for permission is not done here, because
     /// a permission dialog at launch for a feature nobody has switched on is
     /// how an app gets denied for good.
-    func start(openSettings: @escaping @MainActor () -> Void) {
+    func start(
+        openSettings: @escaping @MainActor () -> Void,
+        openRecap: @escaping @MainActor (Recap.Period) -> Void = { _ in }
+    ) {
         guard Self.isSupported else { return }
 
-        let handler = NotificationTapHandler(open: openSettings)
+        let handler = NotificationTapHandler(open: openSettings, openRecap: openRecap)
         tapHandler = handler
         UNUserNotificationCenter.current().delegate = handler
 
-        Task { await readAuthorization() }
+        // The grant first: `checkServices` does nothing while it is unknown, so
+        // a first tick ahead of it was a wasted one, and an outage already
+        // under way at launch waited five minutes to be said.
+        //
+        // Then its own clock rather than the refresh pass's, which stretches to
+        // half an hour while the Mac sits idle — the moment someone comes back
+        // to work is when an outage matters most. Each tick returns at once
+        // unless the switch is on and a provider with a page is in use. The
+        // sleep is on the continuous clock, so a tick due while the Mac slept
+        // comes right after it wakes.
+        outageTimer = Task { [weak self] in
+            await self?.readAuthorization()
+            while !Task.isCancelled {
+                self?.checkServices()
+                try? await Task.sleep(for: ServiceStatus.checkInterval)
+            }
+        }
     }
 
     /// Re-reads the grant. Called when the settings window opens, because that
@@ -553,6 +599,25 @@ final class UsageAlerts {
         return granted && settings.wantsAlerts
     }
 
+    /// Whether a `.stale` reading should count against this account.
+    ///
+    /// False for a **push route** — Claude Code's status line only writes while
+    /// a session runs — and false for a reading out of an app's own saved state
+    /// (`UsageRoute.appCache`). Devin's figures are written when its app
+    /// launches and not again while it runs, so an old reading means nobody has
+    /// relaunched it, not that a check failed. Counting that would post "the
+    /// last few checks didn't get through" over a route where every check got
+    /// through — the one thing these rules exist to prevent.
+    ///
+    /// `nonisolated static` and pure, so a test can pin the rule directly.
+    nonisolated static func staleMeansFailure(
+        route: UsageSource,
+        raw: ProviderUsage,
+        for account: AccountKey
+    ) -> Bool {
+        !route.reportsOnlyWhenUsed(for: account) && raw.origin != .appCache
+    }
+
     /// A reading has landed. Decide what it is worth saying, and say it.
     ///
     /// `raw` is what the provider's service actually returned, before
@@ -563,7 +628,7 @@ final class UsageAlerts {
         // file**: without this the memory was written on the first pass of
         // every launch — measured — and a run of failures was counted up for a
         // feature nobody had turned on.
-        guard settings.wantsAlerts, authorizationRequest == nil,
+        guard settings.wantsUsageAlerts, authorizationRequest == nil,
               !Self.isSupported || authorization != .notDetermined else { return }
 
         let before = memory
@@ -575,7 +640,9 @@ final class UsageAlerts {
             announcesReset: settings.alertsOnReset,
             announcesFailure: settings.alertsOnFailure,
             lowBalance: settings.lowBalanceAlert(for: account),
-            staleMeansFailure: !settings.source(for: account).reportsOnlyWhenUsed(for: account),
+            staleMeansFailure: Self.staleMeansFailure(
+                route: settings.source(for: account), raw: raw, for: account
+            ),
             // The one clock reading in here, taken at the edge and passed in,
             // so the rules themselves stay decidable from their arguments.
             now: Date()
@@ -588,6 +655,89 @@ final class UsageAlerts {
         guard Self.isSupported, !alerts.isEmpty else { return }
 
         for alert in alerts { post(alert) }
+    }
+
+    /// Asks the status pages of the providers in use whether their service is
+    /// down, and says so (`OutageMemory`). Called every `checkInterval` and
+    /// when the setting is switched; one check at a time, its pages at once.
+    ///
+    /// **Only providers switched on**: a disabled one is not fetched, and a
+    /// page that can't be read changes nothing. What is no longer watched —
+    /// the switch off, a provider off — is forgotten here.
+    func checkServices() {
+        guard settings.alertsOnOutage else {
+            forgetOutages(except: [])
+            return
+        }
+        let inUse = Set(settings.shownAccounts.compactMap(\.provider.statusPage))
+        forgetOutages(except: inUse)
+        guard outageCheck == nil, authorizationRequest == nil,
+              !Self.isSupported || authorization != .notDetermined else { return }
+        let pages = StatusPage.allCases.filter(inUse.contains)
+        guard !pages.isEmpty else { return }
+
+        outageCheck = Task {
+            let read = await withTaskGroup(of: (StatusPage, [ServiceStatus.Component]?).self) { group in
+                for page in pages {
+                    group.addTask { (page, await ServiceStatus.current(page)) }
+                }
+                var read: [StatusPage: [ServiceStatus.Component]] = [:]
+                for await (page, components) in group { read[page] = components }
+                return read
+            }
+            for page in pages {
+                guard let components = read[page] else { continue }
+                consider(components.filter(page.notifiesAbout), from: page)
+            }
+            outageCheck = nil
+        }
+    }
+
+    private func forgetOutages(except pages: Set<StatusPage>) {
+        var kept = outages
+        kept.keepOnly(pages)
+        guard kept != outages else { return }
+        outages = kept
+        Self.persist(outages, to: outageFile)
+    }
+
+    private func consider(_ components: [ServiceStatus.Component], from page: StatusPage) {
+        // Switched off while the page was being read.
+        guard settings.alertsOnOutage else { return }
+        let before = outages
+        let change = outages.changes(in: components, on: page)
+        if outages != before { Self.persist(outages, to: outageFile) }
+        // Kept up to date whether or not anything can be posted, for the same
+        // reason the limits' memory is.
+        guard Self.isSupported, !change.isEmpty else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = page.provider.displayName
+        content.subtitle = .localized("Service status")
+        // A status, not an event: true whenever it is read.
+        let down = change.worse.isEmpty ? "" : String.localized("\(page.company) reports \(Self.list(change.worse, states: true)).")
+        let back = change.recovered.isEmpty ? "" : String.localized("Back to normal: \(Self.list(change.recovered, states: false)).")
+        content.body = Self.joined(down, back)
+        content.sound = .default
+
+        // One per provider: a newer word on the same service replaces the last.
+        let request = UNNotificationRequest(
+            identifier: "service-status-\(page.provider.rawValue)",
+            content: content,
+            trigger: nil
+        )
+        Task { try? await UNUserNotificationCenter.current().add(request) }
+    }
+
+    /// "CLI (Partial outage) and Codex API (Degraded performance)", in the
+    /// interface language's own way of listing.
+    private static func list(_ components: [ServiceStatus.Component], states: Bool) -> String {
+        let items = components.map { component in
+            states ? String.localized("\(component.name) (\(component.state.title))") : component.name
+        }
+        let formatter = ListFormatter()
+        formatter.locale = LocalizationSource.locale
+        return formatter.string(from: items) ?? items.joined(separator: ", ")
     }
 
     private func post(_ alert: UsageAlert) {
@@ -665,7 +815,7 @@ final class UsageAlerts {
 
     /// Two sentences, with a space only where one is wanted. A Chinese full
     /// stop is full-width and carries its own trailing space; adding another
-    /// leaves a visible gap mid-line. Same rule as `glassSubtitle`.
+    /// leaves a visible gap mid-line.
     private static func joined(_ first: String, _ second: String) -> String {
         guard !second.isEmpty else { return first }
         guard !first.isEmpty else { return second }
@@ -688,14 +838,16 @@ final class UsageAlerts {
     private static let disk = DispatchQueue(label: "Pulse.alerts", qos: .utility)
 
     private func save() {
-        // Snapshot on the actor, write off it: `AlertMemory` is a value type,
-        // so the queue gets bytes nobody else can be changing underneath it.
-        // The path is snapshotted too — `file` is main-actor isolated with the
-        // rest of this type, and reading it from the queue is the kind of
-        // actor-isolation slip that is a warning here and an error in Xcode.
-        let snapshot = memory
-        let destination = memoryFile
-        Self.disk.async {
+        Self.persist(memory, to: memoryFile)
+    }
+
+    /// Snapshot on the actor, write off it: both memories are value types, so
+    /// the queue gets bytes nobody else can be changing underneath it. The
+    /// path is passed in too — the files are main-actor isolated with the rest
+    /// of this type, and reading one from the queue is the kind of
+    /// actor-isolation slip that is a warning here and an error in Xcode.
+    private static func persist<Value: Encodable & Sendable>(_ snapshot: Value, to destination: URL) {
+        disk.async {
             PulseStorage.prepare()
             guard let data = try? JSONEncoder().encode(snapshot) else { return }
             try? data.write(to: destination, options: .atomic)
@@ -703,19 +855,28 @@ final class UsageAlerts {
     }
 }
 
-/// Opens Settings when a notification is clicked.
+/// Opens Settings when a notification is clicked — and the recap window when
+/// it is the recap's.
 ///
-/// Every one of these is about an account, and everything you can do about any
-/// of them — change a route, sign in again, paste a key, switch the provider
+/// Every one of the others is about an account, and everything you can do about
+/// any of them — change a route, sign in again, paste a key, switch the provider
 /// off — is in that window. It opens on whichever pane was last shown rather
 /// than the account's own: the pane is the view's own state, and reaching into
 /// it from here would mean threading a selection through the window controller
 /// for a feature that is one click away as it is.
+///
+/// The recap's identifier carries its month (`RecapNoticeRule`), so a click
+/// opens the recap on that month.
 final class NotificationTapHandler: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     private let open: @MainActor () -> Void
+    private let openRecap: @MainActor (Recap.Period) -> Void
 
-    init(open: @escaping @MainActor () -> Void) {
+    init(
+        open: @escaping @MainActor () -> Void,
+        openRecap: @escaping @MainActor (Recap.Period) -> Void = { _ in }
+    ) {
         self.open = open
+        self.openRecap = openRecap
     }
 
     func userNotificationCenter(
@@ -737,9 +898,11 @@ final class NotificationTapHandler: NSObject, UNUserNotificationCenterDelegate, 
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let open = open
+        let openRecap = openRecap
+        let recap = RecapNoticeRule.period(fromIdentifier: response.notification.request.identifier)
         let finish = UncheckedBox(completionHandler)
         Task { @MainActor in
-            open()
+            if let recap { openRecap(recap) } else { open() }
             finish.value()
         }
     }

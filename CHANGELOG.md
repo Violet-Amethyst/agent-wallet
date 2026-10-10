@@ -7,6 +7,238 @@ shows in the update window — see [Scripts/changelog.py](Scripts/changelog.py).
 Add the entry **before** tagging, in the small grammar the converter knows:
 bullets, `**bold**`, `` `code` `` and `[links](https://example.com)`.
 
+## 1.4.0
+
+**中文**
+
+**新功能**
+
+- **新增 Sub2API、New API、V2EX 和 Qoder，服务商增至二十四个。** 两个自建网关填入服务器地址和密钥即可读取余额或额度；V2EX 使用个人访问令牌读取 AI Chat 额度；Qoder 从浏览器读取 qoder.com 或 qoder.com.cn 的登录，显示积分额度，团队套餐的共享积分单独一个圆环。感谢 [@momusticks](https://github.com/qunqin24/Pulse/issues/59) 提议。
+- **真正的液态玻璃。** 开启后面板是透明、带折射的 macOS 26 液态玻璃，不再是一层磨砂；文字改为白色，并新增「透明度」滑块，可按常用背景调节玻璃明暗。设置中的名称也改回「液态玻璃」。
+- **时间圆环可以倒数。** 「距离重置的时间」的外圈可选「已过去」或「剩余」，剩余模式从满圈逐渐缩短到重置。感谢 [@Steven-oyjb](https://github.com/qunqin24/Pulse/pull/44)。
+- **Kiro 与 ZCode 也会显示工作动画。** Pulse 读取它们在本机写下的会话记录判断任务是否进行中；ZCode 只在配置的接口属于智谱或 z.ai 时才驱动对应圆环。感谢 [@guanbear](https://github.com/qunqin24/Pulse/pull/56)。
+- **设置按主题拆分成多个页面。** 外观、圆环与数字、位置与行为、通用、通知、网络与刷新各自独立；侧边栏搜索也能按设置项名称找到所在页面。
+- **每个服务都有配置指南。** 设置里的「配置帮助」现在打开专门写给用户的页面：密钥或登录从哪里获取、填到哪里、常见报错怎么处理。
+
+**改进与修复**
+
+- **贴边时鼠标推到屏幕最边缘不再误判离开。** 之前开启自动收起时，指针贴着边缘会让胶囊反复展开又收起。
+- **切换卡片更顺滑。** 高度不同的卡片之间切换时，新增的一行不再先于卡片出现在外面；快速扫过圆环时也不会看到空卡片。
+- **小机器人不再偶尔瞬移。** 庆祝转圈或变形动作被中途打断时，身体会平滑过渡，不再在一帧内跳转。
+- **Token 消耗：同名项目分开统计，无定价用量不再显示 $0.00。** 不同路径下的同名目录不再合并成一行；无法定价的会话和项目显示「—」或带 `*` 的小计。感谢 [@tech-zjf](https://github.com/qunqin24/Pulse/pull/57)（[#58](https://github.com/qunqin24/Pulse/pull/58)）。
+
+**English**
+
+**New**
+
+- **Sub2API, New API, V2EX and Qoder bring the count to twenty-four providers.** Both self-hosted gateways read a balance or allowance from a server address and key you enter; V2EX reads its AI Chat allowance with a Personal Access Token; Qoder reads your qoder.com or qoder.com.cn sign-in from the browser and shows your credits, with a team plan's shared credits as a ring of their own. Thanks to [@momusticks](https://github.com/qunqin24/Pulse/issues/59) for asking.
+- **Real Liquid Glass.** With glass on, the panel is clear, refracting macOS 26 Liquid Glass rather than a frosted layer. Text is drawn white, and a new **Transparency** slider sets how much the glass is dimmed for the backgrounds you usually work over. The setting is called Liquid Glass again in every language.
+- **The window clock can count down.** The outer arc of **Time until reset** can show time elapsed or time remaining; remaining starts full and empties toward the reset. Thanks to [@Steven-oyjb](https://github.com/qunqin24/Pulse/pull/44).
+- **Kiro and ZCode show activity too.** Pulse reads the session records they leave on this Mac to tell whether a turn is in flight; ZCode drives a ring only when its configured endpoint belongs to Zhipu or z.ai. Thanks to [@guanbear](https://github.com/qunqin24/Pulse/pull/56).
+- **Settings are split by subject.** Appearance, Rings and figures, Position and behavior, General, Notifications, and Network and refresh each have their own pane, and the sidebar search finds a pane by the names of its settings.
+- **Every provider has a setup guide.** **Setup help** now opens a page written for users: where the key or login comes from, where it goes in Pulse, and what each error means.
+
+**Changed and fixed**
+
+- **A pointer pushed against the screen edge no longer counts as leaving a docked rail.** With auto-collapse on, it used to open and close the rail over and over.
+- **Switching cards is smoother.** An added row no longer appears outside a card that has not grown yet, and sweeping across the rings no longer shows an empty card.
+- **The animated mark no longer jumps.** A celebration spin or a shape change interrupted mid-motion now eases into the next state instead of snapping in one frame.
+- **Token spend keeps same-name projects apart and stops showing unpriced use as $0.00.** Directories with the same name at different paths are no longer merged, and sessions or projects that cannot be priced show `—` or a subtotal marked `*`. Thanks to [@tech-zjf](https://github.com/qunqin24/Pulse/pull/57) ([#58](https://github.com/qunqin24/Pulse/pull/58)).
+
+## 1.3.1
+
+**中文**
+
+**新功能**
+
+- **Kiro 成为第二十个服务商。** Pulse 通过 Kiro CLI 自带的 ACP 接口读取当前账号的方案与额度，无需额外登录或复制凭据；同一响应里的多个额度会分别显示，并保持稳定的账号身份。
+- **浮动栏可以贴合刘海。** 顶部停靠时会围住刘海并延伸到屏幕边缘，在有刘海和无刘海的屏幕间移动时自动采用对应形状；警报提示改画在刘海下方，不会再被屏幕缺口遮住。
+- **菜单栏图标可以隐藏。** 可只用浮动栏或全局快捷键进入 Pulse。设置会保证始终至少留有一个可用入口；`Command-,` 也会直接打开设置。
+- **更多外观与动画开关。** 可关闭浮动栏警报颜色、CLI 活动动画和刷新动画，并让浮动栏两端保持与圆环一致的柔和曲线。
+
+**改进与修复**
+
+- **未选择显示的服务不会再偷偷读取。** Pulse 只扫描已监控服务的本机 CLI 活动；关闭显示的服务在设置里明确标为“未显示”，也无法从诊断页触发刷新。
+- **Kiro 额度顺序变化不再打乱账号。** 额度身份改用 Kiro 返回的资源类型，不再依赖数组位置，因此重排后仍会保留各自的显示设置和历史。
+- **修复辅助进程重启后的错误超时。** Codex 和 Kiro 的旧请求计时器不会再结束新一轮同编号请求，也不会让已经完成的请求留下延迟报错。
+- **隐藏菜单栏图标时不会把自己锁在应用外。** 如果浮动栏不可用且快捷键没有成功注册，Pulse 会自动恢复菜单栏入口；首次选择服务前也不会允许隐藏唯一入口。
+- **修正 GLM 服务图标与发布构建检查。** 两个 GLM 区域使用一致的服务标识；构建命令不再重复覆盖 Swift 语言模式，避免把无效警告当作发布失败。
+
+**English**
+
+**New**
+
+- **Kiro is the twentieth provider.** Pulse reads the current plan and allowances through the ACP service built into Kiro CLI, with no extra sign-in or copied credential. Multiple allowances in one response remain separate and keep stable account identities.
+- **The rail can berth around the notch.** A top-docked rail wraps the notch and reaches the screen edge, adapting as it moves between displays with and without a notch. Its alert cue is drawn below the cutout where it remains visible.
+- **The menu bar icon can be hidden.** Pulse can be reached through the floating rail or global shortcuts alone. Settings always preserve at least one working entry point, and `Command-,` opens Settings directly.
+- **More appearance and motion controls.** The docked alert colour, CLI activity animation and refresh animation can each be disabled, while the rail can keep ends softened to the rings' own curve.
+
+**Changed and fixed**
+
+- **Providers that are not selected are no longer read.** Pulse scans local CLI activity only for watched providers. A hidden provider is labelled “Not shown” in Settings and cannot be refreshed from diagnostics.
+- **Kiro allowance ordering no longer changes account identity.** Allowances use the resource type returned by Kiro instead of their array position, preserving display choices and history when the response is reordered.
+- **Fixed false timeouts after helper restarts.** Old Codex and Kiro request timers can no longer finish a newer request that reused the same identifier, or report a late failure after a request already completed.
+- **Hiding the menu bar icon cannot lock the user out.** Pulse restores the menu bar entry if the rail is unavailable and no shortcut registered successfully, and keeps the sole entry visible until the first provider selection is complete.
+- **Corrected the GLM provider marks and the release build check.** Both GLM regions now use a consistent provider identity, and build commands no longer override the package's Swift language mode and turn a redundant warning into a failed release.
+
+## 1.3.0
+
+**中文**
+
+**新功能**
+
+- **首次启动先由你选择要监控的服务。** Pulse 在选择完成前不会读取任何凭据，也不会开始监控。以后升级发现新的本机服务时只会提示，不会擅自开启；已有选择保持不变。
+- **代理设置。** 网络可以继续跟随 macOS，也可以在设置中指定 HTTP、HTTPS 或 SOCKS5 代理。供应商请求、登录流程以及 Codex、arkcli 等辅助进程使用同一项选择。
+
+**改进与修复**
+
+- **Token 消耗改为明确选择后才读取。** 新安装默认关闭；开启后也只在查看该页面时扫描本机会话，离开页面或关闭设置会取消仍在进行的读取并释放结果。大型 JSONL 日志改为流式解析，避免为一次统计把整份文件载入内存；回到页面时会复用已经完成的结果，手动重新扫描除外。
+- **八种小机器人有了各自完整的动作编排。** 日常、工作、刷新、鼠标响应和完成反馈按顺序播放，不再随机跳过招牌动作。所有日常动作与工作动作明确分开，空闲转圈不再冒出代表工作的彩带；只有「迟缓」会在深夜打瞌睡。
+- **小机器人的眼睛在连续工作动画中仍保持完整。** 最终轮廓约束留出适合圆环尺寸的微小内边距，旋转和随机瞥视叠加时不会把半只眼睛裁掉。Kimi 的机器人蓝色也调亮，在小尺寸下更清楚。
+
+**English**
+
+**New**
+
+- **Choose what Pulse may monitor before it starts.** A first-run picker makes the choice explicit. Pulse reads no credentials and starts no monitoring until it is saved. Later upgrades only suggest newly detected services; they never enable one on their own or disturb an existing choice.
+- **Proxy settings.** Network traffic can keep following macOS or use a manually configured HTTP, HTTPS or SOCKS5 proxy. Provider requests, sign-in flows and helper processes such as Codex and arkcli all use the same selection.
+
+**Changed and fixed**
+
+- **Token spend is read only after an explicit opt-in.** It is off on new installs and scans local sessions only while its Settings pane is open. Leaving the pane or closing Settings cancels an unfinished read and releases its result. Large JSONL logs are streamed instead of loaded whole, while a completed result is reused when returning to the pane unless Rescan is requested.
+- **Each of the eight bots now has a complete authored choreography.** Everyday, working, fetching, pointer-attention and completion scenes play every beat in order rather than randomly skipping signatures. Everyday and work vocabularies are separate across the whole cast, an idle spin no longer throws work ribbons, and only Sleepy may doze at night.
+- **Eyes remain whole through sustained work animation.** The final silhouette bound reserves a small ring-sized inset, so stacked turns and glances no longer clip half an eye. Kimi's bot blue is lighter as well, keeping its face readable at this size.
+
+## 1.2.1
+
+**中文**
+
+**修复**
+
+- **修复 Codex 会让 CPU 空转的问题。** `codex app-server` 退出后，Pulse 还在读它那根已经关掉的管道。这种管道永远"可读"，所以读取回调会被不停地重复调用——一个核跑满，直到退出 Pulse 为止。而且 helper 每重启一次就多留下一条空转线程。感谢 [@ethan-ji](https://github.com/qunqin24/Pulse/issues/25) 把原因、堆栈和条件都查清楚了。
+
+**新功能**
+
+- **小米 Coding Plan 成为第十九个服务商。** 读取小米 MiMo 控制台上按月购买的 token 额度，有周期结束时间就一并显示，预付余额作为一行金额附在卡片上。凭据是浏览器里已登录的会话，不是 API key——平台发的 key 是买推理用的，控制台的账户接口一个都不认。账号上没有 Coding Plan 时会直说，而不是画一个 0%。
+- **更新检查改为每两小时一次**，原本是一天一次。仍然只提示，不会自己安装。
+
+**改进**
+
+- **小机器人现在会看向屏幕里侧。** 胶囊贴在右边时看左边，贴在左边时看右边，拖到另一边会把视线挪过去而不是瞬间跳过去。之前那个偏移量比表情自带的朝向小得多，所以大部分时候还是在盯着屏幕边框。鼠标在面板上时，它优先看鼠标。
+- **小机器人的眼睛不会再跑出脸外。** 表情自带的朝向、贴边偏移和随机瞥视叠加起来会把眼睛推出轮廓，被裁掉之后看上去像少了一只眼。
+- **重写设置里小机器人相关的中文文案。** 之前是照着英文直译的。
+
+**English**
+
+**Fixed**
+
+- **Codex no longer spins the CPU.** After `codex app-server` exits, Pulse went on reading its closed pipe. A pipe in that state is readable for ever, so the read callback was called again and again — one core, flat out, until Pulse was quit — and every restart of the helper left another spinning thread behind. Reported by [@ethan-ji](https://github.com/qunqin24/Pulse/issues/25), with the cause, the stack and the conditions already worked out.
+
+**New**
+
+- **Xiaomi Coding Plan is the nineteenth provider.** Reads the monthly token allowance bought on Xiaomi's MiMo console, with the period's end where it reports one, and the prepaid balance as a line on the card. The credential is your signed-in browser session rather than an API key — the platform's keys buy inference and answer none of the console's account routes. An account with no plan says so instead of drawing 0%.
+- **Updates are checked every two hours** rather than once a day. Still offered, never installed on their own.
+
+**Changed**
+
+- **The bot now faces into the screen.** A rail docked right looks left, docked left looks right, and dragging it across sends the eyes over rather than snapping them. The old lean was far smaller than the glance drawn into each expression, so a mark spent much of its time staring at the screen edge. A pointer on the panel outranks all of it.
+- **The bot's eyes stay inside its face.** The expression's own glance, the edge lean and the random glances stacked up and pushed an eye past the silhouette, where it was clipped — which read as a mark with one eye.
+- **Rewrote the Chinese copy for the bot settings**, which had been translated word by word from the English.
+
+## 1.2.0
+
+**中文**
+
+**新功能**
+
+- **动画标记。** 可以把某个账号环里的供应商图标换成一个会动的小机器人，默认关闭，在该账号的设置页里逐个开启。它只说面板已经知道的事：该供应商的 CLI 正在跑、Pulse 正在取新读数、额度已用满、还没有读数、或者什么都没发生。开启动画标记的环不再画白色活动弧——转动的白弧和一个明显在干活的小机器人是同一件事画了两遍。
+- **人格、形状与颜色。** 八种人格决定它播放哪些动作和节奏，默认自动分配，保证相邻的环是不同的角色；十八种身体形状可选，默认都是圆形；颜色默认取供应商品牌色，没有品牌色的会自动分配一个与邻居区分开的色相，也可以自己指定。三项都按账号设置。
+- **它会对正在发生的事做出反应。** 眼睛跟随面板上的鼠标，被指着的那个会停下来倾听；干活时在"工作、生成、书写"之间切换，非工作时间干活会一边生气一边干；长时间没有任何 CLI 写入会无聊，深夜则犯困；额度重置时庆祝，一轮活干完时兴奋。重置的判定用的是通知系统同一条规则，与通知是否开启无关。
+- **关于页加入项目地址。** 同时注明动画标记的移植出处。
+
+**English**
+
+**New**
+
+- **Animated marks.** A ring's provider logo can be replaced by a small animated bot. Off by default, switched on per account in that account's settings pane. It says only what the panel already knows: that provider's CLI is running, Pulse is fetching a reading, the limit is spent, there is no reading yet, or nothing is happening. A ring drawing a mark no longer draws the white activity arc — a travelling arc and a bot that visibly gets to work are one fact drawn twice.
+- **Personality, shape and colour.** Eight personalities decide which motions a mark plays and at what pace, dealt automatically so the ring beside it is a different character. Eighteen body shapes, round by default. Colour is the provider's brand where it has one, otherwise dealt to stand apart from its neighbours' hues, or chosen outright. All three are per account.
+- **It reacts to what is happening.** The eyes follow the pointer across the panel, and the ring being pointed at stops to listen. Work alternates between working, generating and writing, with anger added out of hours. A machine that has been quiet for twenty minutes gets bored, and sleepy about it at night. A limit that resets is celebrated; a finished turn gets a cheer. The reset is recognised by the same rule the reset notification uses, whether or not notifications are on.
+- **The project's address in About**, alongside credit for the animated marks' origin.
+
+## 1.1.2
+
+**中文**
+
+**新功能**
+
+- **更多 Token 消耗来源。** 新增 Gemini CLI、Cline、Roo Code、OpenClaw、GitHub Copilot 等本地记录读取，并支持 Cursor、Trae 等导出数据。部分来源需要先导出或捕获记录；可读格式及验证范围见[来源说明](https://github.com/qunqin24/Pulse/blob/main/Docs/token-spend-sources.md)。
+- **模型用量详情。** 点击模型可查看输入、输出、缓存读写、每日与每小时消耗，以及各 Agent 的贡献；明细表支持排序和分页。费用按公开 API 价格折算，不是订阅账单。
+- **图表悬停读数。** 指向历史图表即可查看对应日期或小时的 token 数量，较短的柱形和零用量时段也能选中。
+- **浮动栏菜单与全局快捷键。** 右键浮动栏即可打开设置；可自行设置快捷键，用于打开设置或显示、隐藏浮动栏。默认不绑定按键。
+- **繁体中文、日语和韩语。** 界面与 README 新增三种语言，大数缩写使用各语言对应的单位。
+
+**改进与修复**
+
+- 补全仅由套餐商公布价格的模型计价，修复 Kilo CLI 的价格来源；日汇总、模型详情和会话金额保持一致。
+- Antigravity IDE 读取自身的会话存储；Devin 记录不再误标为仅来自 CLI，已匹配的数据库与 Desktop 捕获只统计一次。
+- 跨天汇总记录只计入所选区间；Command Code 回退对话后仍保留已经发生的消耗，重复记录不会重复计数。
+- Token 消耗默认显示最近一周，并记住所选区间；缺失价格、不完整计数和不可用的小时明细会明确标注，旧缓存自动重读。
+- 修复切换语言后设置侧栏变窄的问题，补充 Agent 图标并更新界面截图。
+
+**English**
+
+**New**
+
+- **More token-spend sources.** Added local-record readers for Gemini CLI, Cline, Roo Code, OpenClaw, GitHub Copilot and more, plus exports from Cursor, Trae and others. Some sources require a prior export or capture. See [sources and validation coverage](https://github.com/qunqin24/Pulse/blob/main/Docs/token-spend-sources.md) for supported formats.
+- **Model usage details.** Open a model to inspect input, output, cache reads and writes, daily and hourly usage, and contributions by agent. Detail tables support sorting and paging. Costs use published API rates and are not a subscription bill.
+- **Chart hover values.** Point at a history chart to see the token count for a date or hour, including short bars and periods with no usage.
+- **Rail menu and global shortcuts.** Right-click the floating rail to open Settings. Optional shortcuts open Settings or show and hide the rail; both are unassigned by default.
+- **Traditional Chinese, Japanese and Korean.** Added three interface and README translations, with large-number abbreviations using each language's own units.
+
+**Changed and fixed**
+
+- Added pricing for models listed only by their plan vendor and corrected Kilo CLI's price source. Day, model and session amounts agree.
+- Antigravity IDE reads its own conversation store. Devin records are no longer labelled CLI-only, and matched database sessions and Desktop captures count once.
+- Cross-day aggregate records contribute only their in-range usage. Command Code rewinds retain consumption that already occurred, and replayed records are not counted twice.
+- Token spend defaults to the last week and remembers the selected span. Missing prices, incomplete counts and unavailable hourly detail are identified; older caches are reread automatically.
+- Fixed the Settings sidebar narrowing after a language change, added agent icons and updated screenshots.
+
+## 1.1.1
+
+**中文**
+
+**新功能**
+
+- **Devin 成为第十八个服务商。** 从 Chromium 浏览器会话读取每日、每周额度，无需钥匙串授权；无登录凭据时读取应用保存的带日期套餐。不同账户和组织的读数保持隔离。
+- **Token 消耗统计。** 汇总 Claude Code、Codex、OpenCode、Kilo CLI、Grok Build、Kimi CLI 和 Devin CLI 的本机会话，按区间、Agent、模型、项目、会话和 token 类型查看。费用按公开 API 价格折算，不是订阅账单。
+- **开发者集成。** 在设置中导出 Raycast 扩展及 tmux、sketchybar、终端脚本；`Pulse --json` 增加读数来源和账户设置链接。集成仅读取缓存。[配置指南](https://github.com/qunqin24/Pulse/blob/main/Docs/integrations.md)。
+- **连接诊断。** 查看最近检查、读数来源、缓存和回退结果，按原因修复连接；额外账户可原位重新登录。可复制不含账户详情或凭据的诊断信息。
+- **变红阈值可调。** 可选 60%–90%，默认 75%；圆环、详情条和收起的胶囊保持一致，已耗尽状态仍优先。
+
+**改进与修复**
+
+- Claude Code 的 warning 不再被误判为额度耗尽；登录码、取消按钮和错误信息归属正确的服务商页面，切换页面不再串写凭据。
+- 修复详情卡片展开、收起时沿胶囊漂移的问题。
+- 跨天会话只计入所选区间；修正日志与数据库缓存更新、模型别名计价和自定义会话标题读取。
+- Devin 旧快照按实际时间标注，过期窗口和超龄快照不再显示；额度变化纳入自适应刷新，异常浏览器存储长度不再导致崩溃。
+
+**English**
+
+**New**
+
+- **Devin is the eighteenth provider.** Read daily and weekly quota from your Chromium browser session without a keychain prompt. With no credential, Pulse reads the app's dated saved plan. Account and organization boundaries are preserved.
+- **Token spend.** Bring together local sessions from Claude Code, Codex, OpenCode, Kilo CLI, Grok Build, Kimi CLI and Devin CLI, grouped by span, agent, model, project, session and token kind. Costs use published API rates and are not a subscription bill.
+- **Developer integrations.** Export a Raycast extension and tmux, sketchybar and shell scripts from Settings. `Pulse --json` now includes reading sources and account links; integrations only read the cache. [Setup guide](https://github.com/qunqin24/Pulse/blob/main/Docs/integrations.md).
+- **Connection diagnostics.** Inspect checks, sources, cache use and fallback outcomes, with relevant repair actions and in-place reauthentication for added accounts. Copied diagnostics omit account details and credentials.
+- **Configurable warning colour.** Choose where rings turn red, from 60% to 90% (default 75%). Rings, detail bars and the collapsed rail agree; exhausted limits still take precedence.
+
+**Changed and fixed**
+
+- Claude Code warnings no longer mean exhausted. Device codes, Cancel and errors stay with their provider; switching panes no longer lets login completion overwrite another provider's credential field.
+- Fixed detail cards drifting along the rail as they open and close.
+- Cross-midnight sessions count only their in-range work. Corrected log and database cache updates, model aliases and custom session titles.
+- Devin snapshots retain their actual age; expired windows and over-age snapshots disappear. Quota changes participate in adaptive refresh, and malformed browser-storage lengths no longer crash Pulse.
+
 ## 1.1.0
 
 - **A large balance no longer overflows the ring.** The rail shows ¥5k, ¥123k, $1.2M rather than the full figure, which did not fit and was being cut off — the exact balance is on the card and in Settings. It is always rounded **down**, so the ring never claims you have more than you do.

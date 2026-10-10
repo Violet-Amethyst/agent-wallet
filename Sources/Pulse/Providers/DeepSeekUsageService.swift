@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// DeepSeek's prepaid balance.
@@ -16,10 +17,11 @@ import Foundation
 /// ```
 ///
 /// **There is no allowance, no window, no reset and no spend history** — not in
-/// this reply and not anywhere else in the API. Every other provider Pulse
+/// this reply and not anywhere else in the API (the usage history comes from
+/// the web console, with its own sign-in — `DeepSeekConsole`). Every other provider Pulse
 /// carries reports at least one percentage; this one reports money and stops.
 /// So the denominator behind the ring has to come from somewhere, and
-/// `DeepSeekBasis` is the enumeration of the only three places it can:
+/// `BalanceBasis` is the enumeration of the only three places it can:
 /// something Pulse watched, nothing at all, or a figure the user typed. Which
 /// is in force is the user's choice and is stated on the card either way.
 ///
@@ -29,7 +31,7 @@ struct DeepSeekUsageService: Sendable {
     let enteredKey: String?
     /// Which denominator to use. The user's choice, defaulting to the measured
     /// one.
-    let basis: DeepSeekBasis
+    let basis: BalanceBasis
     /// What the user calls a full tank, for `.budget`. Nil, zero or negative
     /// leaves that mode with no denominator, which draws the balance alone
     /// rather than a fraction of a number nobody gave.
@@ -37,12 +39,22 @@ struct DeepSeekUsageService: Sendable {
     /// Which currency the ring follows when the account holds more than one.
     /// Nil takes the first the reply lists that has any money in it.
     let currency: String?
+    /// The web console's sign-in, kept beside the key (`DeepSeekConsole`).
+    /// It answers the balance when there is no key, or the key route fails —
+    /// never instead of a key that works.
+    var consoleToken: String? = nil
 
     private static let endpoint = URL(string: "https://api.deepseek.com/user/balance")!
 
     func fetch() async -> ProviderUsage {
         guard let key = enteredKey.flatMap({ $0.isEmpty ? nil : $0 }) else {
-            return .unavailable(.deepSeek, reason: .apiKeyMissing)
+            switch await fromConsole() {
+            case .read(let usage): return usage
+            // The console sign-in is the only credential, and it has lapsed:
+            // say so, rather than asking for a key nobody needs.
+            case .signedOut: return .unavailable(.deepSeek, reason: .sessionExpired)
+            case .none: return .unavailable(.deepSeek, reason: .apiKeyMissing)
+            }
         }
 
         var request = URLRequest(url: Self.endpoint)
@@ -50,11 +62,48 @@ struct DeepSeekUsageService: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 15
 
-        guard let (data, response) = try? await URLSession.shared.data(for: request) else {
-            return .unavailable(.deepSeek, reason: .unreachable)
+        let keyed: ProviderUsage
+        if let (data, response) = try? await NetworkSession.shared.data(for: request) {
+            keyed = reading(data: data, status: (response as? HTTPURLResponse)?.statusCode)
+        } else {
+            keyed = .unavailable(.deepSeek, reason: .unreachable)
         }
+        // The console stands in only for a key route that did not answer.
+        if case .unavailable(let reason) = keyed.state,
+           [.apiKeyRefused, .unreachable, .serverError, .unreadableReply].contains(reason),
+           case .read(let console) = await fromConsole() {
+            return console
+        }
+        return keyed
+    }
 
-        switch (response as? HTTPURLResponse)?.statusCode {
+    private enum ConsoleBalance {
+        case read(ProviderUsage)
+        case signedOut
+        /// No console token kept, or the console did not answer — the key
+        /// route's own reason is the one worth showing then.
+        case none
+    }
+
+    /// The balance out of the console's wallets, renewing a refused sign-in
+    /// from the browser once.
+    private func fromConsole() async -> ConsoleBalance {
+        guard let token = consoleToken, !token.isEmpty else { return .none }
+        switch await DeepSeekConsole.balanceRenewing(token: token) {
+        case .success(let reply):
+            var usage = reading(reply)
+            guard case .live = usage.state else { return .none }
+            usage.origin = .webSession
+            return .read(usage)
+        case .failure(.signedOut):
+            return .signedOut
+        case .failure(.failed):
+            return .none
+        }
+    }
+
+    private func reading(data: Data, status: Int?) -> ProviderUsage {
+        switch status {
         case 200: break
         case 401, 403: return .unavailable(.deepSeek, reason: .apiKeyRefused)
         case 429: return .unavailable(.deepSeek, reason: .rateLimited)
@@ -64,7 +113,10 @@ struct DeepSeekUsageService: Sendable {
         guard let reply = try? JSONDecoder().decode(Reply.self, from: data) else {
             return .unavailable(.deepSeek, reason: .unreadableReply)
         }
+        return reading(reply)
+    }
 
+    private func reading(_ reply: Reply) -> ProviderUsage {
         guard let purse = Self.purse(from: reply, preferring: currency) else {
             return .unavailable(.deepSeek, reason: .noLimitsReported)
         }
@@ -142,12 +194,41 @@ struct DeepSeekUsageService: Sendable {
     /// every currency regardless of which one the ring follows.
     static func purse(from reply: Reply, preferring currency: String?) -> Purse? {
         let purses = (reply.balanceInfos ?? []).compactMap(purse(from:))
+        return purse(from: purses, preferring: currency)
+    }
+
+    static func purse(from purses: [Purse], preferring currency: String?) -> Purse? {
         guard !purses.isEmpty else { return nil }
 
         if let currency, let chosen = purses.first(where: { $0.currency == currency }) {
             return chosen
         }
         return purses.first(where: { $0.total > 0 }) ?? purses.first
+    }
+
+    static func platformPurses(_ data: Data) -> [Purse]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (root["code"] as? Int) == 0,
+              let envelope = root["data"] as? [String: Any],
+              (envelope["biz_code"] as? Int) == 0,
+              let body = envelope["biz_data"] as? [String: Any],
+              let normal = body["normal_wallets"] as? [[String: Any]],
+              let bonus = body["bonus_wallets"] as? [[String: Any]] else { return nil }
+        var paid: [String: Double] = [:]
+        var granted: [String: Double] = [:]
+        for (wallets, isBonus) in [(normal, false), (bonus, true)] {
+            for wallet in wallets {
+                guard let currency = wallet["currency"] as? String, !currency.isEmpty,
+                      let raw = wallet["balance"],
+                      let amount = Double(String(describing: raw)), amount.isFinite else { return nil }
+                if isBonus { granted[currency, default: 0] += amount }
+                else { paid[currency, default: 0] += amount }
+            }
+        }
+        return Set(paid.keys).union(granted.keys).sorted().map { currency in
+            Purse(currency: currency, total: (paid[currency] ?? 0) + (granted[currency] ?? 0),
+                  granted: granted[currency], toppedUp: paid[currency])
+        }
     }
 
     static func purse(from info: Reply.Info) -> Purse? {
@@ -188,56 +269,18 @@ struct DeepSeekUsageService: Sendable {
     /// `reportsLength` is false and the seconds exist only to sort the row.
     static func windows(
         purse: Purse,
-        basis: DeepSeekBasis,
+        basis: BalanceBasis,
         budget: Double?,
         peak: Double,
         since: Date,
         isAvailable: Bool?
     ) -> [UsageWindow] {
-        let measured: (fraction: Double, estimate: UsageWindow.Estimate)? = switch basis {
-        case .balanceOnly:
-            nil
-        case .sinceTopUp:
-            DeepSeekBaseline.usedFraction(balance: purse.total, peak: peak)
-                .map { ($0, UsageWindow.Estimate.sinceTopUp) }
-        case .budget:
-            budget.flatMap { budget in
-                // **Finite, not merely positive.** `Double("inf")` is greater
-                // than zero, and an infinite denominator makes the fraction
-                // NaN — which the clamps below propagate rather than catch.
-                // Settings refuses one too; this is the guard that does not
-                // depend on where the figure came from.
-                budget.isFinite && budget > 0
-                    ? (min(max((budget - purse.total) / budget, 0), 1), UsageWindow.Estimate.yourBudget)
-                    : nil
-            }
-        }
-
-        guard let measured else { return [] }
-
-        return [
-            UsageWindow(
-                id: "balance",
-                kind: .balance,
-                // **Not the scope.** Scope is a product name that `--json`
-                // promises reads the same in every language, and "since
-                // top-up" translated into it broke that the day it shipped.
-                scope: nil,
-                usedFraction: measured.fraction,
-                windowSeconds: 30 * 86_400,
-                resetsAt: nil,
-                reportsLength: false,
-                // The denominator is Pulse's own observation in one mode and
-                // the reader's own figure in the other. Neither is DeepSeek's,
-                // and the row names which.
-                estimate: measured.estimate,
-                // **DeepSeek's own word**, not the arithmetic: `is_available`
-                // is the flag it sets when the balance can no longer pay for a
-                // call. A budget the reader set low can reach 100% with money
-                // still in the account, and that is not the account being spent.
-                isExhausted: isAvailable == false
-            )
-        ]
+        // The rule is every API account's now; DeepSeek's own word on
+        // whether it can still pay for a call is what marks it spent.
+        BalanceRing.window(
+            balance: purse.total, basis: basis, budget: budget, peak: peak,
+            isExhausted: isAvailable == false
+        ).map { [$0] } ?? []
     }
 
     /// What is left, in the currency the account is priced in.

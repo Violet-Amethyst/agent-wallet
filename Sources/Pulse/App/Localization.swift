@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 import SwiftUI
 
@@ -7,6 +8,9 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     case system
     case english
     case chineseSimplified
+    case chineseTraditional
+    case japanese
+    case korean
 
     var id: String { rawValue }
 
@@ -20,17 +24,23 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         case .system: .autoupdatingCurrent
         case .english: Locale(identifier: "en_US")
         case .chineseSimplified: Locale(identifier: "zh_Hans")
+        case .chineseTraditional: Locale(identifier: "zh_Hant")
+        case .japanese: Locale(identifier: "ja_JP")
+        case .korean: Locale(identifier: "ko_KR")
         }
     }
 
     /// Name of the `.lproj` folder to read strings from, or `nil` to let the
-    /// system choose. Lowercased because SwiftPM lowercases these folder
-    /// names when it builds the resource bundle.
+    /// system choose. Lowercased because SwiftPM has lowercased these folder
+    /// names when building the resource bundle; `loadTable` matches either.
     var bundleName: String? {
         switch self {
         case .system: nil
         case .english: "en"
         case .chineseSimplified: "zh-hans"
+        case .chineseTraditional: "zh-hant"
+        case .japanese: "ja"
+        case .korean: "ko"
         }
     }
 
@@ -41,6 +51,9 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         case .system: .localized("System")
         case .english: "English"
         case .chineseSimplified: "简体中文"
+        case .chineseTraditional: "繁體中文"
+        case .japanese: "日本語"
+        case .korean: "한국어"
         }
     }
 }
@@ -62,6 +75,11 @@ enum LocalizationSource {
         lock.withLock { override } ?? .module
     }
 
+    /// The language Pulse is set to, `.system` when it follows macOS.
+    static var language: AppLanguage {
+        lock.withLock { chosen }
+    }
+
     /// The locale that goes with the language the strings are coming from.
     static var locale: Locale {
         lock.withLock { chosen }.locale
@@ -77,7 +95,7 @@ enum LocalizationSource {
     /// Finds a language's `.lproj` bundle.
     ///
     /// Resolved against the names the bundle itself reports rather than a
-    /// hardcoded folder name: SwiftPM lowercases `zh-Hans.lproj` on the way
+    /// hardcoded folder name: SwiftPM has lowercased `zh-Hans.lproj` on the way
     /// into the built bundle, and there is no guarantee about the casing it
     /// will use, so anything that assumes one spelling can come up empty —
     /// silently, leaving the app in the system language with no clue why.
@@ -100,16 +118,42 @@ enum LocalizationSource {
 }
 
 extension LocalizationSource {
-    /// Whether large numbers should be grouped the East Asian way — by 万
-    /// (10⁴) and 亿 (10⁸) — instead of by thousands.
+    /// The myriad units for a language that counts by 10⁴ and 10⁸ instead of
+    /// by thousands, or nil where thousands are what a reader expects.
     ///
-    /// Chinese doesn't group in thousands, so "419M" is something a reader has
-    /// to convert in their head before it means anything. The unit characters
-    /// are written here rather than in the strings file on purpose: they
-    /// belong to the numeral system, not to the copy, and a translator being
-    /// offered them as text to change would be a mistake waiting to happen.
-    static var groupsByTenThousands: Bool {
-        locale.language.languageCode?.identifier == "zh"
+    /// None of these languages groups in thousands, so "419M" is something the
+    /// reader has to convert in their head before it means anything. The unit
+    /// characters are written here rather than in the strings file on purpose:
+    /// they belong to the numeral system, not to the copy, and a translator
+    /// being offered them as text to change would be a mistake waiting to
+    /// happen.
+    ///
+    /// **They are not the same four characters in all four languages**, which
+    /// is why this returns them rather than a `Bool`: 10⁸ is 亿 in simplified
+    /// Chinese, 億 in traditional Chinese and in Japanese, and 억 in Korean.
+    /// Printing 亿 to a Taiwanese or Japanese reader is the same class of
+    /// mistake as leaving the number in millions.
+    static var myriadUnits: (tenThousand: String, hundredMillion: String)? {
+        myriadUnits(for: locale)
+    }
+
+    /// The same rule against a supplied locale. Not `private` so `MyriadUnitsTests`
+    /// can ask it about a language the app is not currently set to; do not
+    /// tidy it back.
+    static func myriadUnits(for locale: Locale) -> (tenThousand: String, hundredMillion: String)? {
+        let language = locale.language
+        switch language.languageCode?.identifier {
+        case "zh":
+            // `script` is filled in for the identifiers `AppLanguage` builds
+            // and for a maximised system locale; the regions are the fallback
+            // for a plain "zh_TW" that never went through that.
+            let traditional = language.script?.identifier == "Hant"
+                || ["TW", "HK", "MO"].contains(language.region?.identifier ?? "")
+            return traditional ? ("萬", "億") : ("万", "亿")
+        case "ja": return ("万", "億")
+        case "ko": return ("만", "억")
+        default: return nil
+        }
     }
 }
 

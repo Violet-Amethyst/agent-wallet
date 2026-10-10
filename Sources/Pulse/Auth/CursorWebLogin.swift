@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import AppKit
 import CryptoKit
 import Foundation
@@ -112,7 +113,7 @@ enum CursorWebLogin {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await NetworkSession.shared.data(for: request)
         } catch {
             // Cancellation is not the service failing to answer — reported as
             // one, pressing Cancel writes an error into a pane the user has

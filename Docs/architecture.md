@@ -6,7 +6,7 @@ Provider routes, credentials, cookies, and extra-account OAuth belong in [provid
 
 ## App shell
 
-- `PulseApp.swift` — `@main`. Declares only a `MenuBarExtra` (Settings, Quit). Usage is shown solely in the floating panel.
+- `PulseApp.swift` — `@main`. Supplies the required empty SwiftUI Settings scene, but replaces its standard command so Command-, opens the AppKit-owned settings window rather than the empty scene. The AppKit delegate owns the `NSStatusItem` (Settings, Quit) so `AppSettings.hidesMenuBarIcon` can remove it at runtime. Usage is shown solely in the floating panel; when the icon is hidden, the panel menu or a registered global shortcut remains an entry point.
 - `AppDelegate.swift` — activation policy `.accessory` (no Dock icon). Owns `AppSettings`, `PanelPlacement`, `FloatingPanelController`, and the settings window. Ignores `SIGPIPE` process-wide so a helper (for example Codex app-server) exiting cannot take Pulse down with it (`Terminated due to signal 13`).
 - `FloatingPanelController.swift` — owns a custom `NSPanel` (`FloatingPanel`: borderless, non-activating, `canBecomeKey` / `canBecomeMain` both false) hosting SwiftUI through `NSHostingView`. **The AppKit controller computes and animates the panel frame.** SwiftUI has no say over outer size; expand/collapse is `NSAnimationContext` / `panel.animator()`, not a SwiftUI transition.
 - Full-screen Spaces: `AppSettings.hidesInFullScreen` selects `.fullScreenNone` (default) or `.fullScreenAuxiliary`. Both keep `.canJoinAllSpaces` for ordinary desktops. This is public window collection behaviour, not a guessed full-screen detector.
@@ -15,13 +15,24 @@ Provider routes, credentials, cookies, and extra-account OAuth belong in [provid
 
 ## Settings window
 
-Hand-rolled `SettingsWindowController`, not SwiftUI’s `Settings` scene: an `.accessory` app must `NSApp.activate` or the window opens behind everything.
+Hand-rolled `SettingsWindowController`, not SwiftUI’s required empty `Settings` scene: an `.accessory` app must `NSApp.activate` or the window opens behind everything. The `.appSettings` command is replaced in `PulseApp`, so the standard keyboard command reaches this controller too.
 
 - `.fullSizeContentView` so content blurs under the title bar as it scrolls.
 - **Title bar stays opaque** (`titlebarAppearsTransparent = false`, `titlebarSeparatorStyle = .automatic`). Transparent plus full-size content drew scrolled rows over “Pulse Settings”.
 - No extra top padding: AppKit reports the bar as a ~52pt safe area and the scroll view already insets by it.
 - The sidebar does **not** extend behind the traffic lights. That is AppKit’s treatment of an `NSSplitViewController` sidebar; a SwiftUI `NavigationSplitView` in an `NSHostingView` does not get it. Historical measurement (with/without full-size content and a unified `NSToolbar`) is in the old notes, not re-run here.
 - Ending text-field editing on click-away is the **window’s** job (`SettingsWindow.sendEvent`). Geometry against the field being edited, never `hitTest` — a hosted SwiftUI tree answers that unreliably. See [ui/settings.md](ui/settings.md).
+
+## Ways into settings
+
+Four, and the menu bar is only one of them — an icon in a full menu bar is not reachable at all ([issue #24](https://github.com/qunqin24/Pulse/issues/24)):
+
+- The AppKit status-item menu (`AppDelegate`), unless the user has hidden its icon.
+- A **secondary click on the rail**, which puts up `AppDelegate.panelMenu()`. [ui/input.md](ui/input.md)
+- A **global shortcut**, unset until somebody sets one. `GlobalShortcutMonitor`, held by the app delegate for the life of the process and re-applied by the settings pane whenever a combination changes. The panel's own shortcut goes through `settings.isPanelVisible` rather than `FloatingPanelController.toggle()`, so the panel is in the state the switch in settings claims and stays that way across a launch.
+- A `pulse://` link, below.
+
+The first three are kept as an invariant: if no selected provider can supply a visible panel and neither shortcut was actually accepted by the window server, Pulse restores the menu bar item. A stored combination that conflicts with another app does not count. Hiding the icon from Settings first shows the panel when it would otherwise remove the last visible entry point; before the initial provider choice, where no panel exists, the request is refused. Later hiding that panel, clearing the last shortcut, a registration failure, or restoring an unsafe saved combination brings the icon back.
 
 ## Settings navigation from other apps
 
@@ -33,21 +44,33 @@ SwiftUI tree inside the panel: `FloatingUsagePanelView` → `UsageDockView` (rai
 
 ## Settings and persistence
 
-`AppSettings` is `@Observable`, stored in `UserDefaults`. `onChange` is how AppKit hears about it.
+`AppSettings` is `@Observable`, stored in `UserDefaults`. `onChange` is how AppKit hears about settings that affect the panel or refresh loop. `hidesMenuBarIcon` is the exception: its dedicated callback removes or restores the AppKit status item without refetching providers. It defaults to `false` to preserve the existing menu bar entry point.
 
-- The **rail** must not be empty (nothing to hover, nothing to grab). That is not the same as “the provider set must not be empty”: an added account is not a provider, and rebuilding from `Provider.allCases` has already overwritten a user’s choice.
+- Once monitoring starts the **rail** must not be empty (nothing to hover, nothing to grab). Before the initial choice, an empty account set is valid and the panel is not created. An added account alone is a valid rail; rebuilding from `Provider.allCases` must never overwrite that choice.
 - `providerOrder` / `orderedAccounts`: never trust the stored list as written. Drop unknown names; append accounts the list does not mention **in name order** after whatever arrangement is stored. The settings sidebar follows the same order. Reorder does **not** call `onChange` — that path refetches everything.
-- **First run and offer-once live here** (`AppSettings.restored`), not in per-provider route pages. A later provider is offered **once** (`Key.offeredProviders` / `Key.hasRun`), and only if `Provider.canReportWithoutSetup`. Stamping offered *before* the union runs makes a new provider permanently invisible. “Has Pulse run here before” cannot be inferred from the enabled set: 1.0.0 computed that set in `init` and never wrote it (`didSet` did not run).
-- First run starts from `Provider.installedOnThisMac` (presence of known tool folders/apps, not their contents). If nothing is found, everything is shown so the rail is still grabable. A stored list whose names no longer parse falls back to everything rather than to an empty rail. Which path counts as “installed,” and which providers stay off until a key exists: [providers/README.md](providers/README.md).
+- **First run and upgrade offers** are resolved by `ProviderSelection.restore`, called from `AppSettings.restored`. First launch enables nothing. An empty or invalid saved set returns to the chooser, never to an everything-on fallback. Discovery suggests providers but enables none; see the startup contract below.
 - A provider with nothing fetched yet is **not** seeded `.loading` (`UsageStore.initialState`). Loading that never resolves is a lie on its settings pane.
-- Each provider pane has its own refresh control. A switched-off provider is **not** fetched on the timer; a deliberate press on its pane still can.
+- Each enabled provider pane has its own refresh control. A switched-off provider is not fetched by the timer, the settings pane, or `UsageStore.refresh(_:)`; its Current usage group says **Not shown** instead of leaving a permanent loading placeholder.
 - Where a provider has more than one route, which one is used is `AppSettings.source(for:)` (`UsageSource`). `.automatic` is the default: take the primary route when it can, fall back when it cannot. Pinning reports failure instead of quietly answering from elsewhere. Which routes exist: [providers/README.md](providers/README.md).
+- `networkProxy` is one persisted value rather than four independently firing fields. It configures Pulse's external sessions and supported helper processes, then `onChange` queues a full refresh. Scope and the Sparkle exception: [networking.md](networking.md).
 - Colour means usage, not brand (`UsageTint`, optional per-account `RingTint`). Spent colour still wins. Spent comes from the **provider’s flags**, not from crossing 100%. See [ui/rings-and-surface.md](ui/rings-and-surface.md).
 - The rail ring shows one window: closest to limit, or a pin (`AppSettings.pinnedWindows`). Resolved at display time.
 
 `AccountKey` is provider plus which account. The primary account’s id is the provider’s `rawValue` so stored prefs and cache files need no migration. Extra accounts: Claude Code, Codex, Grok, Grok Bot only (`supportsMultipleAccounts`). How those logins work: [providers/README.md](providers/README.md).
 
 Keys pasted in Settings live in `keys.dat` (`APIKeyStore`), not `UserDefaults`. Extra-account tokens live in `accounts.dat`. Both are AES-GCM, owner-only, key derived from the Mac.
+
+## Provider choice before monitoring
+
+`ProviderSetupWindowController` hosts the chooser in a regular AppKit window. On first launch it lists all providers, unchecked, with detected installations first. **Done** needs at least one selection. Closing it or choosing **Not now** leaves the rail absent and the menu bar usable; enabling a service in its Settings pane also completes the initial choice. Dismissing an initial chooser is not saved as completion: the next launch asks again.
+
+The startup gate is the resolved account set, `AppSettings.needsProviderSelection`, not whether any window was dismissed. `AppDelegate` creates the panel and starts `UsageStore` only after that set is non-empty. Store construction seeds placeholders without looking for credentials; `start`, both refresh entry points, and settings-driven refresh also refuse an empty selection. Provider panes load credentials and history automatically only for enabled primary accounts; opening Codex's pane while disabled cannot start its helper. Connection, sign-in, diagnostics and usage controls are built only after the initial choice, so even evaluating their contents cannot read a tool's configuration beforehand. The separate Token spend pane keeps its own workflow.
+
+Claude's desktop Keychain request and status-line offer run only after the primary Claude Code account is enabled, including when enabled later through Settings. A new grant's callback checks it is still enabled before refreshing. Per-provider access descriptions and exact discovery paths belong in [providers/README.md](providers/README.md).
+
+Upgrades preserve the saved enabled account ids, including extra-account-only rails. A provider new to `settings.offeredProviders` is **suggested once**, and only if presence-only discovery found it; existing providers continue monitoring while that chooser is open. Dismissal keeps the existing set. Undetected new providers remain available in Settings. All current providers are stamped as offered during restoration, so a declined upgrade offer does not recur.
+
+**Legacy 1.0.0:** it wrote an offered list but no enabled list until the user edited one. Only an **absent** enabled key is restored from that historical offered list. An explicit empty array, malformed value or unknown-only list goes to the chooser. There is no path that enables all current providers as a recovery strategy.
 
 ## Login item
 

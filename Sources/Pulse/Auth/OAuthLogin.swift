@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import AppKit
 import CryptoKit
 import Foundation
@@ -64,7 +65,8 @@ enum OAuthLogin {
         let deviceFlow: DeviceFlow?
 
         static func of(_ provider: Provider) -> Configuration? {
-            switch provider {
+            guard let written = provider.handWritten else { return nil }
+            return switch written {
             case .claudeCode:
                 // Read out of the installed CLI rather than remembered: an
                 // OAuth flow with one parameter wrong fails in a way that
@@ -142,9 +144,10 @@ enum OAuthLogin {
                     exchangeCarriesState: false,
                     deviceFlow: .standard(code: URL(string: "https://auth.x.ai/oauth2/device/code")!)
                 )
-            case .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+            case .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
              .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grokBot, .volcengine,
-             .commandCode, .deepSeek:
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
+             .v2ex, .qoder, .stepFun, .openAI, .xai, .pulseExtension:
                 nil
             }
         }
@@ -406,7 +409,7 @@ enum OAuthLogin {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await NetworkSession.shared.data(for: request)
         } catch {
             // Cancellation is not the service failing to answer. Reported as
             // one, pressing Cancel wrote an error into a pane the user had
@@ -460,7 +463,7 @@ enum OAuthLogin {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await NetworkSession.shared.data(for: request)
         } catch {
             if error is CancellationError { throw error }
             try Task.checkCancellation()
@@ -483,7 +486,7 @@ enum OAuthLogin {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await NetworkSession.shared.data(for: request)
         } catch {
             // Cancellation is not the service failing to answer. Reported as
             // one, pressing Cancel wrote an error into a pane the user had
@@ -645,7 +648,7 @@ enum OAuthLogin {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await NetworkSession.shared.data(for: request)
         } catch {
             // Cancellation is not the service failing to answer. Reported as
             // one, pressing Cancel wrote an error into a pane the user had

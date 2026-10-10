@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// Reads Codex's usage.
@@ -85,15 +86,13 @@ struct CodexUsageService: Sendable {
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        // `URLSession` follows the system proxy settings, so on a machine
-        // behind a VPN or proxy client this call rides that tunnel — which is
-        // what you want, since the endpoint may only be reachable through it.
-        // The cost is that a tunnel dropping a connection surfaces as a
-        // request failure, so a stumble is retried before it becomes an error
-        // in the UI.
+        // The request follows Pulse's chosen proxy (the system setting unless
+        // a manual one is configured). The cost is that a tunnel dropping a
+        // connection surfaces as a request failure, so a stumble is retried
+        // before it becomes an error in the UI.
         for attempt in 0...Self.retryLimit {
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse else { return .failed(.unreachable) }
 
                 switch http.statusCode {
@@ -186,17 +185,13 @@ struct CodexUsageService: Sendable {
             )
         }
 
-        let credits = root["credits"] as? [String: Any]
-
         return ProviderUsage(
             account: account,
             windows: windows,
             observedAt: Date(),
             state: windows.isEmpty ? .unavailable(.noLimitsReported) : .live,
             plan: (root["plan_type"] as? String).map(planName),
-            creditBalance: (credits?["unlimited"] as? Bool == true)
-                ? nil
-                : credits?["balance"] as? String
+            creditBalance: creditBalance(root["credits"] as? [String: Any])
         )
     }
 
@@ -321,9 +316,7 @@ struct CodexUsageService: Sendable {
             windows += ofThisGroup
 
             plan = plan ?? group["planType"] as? String
-            if credits == nil, let node = group["credits"] as? [String: Any] {
-                credits = (node["unlimited"] as? Bool == true) ? nil : node["balance"] as? String
-            }
+            credits = credits ?? creditBalance(group["credits"] as? [String: Any])
         }
 
         return ProviderUsage(
@@ -391,6 +384,20 @@ struct CodexUsageService: Sendable {
         case "edu": "Edu"
         default: raw
         }
+    }
+
+    /// The credit balance as the reader should see it. Codex sends it as a
+    /// decimal string with ten places — `"2500.0000000000"` — which Settings
+    /// printed verbatim. The figure is credits, not money, so it is shown as
+    /// a number in the reader's locale with at most two places. A balance
+    /// that is not a number is passed through rather than blanked; an
+    /// unlimited one is no balance at all.
+    static func creditBalance(_ node: [String: Any]?) -> String? {
+        guard let node, node["unlimited"] as? Bool != true else { return nil }
+        let raw = node["balance"]
+        let value = number(raw) ?? (raw as? String).flatMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard let value, value.isFinite else { return raw as? String }
+        return value.formatted(.number.precision(.fractionLength(0...2)).locale(LocalizationSource.locale))
     }
 
     private static func number(_ value: Any?) -> Double? {

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// One rate-limit window exactly as a provider reports it.
@@ -5,6 +6,48 @@ import Foundation
 /// Everything here comes from the provider — Pulse never derives a percentage
 /// of its own, because the token budgets behind these limits aren't published
 /// and any guess would be presented as fact.
+extension UsageWindow {
+    /// Whether this window has **unambiguously** turned over since it was last
+    /// seen live at `fraction`, with `resetsAt` as its reset time then.
+    ///
+    /// The rule the reset notification is built on, kept here because two
+    /// things now ask the question — the notification, and the rail's animated
+    /// mark, which celebrates a reset. One rule, one place; the alternative is
+    /// two copies drifting until the mark celebrates something the
+    /// notification would not mention.
+    ///
+    /// A figure that *fell* is not enough on its own: a rolling window —
+    /// Kimi's week, which can reset anywhere inside it — slides down a few
+    /// points at a time without anything having turned over. A reset time that
+    /// has moved forward is the provider saying so; a fraction that has
+    /// dropped forty points has not slid, it has turned over.
+    ///
+    /// **Never for a balance or a top-up pack.** `Kind.balance` is prepaid
+    /// credit and not a limit: there is no window to turn over, `resetsAt` is
+    /// always nil, and on DeepSeek the fraction is a *setting* — so the test
+    /// would fire when somebody moved a picker. `Kind.topUp` is the same
+    /// shape bought in tokens: buying a second pack drops the fraction by
+    /// forty points without any window having reset, and announcing that as a
+    /// reset is a notification about something that did not happen.
+    ///
+    /// **Credits turn over only when the provider says so.** Qoder's allowance
+    /// is the plan *plus* any pack bought on top, so buying one raises the
+    /// limit and drops the fraction forty points with nothing reset — the
+    /// top-up case again, inside a figure that does also reset. A fall is
+    /// therefore not evidence for `.credits` or `.sharedCredits`; only a reset
+    /// time that moved forward is.
+    func hasTurnedOver(since fraction: Double, resetsAt previous: Date?) -> Bool {
+        guard kind != .balance, kind != .topUp else { return false }
+        // A minute of slack: a reset time is often rounded, and a second of
+        // jitter is not a new window.
+        let movedOn = resetsAt.map { new in
+            previous.map { new.timeIntervalSince($0) > 60 } ?? false
+        } ?? false
+        if kind == .credits || kind == .sharedCredits { return movedOn }
+        return movedOn || fraction - usedFraction >= 0.4
+    }
+}
+
 struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
     /// What kind of window this is, kept as meaning rather than as text.
     ///
@@ -21,9 +64,39 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         /// to turn over, and calling it a spend limit put the word "limit"
         /// on a row where none exists.
         case balance
+        /// Devin's, which resets on a fixed daily boundary. The shortest
+        /// window anyone else reports is five hours and the next is a week,
+        /// so this had nowhere to map either.
+        case daily
+        /// An allowance counted in messages rather than in time. Devin's free
+        /// plan reports one — so many messages, so many left — with no window,
+        /// no reset and no length, which is why it is its own kind rather than
+        /// a period nobody stated.
+        case messages
         /// OpenCode Go's billing period. The others' longest window is a
         /// week, so this one had nowhere to map.
         case monthly
+        /// An allowance bought on top of a window's, which is spent only once
+        /// that window's is gone and which **never expires**. V2EX's
+        /// `extra_usage` is the first: a pack of tokens with a stated size and
+        /// a stated amount used, no reset, no length, and no clock.
+        ///
+        /// Its own kind rather than `.balance`, which is money, and rather
+        /// than `.messages`, which is Devin's count of messages — the name
+        /// would be wrong on the card either way. And **not** a window: a pack
+        /// that is topped up has not turned over, which is why
+        /// `hasTurnedOver` excludes it alongside `.balance`.
+        case topUp
+        /// An allowance counted in the provider's own credits, with a reset it
+        /// states and no length it claims. Qoder's is the first: the plan's
+        /// credits and any pack bought on top, as one figure. Not `.monthly`,
+        /// because a trial's run a fortnight and nothing in the reply says how
+        /// long a period is — a name that states a length would be a claim.
+        case credits
+        /// A team's pool of those credits, shared by everyone on the plan and
+        /// reported beside the member's own. Its own kind so the two rows are
+        /// told apart on the card, and so they are never summed into one.
+        case sharedCredits
         case other(seconds: Int)
     }
 
@@ -84,6 +157,44 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
 
     var estimate: Estimate?
 
+    /// The soonest a part of this allowance **stops existing**, as the
+    /// provider states it: how much, and when.
+    ///
+    /// Not a reset. A reset gives the allowance back; this takes it away —
+    /// Qoder's bonus packs each carry their own `expires_at`, and a total of
+    /// 586 can hold 500 that are gone by the end of the month. The card shows
+    /// whichever of this and `resetsAt` comes first. Nil where the provider
+    /// states no expiry, which is everywhere but Qoder.
+    struct Expiry: Equatable, Codable, Sendable {
+        /// In the allowance's own unit — Qoder's or StepFun's credits.
+        let amount: Double
+        let at: Date
+
+        /// The soonest parts to lapse: everything ending on the same day as
+        /// the first one to, added up. Six packs a day apart are six dates;
+        /// two an hour apart are one, and "86 expire" beside another 100 going
+        /// that same evening would understate the day. Only parts still ahead
+        /// of `now` with something left in them count; nil when there are
+        /// none.
+        static func soonest(of parts: [(amount: Double, at: Date)], after now: Date,
+                            calendar: Calendar = .current) -> Expiry? {
+            let ahead = parts.filter { $0.at > now && $0.amount > 0 }
+            guard let first = ahead.map(\.at).min() else { return nil }
+            let sameDay = ahead.filter { calendar.isDate($0.at, inSameDayAs: first) }
+            return .init(amount: sameDay.reduce(0) { $0 + $1.amount }, at: first)
+        }
+    }
+
+    var nextExpiry: Expiry?
+
+    /// A name the reporter gave this limit, used in place of the one built
+    /// from `kind`.
+    ///
+    /// **Extensions only.** A built-in provider's limits are named by Pulse,
+    /// in the reader's language; an extension's are named by the program,
+    /// which knows what they are and Pulse does not. Never translated.
+    var label: String?
+
     /// Spelled out because the hand-written `init(from:)` below suppresses the
     /// synthesised one. Same order and same defaults as before.
     init(
@@ -95,7 +206,9 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         resetsAt: Date?,
         reportsLength: Bool = true,
         estimate: Estimate? = nil,
-        isExhausted: Bool = false
+        isExhausted: Bool = false,
+        nextExpiry: Expiry? = nil,
+        label: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -106,6 +219,8 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         self.reportsLength = reportsLength
         self.estimate = estimate
         self.isExhausted = isExhausted
+        self.nextExpiry = nextExpiry
+        self.label = label
     }
 
     /// Decoded by hand for one reason: `estimate` replaced a stored
@@ -128,6 +243,8 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         resetsAt = try container.decodeIfPresent(Date.self, forKey: .resetsAt)
         reportsLength = try container.decodeIfPresent(Bool.self, forKey: .reportsLength) ?? true
         isExhausted = try container.decodeIfPresent(Bool.self, forKey: .isExhausted) ?? false
+        nextExpiry = try container.decodeIfPresent(Expiry.self, forKey: .nextExpiry)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
 
         if let estimate = try container.decodeIfPresent(Estimate.self, forKey: .estimate) {
             self.estimate = estimate
@@ -152,11 +269,13 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         try container.encode(reportsLength, forKey: .reportsLength)
         try container.encodeIfPresent(estimate, forKey: .estimate)
         try container.encode(isExhausted, forKey: .isExhausted)
+        try container.encodeIfPresent(nextExpiry, forKey: .nextExpiry)
+        try container.encodeIfPresent(label, forKey: .label)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, scope, usedFraction, windowSeconds, resetsAt
-        case reportsLength, isExhausted, estimate
+        case reportsLength, isExhausted, estimate, nextExpiry, label
         /// Written by 1.0.9 and earlier. Read, never written.
         case isEstimated
     }
@@ -197,17 +316,39 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         return min(max(1 - remaining / Double(windowSeconds), 0), 1)
     }
 
+    /// The fraction the outer window-clock arc should draw in the selected
+    /// direction. The evidence requirement stays in `elapsedFraction`: both
+    /// directions are nil unless the provider stated a reset and a duration.
+    func windowClockFraction(
+        direction: WindowClockDirection,
+        at now: Date = Date()
+    ) -> Double? {
+        guard let elapsed = elapsedFraction(at: now) else { return nil }
+        return direction == .remaining ? 1 - elapsed : elapsed
+    }
+
     var name: String {
+        if let label { return label }
         let base: String = switch kind {
         case .fiveHour: .localized("5-hour limit")
         case .weekly: .localized("Weekly limit")
         case .spend: .localized("Spend limit")
         case .balance: .localized("Balance")
+        case .daily: .localized("Daily limit")
+        case .messages: .localized("Message allowance")
         case .monthly: .localized("Monthly limit")
+        case .topUp: .localized("Top-up pack")
+        // Not "Credits", which is already the About pane's acknowledgements
+        // and translates as 致谢 — one key cannot be both.
+        case .credits: .localized("Credit allowance")
+        case .sharedCredits: .localized("Team credits")
+        // Days only when it is a whole number of them: rounded, 36 hours read
+        // as a two-day limit. Never below an hour, which is the finest unit
+        // anything here states.
         case .other(let seconds):
-            seconds >= 86_400
-                ? .localized("\("\(Int((Double(seconds) / 86_400).rounded()))")-day limit")
-                : .localized("\("\(Int((Double(seconds) / 3_600).rounded()))")-hour limit")
+            seconds >= 86_400 && seconds % 86_400 == 0
+                ? .localized("\("\(seconds / 86_400)")-day limit")
+                : .localized("\("\(max(Int((Double(seconds) / 3_600).rounded()), 1))")-hour limit")
         }
         let scoped = scope.map { "\(base) · \($0)" } ?? base
         return estimate.map { "\(scoped) · \($0.title)" } ?? scoped
@@ -284,6 +425,44 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
     }
 }
 
+/// The account and organization a route's figures belong to, as far as the
+/// route could establish them.
+///
+/// **Identity is not one field, and a user id is not an organization.** Devin's
+/// endpoint is scoped to an organization, while the plan row its app saves is
+/// keyed only by a user id — so two readings sharing a user id can still be two
+/// different organizations' allowances, and treating the user id as the whole
+/// answer mixes them. This carries route and organization beside the identity
+/// so a match has to agree on all three.
+struct UsageScope: Equatable, Codable, Sendable {
+    let route: UsageRoute
+    /// The organization the route was scoped to, when it named one. Nil for a
+    /// saved row, which names no organization at all.
+    let organization: String?
+    /// The account the route could name: a browser session's user id, the
+    /// account id in a saved row's key, or — for a pasted credential, which
+    /// names nobody — a hash of the credential, never the credential itself.
+    /// Nil is never a match.
+    let identity: String?
+
+    /// Whether one reading's figures describe the same account's same
+    /// allowance as another's.
+    ///
+    /// Every part has to agree, and an identity missing on either side is not
+    /// a wildcard — it is the absence of evidence, which is not a match.
+    static func match(_ a: UsageScope?, _ b: UsageScope?) -> Bool {
+        guard let a, let b, a.route == b.route, a.organization == b.organization,
+               let aIdentity = a.identity, let bIdentity = b.identity,
+               !aIdentity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !bIdentity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return false }
+        if a.route == .endpoint {
+            guard let organization = a.organization, !organization.isEmpty else { return false }
+        }
+        return aIdentity == bIdentity
+    }
+}
+
 /// Everything Pulse currently knows about one provider.
 struct ProviderUsage: Identifiable, Equatable, Sendable {
     /// Why there is nothing to show.
@@ -318,6 +497,10 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         case codexNotInstalled
         /// Found `codex`, but `codex app-server` wouldn't start.
         case codexServerFailed
+        /// Kiro CLI is absent, too old for the native usage method, or signed out.
+        case kiroNotInstalled
+        case kiroVersionUnsupported
+        case kiroSignInRequired
         /// Antigravity's limits live in a server it only runs while it is open.
         case antigravityNotRunning
         /// It **is** open, and every helper it runs refused this RPC — a
@@ -353,6 +536,10 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         /// The difference is one word, and it is the difference between an
         /// instruction and a puzzle.
         case notSignedIn
+        case deepSeekWebLoginRequired
+        case openAIWebLoginRequired
+        case openAIWebSessionExpired
+        case xaiWebLoginRequired
         /// Ollama has no quota API: the figures come from its signed-in
         /// settings page, so what it needs is a browser session rather than a
         /// key, and the three ways that can fail are worth telling apart.
@@ -379,6 +566,56 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         /// used to be reported as "the service returned an error", which sends
         /// somebody to look for an outage instead of at their subscription.
         case zaiNoCodingPlan
+        /// Devin's figures come out of the cache its own app keeps, so an
+        /// app that has never run here has nothing to read. Its own case
+        /// because the remedy is to install or open something, not to sign in
+        /// to anything.
+        case devinAppMissing
+        /// The app has run here and its store holds no plan — never signed in,
+        /// or a build that stopped writing the row.
+        case devinPlanUnread
+        /// A token was pasted with no organisation beside it. The quota path
+        /// is scoped by one and nothing on this Mac carries it, so this is a
+        /// separate answer from a missing token: half of what is needed is
+        /// there, and saying "add a key" about a field that has one is the
+        /// kind of message that sends people to re-paste what already works.
+        case devinOrganizationMissing
+        /// Xiaomi's console answers only to a browser session; the same
+        /// three ways it can fail as Ollama's, named separately because the
+        /// remedy names a different site.
+        case xiaomiSessionMissing
+        case xiaomiSessionExpired
+        /// The session works and the account has no Coding Plan on it — it
+        /// buys tokens by the yuan instead. A complete answer, not a fault,
+        /// and the same distinction `zaiNoCodingPlan` exists for.
+        case xiaomiNoCodingPlan
+        /// Qoder's account page answers only to a browser session; missing
+        /// and expired are the two ways that fails, named for the site the
+        /// remedy sends somebody to.
+        case qoderSessionMissing
+        case qoderSessionExpired
+        /// The session works and the account reports a credit limit of zero.
+        /// A complete answer — nothing has been granted — and not a ring at
+        /// 100%, which would say something was spent.
+        case qoderNoCredits
+        /// StepFun's console answers only to a browser session, and a working
+        /// one can find no Step Plan on the account — an answer, like Xiaomi's.
+        case stepFunSessionMissing
+        case stepFunSessionExpired
+        case stepFunNoPlan
+        /// A provider whose address is the reader's own has not been given
+        /// one. Separate from a missing key because they are two fields and
+        /// two steps, and "add an API key" about the one that already has a
+        /// key sends people to re-paste what already works.
+        ///
+        /// **Names no provider**, so a second self-hosted service can share
+        /// it — the rule the rest of this enum was fixed for once already.
+        case serverAddressMissing
+        /// There is an address and Pulse will not send a key to it: not a URL,
+        /// or plain http to a host out on the internet. Refused rather than
+        /// quietly rewritten, because an address silently changed is a
+        /// credential going somewhere nobody looked.
+        case serverAddressRefused
         /// No key has been entered for a provider that needs one.
         case apiKeyMissing
         /// There is a key, and the service refused it.
@@ -387,6 +624,30 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         case unreadableReply
         case rateLimited
         case serverError
+        /// An extension's folder is still listed but its program is not there,
+        /// or can no longer be run.
+        case extensionMissing
+        /// An extension's program ran past its time limit and was stopped.
+        case extensionTimedOut
+        /// An extension's program finished with an error, or printed nothing.
+        case extensionFailed
+        /// An extension says its own login has expired. Its own, not one Pulse
+        /// holds, so the remedy is wherever that program keeps it.
+        case extensionSignedOut
+        // Shared by every profiled provider, so none of them may name one.
+        /// No browser session has been read for it yet.
+        case sessionMissing
+        /// The session that was read has been refused.
+        case sessionExpired
+        /// It reads a login its own app or CLI saves, and there isn't one.
+        case localLoginMissing
+        /// That login is there and has been refused.
+        case localLoginExpired
+        /// It reads what its own app keeps on this Mac, and nothing is there.
+        case localAppMissing
+        /// The service answered: this account has no plan with limits. An
+        /// answer, not an outage.
+        case noPlan
 
         var message: String {
             switch self {
@@ -402,6 +663,9 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             case .claudeDesktopSessionExpired: .localized("The Claude desktop app's session was refused. Open it and sign in again.")
             case .codexNotInstalled: .localized("Codex isn't installed.")
             case .codexServerFailed: .localized("Couldn't start the Codex helper.")
+            case .kiroNotInstalled: .localized("Kiro CLI isn't installed.")
+            case .kiroVersionUnsupported: .localized("Update Kiro CLI to read subscription usage.")
+            case .kiroSignInRequired: .localized("Sign in to Kiro CLI to see usage.")
             case .antigravityNotRunning: .localized("Open Antigravity to see its usage.")
             case .antigravityNotAnswering: .localized("Antigravity is open but didn't answer. Restarting it usually helps.")
             case .cursorSignInRequired: .localized("Sign in to Cursor to see usage.")
@@ -411,18 +675,46 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             case .grokBotNotIncluded: .localized("This Cursor plan doesn't include Grok Bot.")
             case .signedOut: .localized("Sign in to this account again in Settings.")
             case .notSignedIn: .localized("Sign in from Settings to see usage.")
+            case .deepSeekWebLoginRequired: .localized("Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings.")
+            case .openAIWebLoginRequired: .localized("Add an OpenAI Platform session in Settings.")
+            case .openAIWebSessionExpired: .localized("The OpenAI Platform session was refused. Sign in again and add it.")
+            case .xaiWebLoginRequired: .localized("Sign in to xAI Console in your browser, or add a Management Key in Settings.")
+            case .xiaomiSessionMissing: .localized("Sign in to Xiaomi's platform in a browser to see usage.")
+            case .xiaomiSessionExpired: .localized("Xiaomi's saved session expired. Sign in again in your browser.")
+            case .xiaomiNoCodingPlan: .localized("No Coding Plan on this Xiaomi account.")
+            case .qoderSessionMissing: .localized("Sign in to Qoder in a browser to see usage.")
+            case .qoderSessionExpired: .localized("Qoder's saved session expired. Sign in again in your browser.")
+            case .qoderNoCredits: .localized("This Qoder account has no credits.")
+            case .stepFunSessionMissing: .localized("Sign in to StepFun's platform in a browser to see usage.")
+            case .stepFunSessionExpired: .localized("StepFun's saved session expired. Sign in again in your browser.")
+            case .stepFunNoPlan: .localized("No Step Plan on this StepFun account.")
             case .ollamaSessionMissing: .localized("Add an Ollama session in Settings.")
             case .ollamaSessionExpired: .localized("The Ollama session expired. Sign in again and add it.")
             case .ollamaPageChanged: .localized("Ollama's page has changed and can no longer be read.")
             case .volcengineCLIMissing: .localized("Install arkcli and run `arkcli auth login`, or add access keys in Settings.")
             case .volcengineSignInRequired: .localized("arkcli isn't signed in. Run `arkcli auth login`.")
             case .zaiNoCodingPlan: .localized("That key works. The account has no Coding Plan running on it.")
+            case .devinAppMissing: .localized("Devin isn't installed.")
+            case .devinPlanUnread: .localized("Open Devin and sign in, so it can record your plan.")
+            case .devinOrganizationMissing: .localized("Add your Devin organization after the token, separated by a space.")
+            case .serverAddressMissing: .localized("Add the server address in Settings.")
+            case .serverAddressRefused: .localized("That address can't be used. It needs https://, unless the server is on your own network.")
             case .apiKeyMissing: .localized("Add an API key in Settings.")
             case .apiKeyRefused: .localized("That key was refused. Check it in Settings.")
             case .unreachable: .localized("The service didn't respond.")
             case .unreadableReply: .localized("Couldn't read the reply.")
             case .rateLimited: .localized("Checking too often — easing off.")
             case .serverError: .localized("The service returned an error.")
+            case .extensionMissing: .localized("This extension's program can't be run. Check its folder.")
+            case .extensionTimedOut: .localized("The extension didn't answer in time.")
+            case .extensionFailed: .localized("The extension stopped with an error.")
+            case .extensionSignedOut: .localized("The extension says its login has expired.")
+            case .sessionMissing: .localized("Read a browser session in Settings.")
+            case .sessionExpired: .localized("The browser session expired. Sign in on the website, then read it again in Settings.")
+            case .localLoginMissing: .localized("Sign in with this service's own app or command-line tool first.")
+            case .localLoginExpired: .localized("The saved login has expired. Sign in again with the service's own app or tool.")
+            case .localAppMissing: .localized("Nothing saved on this Mac yet. Open the service's app once, then retry.")
+            case .noPlan: .localized("This account has no plan with usage limits.")
             }
         }
     }
@@ -440,7 +732,9 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
     /// being enough once one of them could be signed in to twice.
     let account: AccountKey
     /// Ordered as the provider reports them; the first one drives the ring.
-    let windows: [UsageWindow]
+    ///
+    /// `var` because `current(at:)` drops the ones that have since reset.
+    var windows: [UsageWindow]
     let observedAt: Date?
     let state: State
     /// Plan name, when the provider names one.
@@ -458,10 +752,42 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
     var creditRemaining: CreditAmount?
 
     var origin: UsageRoute?
+    /// The account *and organization* the figures belong to, where the route
+    /// can name them.
+    ///
+    /// **Not the same as `account`.** `AccountKey` is Pulse's own rail slot —
+    /// one per login Pulse watches — while this is what the provider itself
+    /// said. Devin is the only provider that needs it: its two routes need not
+    /// answer for the same person *or the same organization*, and matching on a
+    /// user id alone was exactly the mistake this replaces. A route whose scope
+    /// cannot be established never matches another's.
+    var sourceScope: UsageScope?
     /// A stale status-line capture is not necessarily a cache replacement.
     var isCached = false
     /// Only the latest fetch carries attempts; the cache stores the origin alone.
     var attempts: [ConnectionDiagnostic.Attempt] = []
+    /// Extra metrics to display in wallet / detail card (e.g. cycle usage, 30d spend, total deposit).
+    var extras: [WalletSnapshot.ExtraMetric] = []
+
+    /// Whether two readings of this account must agree on their source scope
+    /// before one may stand in for the other.
+    ///
+    /// **Computed from the provider, never set at each return site.** A flag
+    /// written by hand was the earlier mistake: an expired snapshot, a missing
+    /// app, or a reading restored from disk does not go through the one return
+    /// that would have set it, so Devin was silently treated as shareable on
+    /// exactly the paths that mattered. Devin's two routes can name different
+    /// accounts and different organizations; every other provider's cannot.
+    ///
+    /// The two gateways too: each reading is only as good as the server it was
+    /// read from, and the reader can point the account at another one. Qoder
+    /// likewise: its two sites are two accounts, and the site is a setting.
+    var requiresScopeMatch: Bool {
+        switch account.provider {
+        case .devin, .sub2api, .newAPI, .qoder, .stepFun: true
+        default: account.provider.profile?.requiresScopeMatch ?? false
+        }
+    }
 
     /// Money the provider says is left, and what it is denominated in.
     struct CreditAmount: Equatable, Sendable {
@@ -546,8 +872,38 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
     /// previous reading and the setting appeared to do nothing.
     var reportsSomething: Bool { !windows.isEmpty || creditBalance != nil }
 
+    /// The reading as it stands at `now`: windows whose reset has passed are
+    /// gone, and a reading whose figures are older than the cache keeps is
+    /// gone entirely. Nil means nothing current survives.
+    ///
+    /// **Shared by the cache's write path and its read path.** The read path
+    /// has always filtered a restored reading this way; the write path did
+    /// not, so a service whose figures are a snapshot rather than a request —
+    /// Devin's come out of a row its own app writes at launch — could hand
+    /// the cache a live reading whose windows had already reset and whose
+    /// stamp was a day old, and it went straight to the rail. The same rule
+    /// now applies before those figures are ever banked or drawn.
+    func current(at now: Date) -> ProviderUsage? {
+        if let observedAt, now.timeIntervalSince(observedAt) > UsageCache.maximumAge { return nil }
+
+        let kept = windows.filter { ($0.resetsAt ?? .distantFuture) > now }
+        guard !kept.isEmpty || creditBalance != nil else { return nil }
+        guard kept.count != windows.count else { return self }
+
+        var copy = self
+        copy.windows = kept
+        return copy
+    }
+
     func headlineWindow(preferring id: String? = nil) -> UsageWindow? {
         if let id, let pinned = windows.first(where: { $0.id == id }) { return pinned }
+        if provider == .codex {
+            let general = windows.filter { $0.scope == nil }
+            if let weekly = general.filter({ $0.kind == .weekly }).max(by: { $0.usedFraction < $1.usedFraction }) {
+                return weekly
+            }
+            if let fullest = general.max(by: { $0.usedFraction < $1.usedFraction }) { return fullest }
+        }
         return windows.max { $0.usedFraction < $1.usedFraction }
     }
 
@@ -581,6 +937,9 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
 
         let rest = windows.filter { $0.id != headline.id }
         let sameGroup = rest.filter { $0.scope == headline.scope }
+        if provider == .codex, headline.scope == nil {
+            return rest.filter { $0.scope == nil }.max { $0.usedFraction < $1.usedFraction }
+        }
         // `max(by:)` keeps the first of equals, so a rail of untouched windows
         // stays in the provider's own order rather than shuffling between
         // passes.
@@ -600,5 +959,31 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             plan: nil,
             creditBalance: nil
         )
+    }
+}
+
+extension UsageWindow {
+    /// The longest length a reply may state for a window: ten years.
+    static let longestLength = 10 * 366 * 86_400
+
+    /// `count` units of `unitSeconds` each, or nil when that overflows or runs
+    /// past any plausible window.
+    ///
+    /// **A malformed reply drops the window; it does not stop the app.** Four
+    /// readers multiplied a stated duration by its unit unchecked, and a
+    /// count near `Int.max` — which decodes as an `Int` without complaint —
+    /// trapped, ending the whole process rather than one provider's reading.
+    static func length(_ count: Int, unitSeconds: Int) -> Int? {
+        guard count > 0, unitSeconds > 0 else { return nil }
+        let (seconds, overflow) = count.multipliedReportingOverflow(by: unitSeconds)
+        guard !overflow, seconds <= longestLength else { return nil }
+        return seconds
+    }
+}
+
+extension ProviderUsage {
+    /// Whether this usage reading resolves to a monetary balance or spend limit.
+    var isMoney: Bool {
+        WalletAdapter.snapshot(from: self, title: "").mode.isMoney
     }
 }

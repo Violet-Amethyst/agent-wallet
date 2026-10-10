@@ -8,8 +8,8 @@
 # version number to compare against (so no update check), `SMAppService` cannot
 # register a login item, and there is nothing to hand anyone but a build folder.
 #
-#   ./Scripts/bundle.sh            → build.noindex/Pulse.app
-#   ./Scripts/bundle.sh --zip      → and build.noindex/Pulse-<version>.zip to attach
+#   ./Scripts/bundle.sh            → build.noindex/Agent Wallet.app
+#   ./Scripts/bundle.sh --zip      → and build.noindex/Agent-Wallet-<version>.zip to attach
 #                                    to the release
 #   ./Scripts/bundle.sh --open     → and reveal it in Finder
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
-APP="build.noindex/Pulse.app"
+APP="build.noindex/Agent Wallet.app"
 BUNDLE_ID="io.github.qunqin24.Pulse"
 FEED_URL="https://raw.githubusercontent.com/qunqin24/Pulse/main/appcast.xml"
 # Public half of the EdDSA key updates are signed with. Safe to commit — it is
@@ -30,12 +30,47 @@ FEED_URL="https://raw.githubusercontent.com/qunqin24/Pulse/main/appcast.xml"
 # private half. See Scripts/appcast.py.
 PUBLIC_KEY="$(tr -d '[:space:]' < Scripts/sparkle-public-key.txt)"
 
-echo "Building Pulse $VERSION (universal)…"
+echo "Building Agent Wallet $VERSION (universal)…"
+
+# macOS picks which design an app gets from the SDK version recorded in its
+# binary's LC_BUILD_VERSION, not from the version it is running on. Below 26 it
+# draws the pre-Tahoe controls, and no Info.plist key opts back in. Liquid
+# Glass (`glassEffect`) needs the same SDK to compile at all.
+#
+# The stamp itself is set in Package.swift, so that every way of building this
+# package agrees — including running it from Xcode, which does not come
+# through here. What this script adds is the check: read the stamp back off
+# every slice after linking and refuse to package anything below 26.
+#
+# That check is here rather than left to the flag because the failure is
+# silent. SwiftPM stamped the deployment target into that field under one
+# toolchain and the real SDK under the previous one, with no error either way
+# — what shipped was simply an app drawn the old way, which no build log and
+# no test would have caught. See Docs/decisions/sdk-stamp-and-appearance.md.
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+
+if [ "${SDK_VERSION%%.*}" -lt 26 ]; then
+    echo "Need the macOS 26 SDK or newer to build a release; found $SDK_VERSION." >&2
+    echo "Point xcode-select at an Xcode that ships it." >&2
+    exit 1
+fi
+
+echo "  SDK $SDK_VERSION"
 
 # Both architectures, so the same download runs on Apple Silicon and Intel.
 swift build -c release --arch arm64 --arch x86_64
 
 BUILT="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+
+for arch in arm64 x86_64; do
+    stamped="$(otool -arch "$arch" -l "$BUILT/Pulse" \
+        | awk '/LC_BUILD_VERSION/{f=1} f&&/^ *sdk /{print $2; exit}')"
+    if [ -z "$stamped" ] || [ "${stamped%%.*}" -lt 26 ]; then
+        echo "The $arch slice records sdk ${stamped:-none}, so macOS would draw it the old way." >&2
+        echo "Package.swift's linkerSettings are no longer taking effect." >&2
+        exit 1
+    fi
+done
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -82,8 +117,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Pulse</string>
-    <key>CFBundleDisplayName</key><string>Pulse</string>
+    <key>CFBundleName</key><string>Agent Wallet</string>
+    <key>CFBundleDisplayName</key><string>Agent Wallet</string>
     <key>CFBundleExecutable</key><string>Pulse</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -101,6 +136,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <array>
         <string>en</string>
         <string>zh-Hans</string>
+        <string>zh-Hant</string>
+        <string>ja</string>
+        <string>ko</string>
     </array>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
@@ -116,14 +154,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
         <key>CFBundleTypeRole</key><string>Viewer</string>
     </dict></array>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>github.com/qunqin24/Pulse</string>
-    <key>SUFeedURL</key><string>$FEED_URL</string>
+    <!-- Disarm Sparkle from checking upstream Pulse releases to protect custom wallet logic -->
+    <!-- <key>SUFeedURL</key><string>$FEED_URL</string> -->
     <key>SUPublicEDKey</key><string>$PUBLIC_KEY</string>
-    <!-- Checked on a schedule without asking first. Sparkle would normally put
-         up a permission prompt, but Pulse is an .accessory app whose panel
-         never becomes key, so that window can open behind everything and go
-         unanswered. The toggle is in Settings instead, where it can be found. -->
-    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUEnableAutomaticChecks</key><false/>
+    <!-- Two hours, against Sparkle's default of one day. A day is sized for
+         apps that ship every few months; this one ships fixes for things it
+         is doing wrong right now, and a user burning a core on a bug that was
+         fixed yesterday should not have to wait out the rest of the day to
+         hear about it. Sparkle clamps anything under an hour, and the check
+         is measured from the last one rather than from launch, so this is at
+         most twelve requests a day and usually fewer.
+         Still only an offer: SUAutomaticallyUpdate stays false below. -->
+    <key>SUScheduledCheckInterval</key><integer>7200</integer>
     <!-- Downloading and installing on its own stays off: an update is offered,
          not applied behind the user's back. -->
     <key>SUAutomaticallyUpdate</key><false/>
@@ -146,7 +189,7 @@ echo "→ $APP"
 # `ditto`, not `zip`: an app bundle carries symlinks and resource forks that a
 # plain zip quietly flattens, and the unzipped copy then refuses to launch.
 if [ "${1:-}" = "--zip" ]; then
-    ZIP="build.noindex/Pulse-$VERSION.zip"
+    ZIP="build.noindex/Agent-Wallet-$VERSION.zip"
     rm -f "$ZIP"
     ditto -c -k --keepParent "$APP" "$ZIP"
     echo "→ $ZIP"

@@ -15,11 +15,30 @@ import Testing
 /// catch a wrong count — the numbers *are* the bug. So `shownSlotCount` is
 /// called here for real, and the rest pins the geometry that makes agreeing on
 /// it sufficient, at every edge and both dock states.
-@Suite("Rail geometry")
-struct RailGeometryTests {
+extension PanelGlobalsSuite {
+    @Suite("Rail geometry")
+    struct RailGeometryTests {
     private static let edges: [PanelEdge] = [.left, .right, .top]
     /// One, a handful, and a rail longer than any real one.
     private static let counts = [1, 2, 3, 7, 15, 16]
+
+    /// Runs `body` once per end style.
+    ///
+    /// `AppSettings.usesRoundEnds` picks between two different rails: softened
+    /// ends take a written `verticalPadding` of 46, round ones derive 54 from
+    /// the end's own circle. The invariants below have to hold for both, and
+    /// only one of them is the default — so without this the other ships
+    /// untested. The flag is a global on `PanelMetrics`, which is why the
+    /// suite is serialized and why the original is put back.
+    private func underEachEndStyle(_ body: (String) -> Void) {
+        let original = PanelMetrics.usesRoundEnds
+        defer { PanelMetrics.useRoundEnds(original) }
+
+        for round in [false, true] {
+            PanelMetrics.useRoundEnds(round)
+            body(round ? "round ends" : "softened ends")
+        }
+    }
 
     /// Where the rail's own hit area sits, for a rail of `count` rings.
     private func rail(_ count: Int, _ edge: PanelEdge, docked: Bool) -> CGRect {
@@ -44,17 +63,19 @@ struct RailGeometryTests {
     @MainActor
     @Test("Every ring's centre lies inside the rail it is drawn on")
     func everyRingCentreIsInsideTheRail() {
-        for edge in Self.edges {
-            for docked in [true, false] {
-                for count in Self.counts {
-                    let area = rail(count, edge, docked: docked)
+        underEachEndStyle { style in
+            for edge in Self.edges {
+                for docked in [true, false] {
+                    for count in Self.counts {
+                        let area = rail(count, edge, docked: docked)
 
-                    for index in 0..<count {
-                        let centre = ringCentre(index, in: area, edge, docked: docked)
-                        #expect(
-                            area.contains(centre),
-                            "ring \(index) of \(count), \(edge) edge, docked \(docked)"
-                        )
+                        for index in 0..<count {
+                            let centre = ringCentre(index, in: area, edge, docked: docked)
+                            #expect(
+                                area.contains(centre),
+                                "ring \(index) of \(count), \(edge) edge, docked \(docked), \(style)"
+                            )
+                        }
                     }
                 }
             }
@@ -70,22 +91,47 @@ struct RailGeometryTests {
     func theLastRingIsNotClippedByTheRail() {
         let radius = DockLayout.ringDiameter / 2
 
-        for edge in Self.edges {
-            for docked in [true, false] {
-                for count in Self.counts {
-                    let area = rail(count, edge, docked: docked)
-                    let centre = ringCentre(count - 1, in: area, edge, docked: docked)
-                    let ring = CGRect(
-                        x: centre.x - radius, y: centre.y - radius,
-                        width: radius * 2, height: radius * 2
-                    )
+        underEachEndStyle { style in
+            for edge in Self.edges {
+                for docked in [true, false] {
+                    for count in Self.counts {
+                        let area = rail(count, edge, docked: docked)
+                        let centre = ringCentre(count - 1, in: area, edge, docked: docked)
+                        let ring = CGRect(
+                            x: centre.x - radius, y: centre.y - radius,
+                            width: radius * 2, height: radius * 2
+                        )
 
-                    #expect(
-                        area.contains(ring),
-                        "last of \(count) rings, \(edge) edge, docked \(docked): \(ring) escapes \(area)"
-                    )
+                        #expect(
+                            area.contains(ring),
+                            "last of \(count) rings, \(edge) edge, docked \(docked), \(style): \(ring) escapes \(area)"
+                        )
+                    }
                 }
             }
+        }
+    }
+
+    /// The two rules `DockBerthShape` is drawn against, for both styles.
+    ///
+    /// The corner and the flare share the rail's top and bottom edges, so
+    /// `cornerRadius + flareWidth` may not exceed the width or the body's flat
+    /// edge runs backwards and the outline folds in on itself. And the flare
+    /// lives inside the bounding rect, so padding shorter than it would lay
+    /// the first ring outside the shape and clip it. Neither is visible in a
+    /// hit test, which is what the tests above check.
+    @MainActor
+    @Test("The berth outline cannot fold or clip, whichever ends are drawn")
+    func theBerthOutlineHoldsItsConstraints() {
+        underEachEndStyle { style in
+            #expect(
+                DockLayout.cornerRadius + DockLayout.flareWidth <= DockLayout.width,
+                "\(style): corner and flare overrun the rail's width"
+            )
+            #expect(
+                DockLayout.verticalPadding >= DockLayout.flareHeight,
+                "\(style): the first ring is laid out inside the flare"
+            )
         }
     }
 
@@ -161,6 +207,27 @@ struct RailGeometryTests {
 
                     #expect(hit == slot, "ring \(index), \(edge) edge, docked \(docked)")
                 }
+            }
+        }
+    }
+
+    /// The window's size is whole points at every scale and edge.
+    ///
+    /// AppKit rounds the frame it is given; SwiftUI draws the rail against the
+    /// rounded one while hit tests use this. A fractional width left the last
+    /// half point at the screen edge drawn but dead, and a pointer pushed
+    /// against a docked rail closed it.
+    @Test("The panel's size is whole points", arguments: edges)
+    func panelSizeIsIntegral(edge: PanelEdge) {
+        let original = PanelSize.allCases.first { $0.scale == PanelMetrics.scale } ?? .default
+        defer { PanelMetrics.use(original) }
+
+        underEachEndStyle { style in
+            for size in PanelSize.allCases {
+                PanelMetrics.use(size)
+                let panel = FloatingPanelController.Layout.size(for: edge)
+                #expect(panel.width == panel.width.rounded(), "\(edge) \(size) \(style): width \(panel.width)")
+                #expect(panel.height == panel.height.rounded(), "\(edge) \(size) \(style): height \(panel.height)")
             }
         }
     }
@@ -244,7 +311,7 @@ struct RailOffsetTests {
 
     @Test("Offsets put the rail where the layout meant it to be")
     func offsetsRoundTripAgainstTheGrantedFrame() {
-        let placement = PanelPlacement(dock: .floating, horizontalRatio: 0.8, verticalRatio: 0.44)
+        let placement = PanelPlacement(dock: .floating(.vertical), horizontalRatio: 0.8, verticalRatio: 0.44)
         let layout = placement.layout(in: visible, topEdge: 1134, panel: panel, rail: rail)
 
         // Granted as asked: the rail's top lands exactly where layout put it.
@@ -257,7 +324,7 @@ struct RailOffsetTests {
     /// The refusal this suite exists for, with the numbers the probe recorded.
     @Test("A frame the window was refused does not move the rail")
     func aRefusedFrameDoesNotMoveTheRail() {
-        let placement = PanelPlacement(dock: .floating, horizontalRatio: 0.8, verticalRatio: 0.44)
+        let placement = PanelPlacement(dock: .floating(.vertical), horizontalRatio: 0.8, verticalRatio: 0.44)
         let layout = placement.layout(in: visible, topEdge: 1134, panel: panel, rail: rail)
 
         // What AppKit actually grants: the top pinned under the menu bar.
@@ -295,4 +362,268 @@ struct RailOffsetTests {
         #expect(offsets.leading >= 0)
         #expect(offsets.leading <= max(tiny.width - rail.width, 0))
     }
+
+    /// The two proportions of a rail lying free across, and the top dock's,
+    /// which neither may change.
+    @Suite("Free lying rail proportions", .serialized)
+    struct FreeLyingRailProportionTests {
+        @MainActor
+        @Test("Figures under: closer rings and more room above and below; beside: the upright rail's thickness; docked: untouched")
+        func proportions() {
+            let labels = PanelMetrics.topRailShowsPercentages
+            let beside = PanelMetrics.freeAcrossFiguresBeside
+            let dual = PanelMetrics.usesDualTrack
+            defer {
+                PanelMetrics.showTopPercentages(labels)
+                PanelMetrics.putFreeAcrossFiguresBeside(beside)
+                PanelMetrics.useDualTrack(dual)
+            }
+            PanelMetrics.useDualTrack(false)
+            PanelMetrics.showTopPercentages(true)
+
+            PanelMetrics.putFreeAcrossFiguresBeside(false)
+            // Where the hit test puts a ring is where the drawing does: the
+            // stacked item centred in the free rail's own thickness, behind its
+            // own padding — not the top dock's.
+            if !DockLayout.labelLeads {
+                #expect(DockLayout.ringCentreAcross(on: .horizontal, docked: false)
+                    == DockLayout.crossPadding(on: .horizontal, docked: false) + DockLayout.ringDiameter / 2)
+            }
+            let docked = DockLayout.thickness(on: .horizontal, docked: true)
+            let dockedStep = DockLayout.ringStep(on: .horizontal, docked: true)
+            #expect(DockLayout.thickness(on: .horizontal, docked: false) == docked + 8 * PanelMetrics.scale)
+            #expect(DockLayout.ringStep(on: .horizontal, docked: false) == dockedStep - 10 * PanelMetrics.scale * PanelMetrics.spacing)
+
+            PanelMetrics.putFreeAcrossFiguresBeside(true)
+            #expect(DockLayout.thickness(on: .horizontal, docked: false) == DockLayout.thickness(on: .vertical))
+            // Beside means right of the ring, even with figures set above
+            // (issue #73): the ring leads its item.
+            let above = PanelMetrics.labelAboveRing
+            PanelMetrics.putLabelAboveRing(true)
+            #expect(DockLayout.firstRingAlong(docked: false, on: .horizontal)
+                == DockLayout.endPadding(docked: false) + DockLayout.ringDiameter / 2)
+            PanelMetrics.putLabelAboveRing(above)
+            // The time arc moves a figure 5pt further from its ring.
+            let clock = PanelMetrics.showsWindowClock
+            PanelMetrics.showWindowClock(false)
+            let plain = DockLayout.ringToTextSpacing
+            PanelMetrics.showWindowClock(true)
+            #expect(DockLayout.ringToTextSpacing == plain + 5 * PanelMetrics.scale)
+            PanelMetrics.showWindowClock(clock)
+            #expect(DockLayout.thickness(on: .horizontal, docked: true) == docked)
+            #expect(DockLayout.ringStep(on: .horizontal, docked: true) == dockedStep)
+            // The window is budgeted for the longer and the thicker of the rails.
+            #expect(DockLayout.maximumLength(on: .horizontal, capacity: 7)
+                == DockLayout.length(for: 7, on: .horizontal, docked: false))
+        }
+    }
+
+    @Suite("Dual-track Olympic rail geometry")
+    struct DualTrackOlympicRailGeometryTests {
+    private struct TestSlot: Identifiable {
+        let id: String
+        let isMoney: Bool
+    }
+
+    private let quotaSlots = [
+        TestSlot(id: "antigravity", isMoney: false),
+        TestSlot(id: "claudeCode", isMoney: false),
+        TestSlot(id: "copilot", isMoney: false),
+        TestSlot(id: "cursor", isMoney: false),
+        TestSlot(id: "qoder", isMoney: false)
+    ]
+
+    private let moneySlots = [
+        TestSlot(id: "deepSeek", isMoney: true),
+        TestSlot(id: "openAI", isMoney: true),
+        TestSlot(id: "xai", isMoney: true)
+    ]
+
+    private var allSlots: [TestSlot] {
+        quotaSlots + moneySlots
+    }
+
+    @Test("Left rail positions quota on left and money on right staggered at midlines")
+    func leftRailDualTrackPositions() {
+        let originalEnds = PanelMetrics.usesRoundEnds
+        PanelMetrics.useRoundEnds(false)
+        PanelMetrics.useDualTrack(true)
+        defer {
+            PanelMetrics.useRoundEnds(originalEnds)
+            PanelMetrics.useDualTrack(false)
+        }
+
+        let edge = PanelEdge.left
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        #expect(size.width == 120 * PanelMetrics.scale)
+
+        let railRect = PanelHitArea.rail(edge: edge, railSize: size, railTop: 0, railLeading: 0)
+        let geos = DockLayout.slotGeometries(
+            for: allSlots,
+            isMoney: { $0.isMoney },
+            edge: edge,
+            docked: docked
+        )
+
+        let firstAlong = DockLayout.firstRingAlong(docked: docked, on: edge.axis)
+        let step = DockLayout.ringStep(on: edge.axis, isDual: true)
+        let radius = DockLayout.ringDiameter / 2
+
+        // Verify quota slots: column 1 (left)
+        for (i, slot) in quotaSlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(!geo.isMoney)
+            #expect(abs(geo.across - 34 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + CGFloat(i) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+
+        // Verify money slots: column 2 (right), staggered at midlines
+        for (j, slot) in moneySlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(geo.isMoney)
+            #expect(abs(geo.across - 86 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + (CGFloat(j) + 0.5) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+    }
+
+    @Test("Right rail positions quota on left and money on right")
+    func rightRailDualTrackPositions() {
+        PanelMetrics.useDualTrack(true)
+        defer { PanelMetrics.useDualTrack(false) }
+
+        let edge = PanelEdge.right
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        #expect(size.width == 120 * PanelMetrics.scale)
+
+        let geos = DockLayout.slotGeometries(
+            for: allSlots,
+            isMoney: { $0.isMoney },
+            edge: edge,
+            docked: docked
+        )
+
+        // Quota rings are on the left (across = 34)
+        for slot in quotaSlots {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 34 * PanelMetrics.scale) < 0.01)
+        }
+
+        // Money rings are on the right (across = 86)
+        for slot in moneySlots {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 86 * PanelMetrics.scale) < 0.01)
+        }
+    }
+
+    @Test("Top rail positions money on top row and quota on bottom row")
+    func topRailDualTrackPositions() {
+        PanelMetrics.useDualTrack(true)
+        defer { PanelMetrics.useDualTrack(false) }
+
+        let edge = PanelEdge.top
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        let railRect = PanelHitArea.rail(edge: edge, railSize: size, railTop: 0, railLeading: 0)
+
+        let geos = DockLayout.slotGeometries(
+            for: allSlots,
+            isMoney: { $0.isMoney },
+            edge: edge,
+            docked: docked
+        )
+
+        let firstAlong = DockLayout.firstRingAlong(docked: docked, on: edge.axis)
+        let step = DockLayout.ringStep(on: edge.axis, isDual: true)
+        let radius = DockLayout.ringDiameter / 2
+
+        // Money rings on top row (Row 1, across = 34)
+        for (j, slot) in moneySlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 34 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + (CGFloat(j) + 0.5) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+
+        // Quota rings on bottom row (Row 2, across = 86)
+        for (i, slot) in quotaSlots.enumerated() {
+            let geo = geos[slot.id]!
+            #expect(abs(geo.across - 86 * PanelMetrics.scale) < 0.01)
+            #expect(abs(geo.along - (firstAlong + CGFloat(i) * step)) < 0.01)
+
+            let ringBox = CGRect(
+                x: geo.ringCentre.x - radius,
+                y: geo.ringCentre.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            #expect(railRect.contains(ringBox))
+        }
+    }
+
+    @Test("PanelHitArea slot hits exact circle in dual track")
+    func hitTestingInDualTrack() {
+        PanelMetrics.useDualTrack(true)
+        defer { PanelMetrics.useDualTrack(false) }
+
+        let railSlots = allSlots.map { RailSlot(AccountKey(Provider(rawValue: $0.id) ?? .antigravity)) }
+        let edge = PanelEdge.left
+        let docked = true
+        let size = DockLayout.size(quotaCount: quotaSlots.count, moneyCount: moneySlots.count, on: edge.axis, docked: docked)
+        let rail = PanelHitArea.rail(edge: edge, railSize: size, railTop: 0, railLeading: 0)
+
+        let isMoney: (RailSlot) -> Bool = { slot in
+            let id = slot.id
+            return id == "deepSeek" || id == "openAI" || id == "xai"
+        }
+
+        let geos = DockLayout.slotGeometries(
+            for: railSlots,
+            isMoney: isMoney,
+            edge: edge,
+            docked: docked
+        )
+
+        for slot in railSlots {
+            let geo = geos[slot.id]!
+            let clickPoint = CGPoint(x: rail.minX + geo.ringCentre.x, y: rail.minY + geo.ringCentre.y)
+            let hit = PanelHitArea.slot(
+                at: clickPoint,
+                edge: edge,
+                slots: railSlots,
+                isMoney: isMoney,
+                railTop: 0,
+                railLeading: 0,
+                docked: docked
+            )
+            #expect(hit?.id == slot.id)
+        }
+    }
 }
+}
+}
+
