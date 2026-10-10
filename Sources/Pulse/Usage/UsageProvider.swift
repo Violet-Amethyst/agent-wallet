@@ -155,15 +155,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     enum Billing: String, Sendable, CaseIterable {
         case subscription
         case api
-
-        var sectionTitle: String {
-            switch self {
-            case .subscription:
-                return String.localized("Subscription Plans")
-            case .api:
-                return String.localized("Pay-as-you-go Wallets")
-            }
-        }
     }
 
     var billing: Billing {

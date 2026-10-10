@@ -567,8 +567,11 @@ struct FloatingUsagePanelContent: View {
             let surface = PanelHitArea.notchSurface(rail: rail, notchSize: notch.size)
             if NotchBerthShape(notchSize: notch.size)
                 .path(in: surface.insetBy(dx: -DockLayout.flareWidth, dy: 0)).contains(point) { return true }
+        } else if rail.contains(point) {
+            // Not at a notch: there the rail's ends reach past the drawn
+            // surface (`notchSurface`), and empty air must not hold it open.
+            return true
         }
-        if rail.contains(point) { return true }
 
         guard let index = selectedIndex else { return false }
 
@@ -624,7 +627,8 @@ enum PanelHitArea {
     /// further out at the screen edge, and the grab area deliberately does not
     /// follow it there.
     static func notchSurface(rail: CGRect, notchSize: CGSize) -> CGRect {
-        let width = max(rail.width, notchSize.width)
+        let flareRoom = DockLayout.endPadding(docked: true) - DockLayout.endPadding(docked: false)
+        let width = max(rail.width - flareRoom * 2, notchSize.width)
         return CGRect(x: rail.midX - width / 2, y: rail.minY - notchSize.height,
                       width: width, height: rail.height + notchSize.height)
     }

@@ -1,7 +1,7 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import AppKit
 import CommonCrypto
 import Foundation
-import LocalAuthentication
 import SQLite3
 
 /// Reading one site's session cookie out of the browser the user signed in
@@ -275,8 +275,7 @@ enum BrowserCookies {
     /// under "Microsoft Edge Safe Storage", and building the name from the
     /// display name found nothing, failed silently, and fell through to the
     /// next browser.
-    static func safeStorageKey(service: String, allowInteraction: Bool = true) -> Data? {
-        if let cached = keychainKeyCache.value(for: service) { return cached }
+    static func safeStorageKey(service: String) -> Data? {
         var request: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -287,21 +286,11 @@ enum BrowserCookies {
         // versions, so the account is left unconstrained.
         request[kSecAttrAccount as String] = nil
 
-        if !allowInteraction {
-            let context = LAContext()
-            context.interactionNotAllowed = true
-            request[kSecUseAuthenticationContext as String] = context
-        }
-
         var item: CFTypeRef?
-        var passwordData: Data?
-        if SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess,
-           let password = item as? Data {
-            passwordData = password
-        } else if let cli = readKeychainCLI(service: service) {
-            passwordData = cli
-        }
-        guard let password = passwordData else { return nil }
+        guard
+            SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess,
+            let password = item as? Data
+        else { return nil }
 
         // Chromium's own parameters, unchanged since the scheme was
         // introduced: PBKDF2-SHA1 over the keychain password, a fixed salt,
@@ -318,42 +307,7 @@ enum BrowserCookies {
                 )
             }
         }
-        guard derived == kCCSuccess else { return nil }
-        keychainKeyCache.insert(key, for: service)
-        return key
-    }
-
-    private static func readKeychainCLI(service: String) -> Data? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", service, "-w"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return nil }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else { return nil }
-        return text.data(using: .utf8)
-    }
-
-    private static let keychainKeyCache = KeychainKeyCache()
-
-    private final class KeychainKeyCache: @unchecked Sendable {
-        private let lock = NSLock()
-        private var values: [String: Data] = [:]
-
-        func value(for service: String) -> Data? {
-            lock.lock(); defer { lock.unlock() }
-            return values[service]
-        }
-
-        func insert(_ value: Data, for service: String) {
-            lock.lock(); defer { lock.unlock() }
-            values[service] = value
-        }
+        return derived == kCCSuccess ? key : nil
     }
 
     /// AES-128-CBC with an all-spaces IV, after the version prefix.

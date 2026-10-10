@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// How the DeepSeek ring gets a denominator, and where that denominator comes
@@ -105,5 +106,3 @@ enum DeepSeekBaseline {
         PulseStorage.directory.appending(path: "deepseek-baseline.json")
     }
 }
-
-typealias DeepSeekBasis = BalanceBasis

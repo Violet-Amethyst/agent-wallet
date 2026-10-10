@@ -16,8 +16,8 @@ struct QoderCNSession: Sendable {
     var authFile = QoderCNSession.authFile
     var seal: @Sendable (Data) -> Data? = { LocalSecrets.seal($0, purpose: "Agent Wallet Qoder CN session v1") }
     var open: @Sendable (Data) -> Data? = { LocalSecrets.open($0, purpose: "Agent Wallet Qoder CN session v1") }
-    var readKey: @Sendable (Bool) -> Data? = {
-        BrowserCookies.safeStorageKey(service: "Qoder CN App Safe Storage", allowInteraction: $0)
+    var readKey: @Sendable (Bool) -> Data? = { _ in
+        BrowserCookies.safeStorageKey(service: "Qoder CN App Safe Storage")
     }
 
     private struct Saved: Codable {

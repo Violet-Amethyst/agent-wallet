@@ -1,6 +1,8 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import SwiftUI
 
-/// What the panel's shapes are filled with: flat black, or Liquid Glass.
+/// What the panel's shapes are filled with: flat black, flat light, or Liquid
+/// Glass.
 ///
 /// Black is the default and stays it. The panel sits over whatever the user is
 /// working on all day, and a solid surface is the one that is legible over
@@ -22,8 +24,14 @@ struct PanelSurface<S: Shape>: View {
     /// Tints the surface when a limit is close enough to matter. Nil leaves it
     /// neutral.
     var tint: Color?
+    /// The side lying against the screen's edge, if any: the light panel's
+    /// hairline is left off it, where it would be a grey line along the very
+    /// edge of the display.
+    var screenEdge: Edge.Set = []
     /// The reader's setting, handed down from the panel's root.
     @Environment(\.glassTransparency) private var transparency
+    /// Light only when the reader chose the light panel; the root pins it.
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         // Deliberately hit-testable, and the panel cannot be dragged without
@@ -48,6 +56,31 @@ struct PanelSurface<S: Shape>: View {
     private var surface: some View {
         if usesGlass {
             glass
+        } else if colorScheme == .light {
+            shape.fill(tint ?? PanelLight.fill)
+                // Black over a black window loses its edge too, but light over
+                // a white page is the usual case for this surface, and without
+                // the line the card's tail is all that says where it ends.
+                //
+                // **Inside the outline, not outside.** The window is exactly
+                // card + rail wide, so the rail's far side and the card's far
+                // side lie on the window's edge, and the half of a line drawn
+                // outside them was cut off — that side looked sliced (#74).
+                // Outlined from the *normalized* path: the card's tail is its
+                // own subpath overlapping the body, and stroking that as it
+                // stands draws the body's edge straight through the join.
+                .overlay {
+                    let outline = PanelOutline(shape: shape)
+                        .stroke(PanelLight.edge, lineWidth: PanelLight.edgeWidth * 2)
+                        .clipShape(shape)
+                    // Masked only where a side lies on the screen; the card and
+                    // a free rail have none, and need no extra pass.
+                    if screenEdge.isEmpty {
+                        outline
+                    } else {
+                        outline.mask { Rectangle().padding(screenEdge, PanelLight.edgeWidth) }
+                    }
+                }
         } else {
             shape.fill(tint ?? .black)
         }
@@ -70,6 +103,14 @@ struct PanelSurface<S: Shape>: View {
     private var glass: some View {
         if #available(macOS 26, *) {
             Color.clear.glassEffect(.clear.tint(tint ?? PanelGlass.dim(transparency: transparency)), in: shape)
+                // The glass and its tint are composited by the system, not
+                // drawn into this window, so where only glass lies the
+                // window's own pixels are empty — and the window server sends
+                // a press there to whatever is behind, before `sendEvent`
+                // could take it. Reported on the docked rail (#68): rings
+                // draggable, glass between them not. A fill no one can see
+                // gives those pixels to the window.
+                .background(shape.fill(PanelGlass.claim))
         } else {
             shape
                 .fill(.ultraThinMaterial)
@@ -84,11 +125,32 @@ enum PanelGlass {
     /// default sits there, in the middle of the slider.
     static let maximumDim = 0.6
     static let defaultTransparency = 0.5
+    /// Under the glass only so the window owns the pixels and is handed the
+    /// press. Not zero: a fully clear pixel is one the window server passes on.
+    static let claim = Color.black.opacity(0.01)
 
     /// Laid under the panel's white content on clear glass. The alert tint
     /// replaces it on the sliver.
     static func dim(transparency: Double) -> Color {
         .black.opacity((1 - min(max(transparency, 0), 1)) * maximumDim)
+    }
+}
+
+/// The light panel's surface (#74). Not pure white: on a white page that is
+/// a hole with a hairline round it, and the slight grey reads as a surface.
+enum PanelLight {
+    static let fill = Color(white: 0.97)
+    static let edge = Color.black.opacity(0.12)
+    static var edgeWidth: CGFloat { 1 }
+}
+
+/// A shape's outline with its overlaps dissolved, so a stroke follows only
+/// the outside of the union.
+private struct PanelOutline<S: Shape>: Shape {
+    let shape: S
+
+    func path(in rect: CGRect) -> Path {
+        shape.path(in: rect).normalized(eoFill: false)
     }
 }
 

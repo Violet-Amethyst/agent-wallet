@@ -26,14 +26,20 @@ enum CardHistorySource: Equatable, Sendable {
 
 extension Provider {
     var cardHistory: CardHistorySource? {
+        cardHistory(openCodeSession: OpenCodeConsole.hasSession, deepSeekSession: DeepSeekConsole.hasSession)
+    }
+
+    /// The rule, with whether each console's sign-in is kept passed in: those
+    /// are this Mac's state, which a test must not depend on.
+    func cardHistory(openCodeSession: Bool, deepSeekSession: Bool) -> CardHistorySource? {
         if keepsLocalTranscripts { return .transcripts }
         if self == .zai || self == .glmCoding { return .accountStatistics }
         // The console's log once its session is kept — every machine, and
         // what was charged — and this Mac's OpenCode records until then.
-        if self == .openCodeGo, OpenCodeConsole.hasSession { return .accountLogs }
+        if self == .openCodeGo, openCodeSession { return .accountLogs }
         // DeepSeek's console usage once its sign-in is kept. No local
         // records stand in before that: nothing on this Mac logs it.
-        if self == .deepSeek, DeepSeekConsole.hasSession { return .accountLogs }
+        if self == .deepSeek, deepSeekSession { return .accountLogs }
         let agents = SpendAgent.allCases.filter { $0.iconProvider == self && $0.provider == nil }
         return agents.isEmpty ? nil : .agents(agents)
     }
@@ -103,6 +109,16 @@ final class CardLedgers {
         Task { [weak self] in
             let outcome = await Self.ledger(for: provider, from: source)
             guard let self else { return }
+            // **Signed in to another account while this was out.** The answer
+            // is the old account's; it is dropped, and the account now kept
+            // is read instead of being shown the other one's history.
+            guard Self.inputs(for: provider) == with else {
+                self.reading.remove(provider)
+                self.readWith[provider] = nil
+                self.ledgers[provider] = nil
+                if let current = provider.cardHistory { self.read(provider, from: current) }
+                return
+            }
             switch outcome {
             case .answered(let ledger):
                 self.ledgers[provider] = ledger
@@ -119,10 +135,23 @@ final class CardLedgers {
         }
     }
 
+    /// Which login, and which currency, a console's ledger was read with.
+    /// Hashed, in memory only, so a change can be noticed without the secret
+    /// being kept a second time.
+    ///
+    /// **OpenCode's sign-in counts too.** Only DeepSeek's did, so reading a
+    /// second OpenCode workspace's session in Settings left the card on the
+    /// first workspace's history for as long as `lifetime` held it fresh.
     private static func inputs(for provider: Provider) -> String {
-        guard provider == .deepSeek else { return "" }
-        let token = DeepSeekConsole.keptToken.map { String($0.hashValue) } ?? ""
-        return "\(token)|\(AppSettings.storedDeepSeekCurrency ?? "")"
+        switch provider {
+        case .deepSeek:
+            let token = DeepSeekConsole.keptToken.map { String($0.hashValue) } ?? ""
+            return "\(token)|\(AppSettings.storedDeepSeekCurrency ?? "")"
+        case .openCodeGo:
+            return APIKeyStore.key(for: provider, slot: OpenCodeConsole.slot).map { String($0.hashValue) } ?? ""
+        default:
+            return ""
+        }
     }
 
     /// The latest session's cache, read off the main thread: a directory
@@ -142,7 +171,9 @@ final class CardLedgers {
         case .agents(let agents):
             var ledgers: [UsageLedger] = []
             for agent in agents { ledgers.append(await AgentLedgers.shared.ledger(for: agent)) }
-            return .answered(UsageLedger.adding(ledgers))
+            var combined = UsageLedger.adding(ledgers)
+            combined.reportsCacheReads = agents.contains { $0.reportsCacheReads }
+            return .answered(combined)
         case .accountStatistics:
             let read = await ZaiUsageService(provider: provider, enteredKey: APIKeyStore.key(for: provider)).history()
             switch read {

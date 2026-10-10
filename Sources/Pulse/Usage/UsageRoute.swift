@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// The route that actually answered, rather than the user's routing preference.
@@ -33,8 +34,12 @@ enum UsageRoute: String, Codable, Sendable {
 
     /// Only single-route providers can be labelled outside their service.
     static func soleRoute(for account: AccountKey) -> UsageRoute? {
+        // Before the added-account rule: every extension is an account of
+        // one provider, and none of them is its first.
         if account.provider == .pulseExtension { return .extensionProgram }
         if !account.isPrimary { return .endpoint }
+        // A browser session is read like any other signed-in page; everything
+        // else a profiled provider does is a request to the service.
         guard let written = account.provider.handWritten else {
             switch account.provider.profile?.credential {
             case .sessionCookie, .browserStorage: return .webSession
@@ -42,13 +47,14 @@ enum UsageRoute: String, Codable, Sendable {
             }
         }
         switch written {
-        case .claudeCode, .codex, .volcengine, .devin, .xai: return nil
+        case .claudeCode, .codex, .volcengine, .devin: return nil
         case .antigravity: return .languageServer
+        // All four read a signed-in browser session rather than a key.
         case .ollamaCloud, .xiaomiMiMo, .qoder, .stepFun: return .webSession
         case .kiro: return .kiroACP
-        case .cursor, .openAI, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax,
+        case .cursor, .openCodeGo, .kimiCode, .zai, .glmCoding, .minimax,
              .minimaxCN, .copilot, .grok, .grokBot, .commandCode, .deepSeek,
-             .sub2api, .newAPI, .v2ex:
+             .sub2api, .newAPI, .v2ex, .openAI, .xai:
             return .endpoint
         case .pulseExtension: return .extensionProgram
         }

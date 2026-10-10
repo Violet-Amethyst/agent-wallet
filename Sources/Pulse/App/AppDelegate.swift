@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import AppKit
 import SwiftUI
 
@@ -31,6 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panelController: FloatingPanelController?
     private var statusItem: NSStatusItem?
     private var settingsWindow: SettingsWindowController?
+    private var recapWindow: RecapWindowController?
+    /// One owner of the Dock icon for every window Pulse opens.
+    private lazy var dock = DockPresence(settings: settings)
+    /// "Your September recap is ready", when it is switched on.
+    private lazy var recapNotice = RecapNotice(settings: settings, alerts: alerts)
     private var providerSetupWindow: ProviderSetupWindowController?
     private var preparedClaude = false
 
@@ -72,6 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.onChange = { [weak self] in
             self?.settingsChanged()
         }
+        // Size, spacing, glass and the rest of what only changes how the panel
+        // is drawn: re-place it and stop there. `onChange` also refreshes every
+        // provider, which a layout change must not cost.
+        settings.onLayoutChange = { [weak self] in
+            self?.layoutChanged()
+        }
 
         // Same issue, from the other side: a combination that works with no
         // pointer involved. Both unset until somebody sets one.
@@ -82,10 +94,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // stays that way across a launch.
             self?.settings.isPanelVisible.toggle()
         }
+        shortcuts.apply(settings)
         shortcuts.onRegistrationChange = { [weak self] in
             self?.restoreMenuBarEntryPointIfNeeded()
         }
-        shortcuts.apply(settings)
 
         // A stored shortcut is only an entry point after Carbon accepts it.
         // Repair an impossible combination before removing the status item,
@@ -94,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateMenuBarItem()
 
         if settings.needsProviderSelection {
-            showProviderSelection(providers: Set(Provider.allCases), isInitial: true)
+            showProviderSelection(providers: Set(Provider.builtIn), isInitial: true)
         } else {
             startMonitoring()
             if !settings.suggestedProviders.isEmpty {
@@ -102,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
     }
+
     private func showProviderSelection(providers: Set<Provider>, isInitial: Bool) {
         let window = ProviderSetupWindowController(settings: settings, providers: providers, isInitial: isInitial)
         providerSetupWindow = window
@@ -111,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func settingsChanged() {
         restoreMenuBarEntryPointIfNeeded()
         settingsWindow?.refreshTitle()
+        recapWindow?.refreshTitle()
         providerSetupWindow?.refreshTitle()
         guard !settings.needsProviderSelection else { return }
         if panelController == nil {
@@ -124,16 +138,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// The answer to `AppSettings.onLayoutChange`: the panel is brought in line
+    /// with the setting and nothing is fetched. Before monitoring starts there
+    /// is no panel to re-place, and starting it is `settingsChanged`'s job.
+    private func layoutChanged() {
+        panelController?.settingsChanged()
+    }
+
     private func startMonitoring() {
         guard !settings.needsProviderSelection, panelController == nil else { return }
-        alerts.start { [weak self] in self?.showSettings() }
-        let controller = FloatingPanelController(
-            store: store,
-            settings: settings,
-            placement: placement,
-            onSettings: { [weak self] in self?.showSettings() },
-            onQuit: { NSApplication.shared.terminate(nil) }
+        alerts.start(
+            openSettings: { [weak self] in self?.showSettings() },
+            openRecap: { [weak self] period in self?.showRecap(period: period) }
         )
+        recapNotice.start()
+        let controller = FloatingPanelController(store: store, settings: settings, placement: placement)
         panelController = controller
         controller.contextMenu = { [weak self] in self?.panelMenu() ?? NSMenu() }
         if settings.isPanelVisible { controller.show() }
@@ -169,7 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showSettings(link: nil)
     }
 
-/// The rail's own menu: the same three things the menu bar offers, because
+    /// The rail's own menu: the same three things the menu bar offers, because
     /// this exists for the Mac where that menu cannot be reached.
     ///
     /// Built on each click rather than kept, so an update found since the last
@@ -448,9 +467,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func showSettings(link: PulseLink?) {
-        let window = settingsWindow ?? SettingsWindowController(store: store, settings: settings, placement: placement, update: update, alerts: alerts, shortcuts: shortcuts)
+    private func showSettings(link: PulseLink?, pane: SettingsPane? = nil) {
+        let window = settingsWindow ?? SettingsWindowController(
+            store: store, settings: settings, placement: placement, update: update, alerts: alerts,
+            shortcuts: shortcuts, dock: dock,
+            openRecap: { [weak self] period in self?.showRecap(period: period) }
+        )
         settingsWindow = window
-        window.show(link: link)
+        window.show(link: link, pane: pane)
+    }
+
+    /// The recap window, on a period if one is named: the Token spend pane's
+    /// button and a clicked "recap is ready" notification name one.
+    private func showRecap(period: Recap.Period?) {
+        let window = recapWindow ?? RecapWindowController(
+            settings: settings, dock: dock,
+            openTokenSpend: { [weak self] in self?.showSettings(link: nil, pane: .spend) }
+        )
+        recapWindow = window
+        window.show(period: period)
     }
 }

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// Which route a provider's figures are read by.
@@ -78,7 +79,15 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
 
     /// What the tooling route actually is, which differs per provider.
     func detail(for provider: Provider) -> String {
-        switch (self, provider) {
+        // Every profiled provider has one route and it needs a key, same as
+        // the merged hand-written case below — except `.automatic`, which
+        // matches first regardless of provider, exactly as it does below.
+        guard let written = provider.handWritten else {
+            return self == .automatic
+                ? .localized("Use the endpoint when possible, the other route when not.")
+                : .localized("Uses the key you entered.")
+        }
+        return switch (self, written) {
         case (.automatic, _):
             .localized("Use the endpoint when possible, the other route when not.")
         case (.endpoint, .claudeCode):
@@ -104,11 +113,9 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
         case (.desktopApp, .volcengine):
             // Never shown: `options(for:)` offers it to Claude Code alone.
             .localized("Use the endpoint when possible, the other route when not.")
-        case (_, .openAI):
-            .localized("Reads your OpenAI API Platform costs with the Admin Key you entered.")
         case (_, .openCodeGo), (_, .kimiCode), (_, .zai), (_, .glmCoding),
              (_, .minimax), (_, .minimaxCN), (_, .copilot), (_, .commandCode), (_, .deepSeek),
-             (_, .sub2api), (_, .newAPI), (_, .v2ex), (_, .xai):
+             (_, .sub2api), (_, .newAPI), (_, .v2ex), (_, .openAI), (_, .xai), (_, .pulseExtension):
             // Never shown either — one route, and it needs a key.
             .localized("Uses the key you entered.")
         case (.endpoint, .devin):
@@ -134,6 +141,10 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
             // Never shown: one route, the account page's own request, made
             // with the browser session for the site that was chosen.
             .localized("Reads your credits with your signed-in browser session.")
+        case (_, .stepFun):
+            // Never shown: one route, the console's own request, made with the
+            // browser session for the site that was chosen.
+            .localized("Reads your Step Plan with your signed-in browser session.")
         case (_, .ollamaCloud):
             // Never shown: one route, and it reads a page rather than an API.
             .localized("Reads your quota from Ollama's own settings page.")
@@ -144,8 +155,6 @@ enum UsageSource: String, CaseIterable, Identifiable, Sendable {
         case (_, .cursor):
             // Never shown, for the same reason: one route.
             .localized("Reads your account's limits with the login Cursor saved.")
-        default:
-            .localized("Use the endpoint when possible, the other route when not.")
         }
     }
 }
@@ -319,6 +328,8 @@ enum PanelMetrics {
     /// inside its item, and the hit testing has to agree with the drawing to
     /// within a point or a click lands beside the ring it appears to be on.
     nonisolated(unsafe) private static var storedLabelAboveRing = false
+    /// `AppSettings.freeAcrossFiguresBeside`, for `DockLayout.labelsBeside`.
+    nonisolated(unsafe) private static var storedFreeAcrossBeside = false
     nonisolated(unsafe) private static var storedForecast = false
 
     /// Whether the rail's ends are half circles rather than softened corners.
@@ -336,6 +347,7 @@ enum PanelMetrics {
     /// It lives here beside the scale for the same reason — the AppKit frame
     /// is worked out from it before SwiftUI lays anything out — and getting it
     /// wrong slices the end off the rail, which is exactly what happened the
+    /// first time a seventh account existed.
     /// Replaced at launch by `AppSettings.restored()`; this is only what a
     /// preview or a test starts from, and it is long enough for the longest
     /// rail either of them draws.
@@ -379,8 +391,6 @@ enum PanelMetrics {
 
     static var showsWindowClock: Bool { lock.withLock { storedWindowClock } }
 
-    nonisolated(unsafe) private static var storedFreeAcrossBeside = false
-
     static func putFreeAcrossFiguresBeside(_ beside: Bool) {
         lock.withLock { storedFreeAcrossBeside = beside }
     }
@@ -403,7 +413,12 @@ enum PanelMetrics {
     }
     static var showsForecast: Bool { lock.withLock { storedForecast } }
 
+    /// Whether any account's card is the detailed one. Here for the
+    /// forecast's reason: the detailed card is taller, and the panel's frame
+    /// is worked out from `DetailCardLayout` before SwiftUI lays anything out.
+    /// One frame serves every ring, so one detailed account sizes it for all.
     nonisolated(unsafe) private static var storedDetailedCard = false
+
     static func showDetailedCard(_ shows: Bool) {
         lock.withLock { storedDetailedCard = shows }
     }
@@ -414,7 +429,6 @@ enum PanelMetrics {
     static func useDualTrack(_ uses: Bool) {
         lock.withLock { storedDualTrack = uses }
     }
-
 
     static func makeRoom(for accounts: Int) {
         lock.withLock { storedCapacity = max(accounts, 1) }

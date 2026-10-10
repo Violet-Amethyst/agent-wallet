@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// Actions for the credential or tool that this account actually uses.
@@ -5,6 +6,9 @@ enum ConnectionRemedy: Equatable {
     case signIn
     case editCredential
     /// The server address, for a provider whose address is the reader's own.
+    /// Its own remedy rather than `editCredential`, which focuses the key
+    /// field — a button saying "Edit credential" under a message about an
+    /// address is a control pointing at the wrong row.
     case editAddress
     case readBrowser
     case connectStatusLine
@@ -30,18 +34,23 @@ enum ConnectionRemedy: Equatable {
         case .claudeDesktopNotSignedIn, .claudeDesktopSessionExpired: return .openApp("Claude")
         case .cursorSignInRequired, .cursorLoginExpired: return .openApp("Cursor")
         case .antigravityNotRunning, .antigravityNotAnswering: return .openApp("Antigravity")
+        // The remedy for both is the same thing: start it. A plan it has never
+        // recorded is one sign-in away, and opening the app is the step before
+        // that either way.
         case .devinAppMissing, .devinPlanUnread: return .openApp("Devin")
         case .notSignedIn, .signedOut: return .signIn
         case .apiKeyMissing, .apiKeyRefused, .devinOrganizationMissing: return .editCredential
-        case .deepSeekWebLoginRequired, .xaiWebLoginRequired: return .editCredential
-        case .openAIWebLoginRequired, .openAIWebSessionExpired: return .readBrowser
         case .serverAddressMissing, .serverAddressRefused: return .editAddress
         case .ollamaSessionMissing, .ollamaSessionExpired,
              .xiaomiSessionMissing, .xiaomiSessionExpired,
              .qoderSessionMissing, .qoderSessionExpired,
-             .stepFunSessionMissing, .stepFunSessionExpired: return .readBrowser
+             .stepFunSessionMissing, .stepFunSessionExpired,
+             .deepSeekWebLoginRequired, .openAIWebLoginRequired,
+             .openAIWebSessionExpired, .xaiWebLoginRequired: return .readBrowser
         case .claudeDesktopKeyRefused, .unreachable, .rateLimited, .serverError,
              .codexServerFailed, .extensionTimedOut, .extensionFailed: return .retry
+        // Its login is the program's own, so the page that says how an
+        // extension works is the nearest thing to a remedy Pulse has.
         case .extensionMissing, .extensionSignedOut: return .help
         case .sessionMissing, .sessionExpired: return .readBrowser
         case .localLoginMissing, .localLoginExpired, .localAppMissing, .noPlan: return .help
@@ -69,8 +78,11 @@ enum ConnectionRemedy: Equatable {
     }
 
     /// The user's setup page, not the provider's developer doc: where the key
-    /// comes from and where it goes. One page per link.
+    /// comes from and where it goes. One page per link — the two providers
+    /// that share a service share a page too.
     static func helpURL(for provider: Provider) -> URL {
+        // Not a setup page: what an extension has to print, which is what
+        // anyone looking at a failing one needs.
         if provider == .pulseExtension {
             return URL(string: "https://github.com/qunqin24/Pulse/blob/main/Docs/extensions.md")!
         }
@@ -79,7 +91,6 @@ enum ConnectionRemedy: Equatable {
             page = switch written {
             case .claudeCode: "claude-code"
             case .codex: "codex"
-            case .openAI: "openai"
             case .kiro: "kiro"
             case .antigravity: "antigravity"
             case .cursor: "cursor"
@@ -101,7 +112,9 @@ enum ConnectionRemedy: Equatable {
             case .v2ex: "v2ex"
             case .qoder: "qoder"
             case .stepFun: "stepfun"
+            case .openAI: "openai"
             case .xai: "xai"
+            // Answered above.
             case .pulseExtension: "extensions"
             }
         } else {

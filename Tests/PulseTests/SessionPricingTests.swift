@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Session pricing coverage")
 struct SessionPricingTests {
-    private static let now = ISO8601DateFormatter().date(from: "2026-09-20T12:00:00Z")!
+    private static let now = ISO8601DateFormatter().date(from: "2026-09-20T10:30:00Z")!
     private static let prices = ["paid": ModelPrice(input: 1_000, output: 1_000, cacheRead: nil, cacheWrite: nil, name: nil),
                                  "free": ModelPrice(input: 0, output: 0, cacheRead: nil, cacheWrite: nil, name: nil)]
 
@@ -83,7 +83,7 @@ struct SessionPricingTests {
         #expect(session.unpricedTokens == 90)
         #expect(session.slots.reduce(0) { $0 + $1.unpricedTokens } == 90)
         let agent: SpendAgent = provider == .claudeCode ? .claudeCode : .codex
-        let today = SpendSummary.of([agent: ledger], overLast: 1, now: session.end)
+        let today = SpendSummary.of([agent: ledger], overLast: 1, now: Self.now)
         #expect(today.sessions.first?.session.unpricedTokens == 0)
         #expect(today.sessions.first?.session.estimatedCost == 0.01)
         #expect(today.projects.first?.unpricedTokens == 0)

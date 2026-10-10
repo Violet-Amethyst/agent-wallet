@@ -1,18 +1,14 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import AppKit
-import Foundation
 import SwiftUI
 
 extension UsageWindow {
-    /// Tint colour for this limit.
+    /// Colour for how much of a limit is gone.
     ///
-    /// Derived from the fractions rather than kept on the window so that
-    /// limits that were already tight when a run started don't go on being
-    /// drawn in the colour that was chosen for them. Provider-specific hues
+    /// Rings and bars used to be drawn in each provider's brand colour, which
     /// read as a status even though it never was one: Claude Code's orange-red
     /// looked like a warning at 3% used. Colour here means one thing only —
     /// how close this limit is to running out.
-    var tint: Color { UsageTint.color(for: usedFraction, isExhausted: isExhausted) }
-
     /// **No default for `warningAt`.** Where red begins is a setting now, and
     /// a default here is how one ring on the panel comes to disagree with the
     /// one beside it — silently, and only for whoever moved the figure.
@@ -47,13 +43,6 @@ enum WarningThreshold: Int, CaseIterable, Identifiable, Sendable {
 }
 
 enum UsageTint {
-    enum StatusThreshold {
-        /// Used below this is still comfortable.
-        static let comfortable: Double = 0.5
-        /// Everything at or above this is exhausted (red).
-        static let exhausted: Double = 1
-    }
-
     /// Comfortable below this.
     static let cautionThreshold = 0.5
     /// Getting tight above this, unless somebody has moved it. The shipped
@@ -65,7 +54,7 @@ enum UsageTint {
     /// would just read as the third — so this one is darker *and* the figure
     /// beside the ring changes colour too.
     static func color(for usedFraction: Double, isExhausted: Bool = false, warningAt: Double = warningThreshold) -> Color {
-        if isExhausted || usedFraction >= StatusThreshold.exhausted { return .pulseExhausted }
+        if isExhausted || usedFraction >= 1 { return .pulseExhausted }
 
         switch usedFraction {
         case ..<cautionThreshold: return .pulseGood
@@ -77,10 +66,6 @@ enum UsageTint {
     static func isSpent(_ window: UsageWindow?) -> Bool {
         guard let window else { return false }
         return window.isExhausted || window.usedFraction >= 1
-    }
-
-    static func iconOpacity(isExhausted: Bool) -> Double {
-        isExhausted ? 0.45 : 1.0
     }
 }
 
@@ -166,17 +151,41 @@ extension Color {
 extension Color {
     /// Picked to sit on the panel's black: bright enough to read at ring size,
     /// without the neon cast that fully saturated values take on there.
-    static let pulseGood = Color(red: 0.00, green: 0.90, blue: 0.55)
-    static let pulseCaution = Color(red: 1.00, green: 0.76, blue: 0.15)
-    static let pulseWarning = Color(red: 1.00, green: 0.31, blue: 0.26)
-    /// Amount-style blue used for providers that report spend or balance figures.
-    static let pulseMoney = Color(red: 0.24, green: 0.57, blue: 1.0)
+    ///
+    /// Each has a deeper twin for a light appearance — the light panel (#74),
+    /// and the menu where macOS draws it light. The dark green and yellow are
+    /// about 1.5:1 against a light surface, which is no reading at all; the
+    /// twins are 3:1 or better on `PanelLight.fill`. Resolved by the
+    /// appearance of wherever they are drawn, so no call site has to choose.
+    static let pulseGood = usage(dark: (0.00, 0.90, 0.55), light: (0.00, 0.58, 0.35))
+    static let pulseCaution = usage(dark: (1.00, 0.76, 0.15), light: (0.76, 0.49, 0.00))
+    static let pulseWarning = usage(dark: (1.00, 0.31, 0.26), light: (0.87, 0.22, 0.17))
     /// Deeper and flatter than the warning red, so a spent limit doesn't just
     /// look like a slightly redder nearly-spent one.
-    static let pulseExhausted = Color(red: 0.85, green: 0.09, blue: 0.13)
+    static let pulseExhausted = usage(dark: (0.85, 0.09, 0.13), light: (0.68, 0.06, 0.10))
+    /// Amount-style blue used for providers that report spend or balance figures.
+    static let pulseMoney = usage(dark: (0.24, 0.57, 1.00), light: (0.12, 0.42, 0.85))
+
+    private static func usage(
+        dark: (Double, Double, Double),
+        light: (Double, Double, Double)
+    ) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let (red, green, blue) = appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua ? light : dark
+            return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
+        })
+    }
 }
 
 /// How full a limit has to be before the panel draws it in the warning colour.
+///
+/// Through the environment rather than down the initializers. It is one number
+/// that every ring, bar and figure on the panel has to agree on, and the
+/// alternative is a field in `RailEntry`, another in the dock's item, and a
+/// seventeenth argument to a `UsageRingView` initializer that already had to be
+/// lifted out of `body` to fit the compiler's type-checking budget. It is not a
+/// layout input either, so it has no business in `PanelMetrics` beside the
+/// scale.
 private struct UsageWarningThresholdKey: EnvironmentKey {
     static let defaultValue = UsageTint.warningThreshold
 }

@@ -45,7 +45,7 @@ struct AccountUsageCard: View {
                     figures
 
                     if ledger.days.count > 1 {
-                        DailyTokensChart(days: ledger.recent(Self.span))
+                        DailyTokensChart(days: ledger.recent(Self.span), slots: Self.span)
                             .frame(height: 58)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 10)
@@ -154,22 +154,30 @@ struct AccountUsageCard: View {
         return Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 16) {
             GridRow {
                 figure(String.localized("Today"),
-                       cost: ledger.today?.cost ?? 0, tokens: ledger.today?.tokens ?? 0)
-                figure(String.localized("Last 31 days"), cost: recent.cost, tokens: recent.tokens)
+                       cost: ledger.today.map { UsageLedger.shownCost($0.cost, tokens: $0.tokens, unpriced: $0.unpricedTokens) } ?? 0,
+                       tokens: ledger.today?.tokens ?? 0)
+                figure(String.localized("Last 31 days"),
+                       cost: UsageLedger.shownCost(recent.cost, tokens: recent.tokens, unpriced: recent.unpriced),
+                       tokens: recent.tokens)
             }
             GridRow {
                 figure(String.localized("Busiest day"),
-                       cost: busiest?.cost ?? 0, tokens: busiest?.tokens ?? 0)
+                       cost: busiest.map { UsageLedger.shownCost($0.cost, tokens: $0.tokens, unpriced: $0.unpricedTokens) } ?? 0,
+                       tokens: busiest?.tokens ?? 0)
                 // **"All time" is only true of a ledger that goes back.** A
                 // provider's statistics are asked for a fixed window, so all
                 // time and the last month are the same sum — one figure
                 // printed twice, under a label claiming a lifetime Pulse does
                 // not have. A shorter span is something the window can answer.
                 if ledger.origin == .localTranscripts {
-                    figure(String.localized("All time"), cost: all.cost, tokens: all.tokens)
+                    figure(String.localized("All time"),
+                           cost: UsageLedger.shownCost(all.cost, tokens: all.tokens, unpriced: all.unpriced),
+                           tokens: all.tokens)
                 } else {
                     let week = ledger.total(overLast: 7)
-                    figure(String.localized("Last 7 days"), cost: week.cost, tokens: week.tokens)
+                    figure(String.localized("Last 7 days"),
+                           cost: UsageLedger.shownCost(week.cost, tokens: week.tokens, unpriced: week.unpriced),
+                           tokens: week.tokens)
                 }
             }
         }
@@ -183,7 +191,7 @@ struct AccountUsageCard: View {
     /// model, which no price list can turn into a cost — and `Self.money(0)`
     /// renders a confident "$0.00" for work that certainly cost something.
     /// The figure that is actually known takes the top line instead.
-    private func figure(_ label: String, cost: Double, tokens: Int) -> some View {
+    private func figure(_ label: String, cost: Double?, tokens: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.system(size: 11))
@@ -192,7 +200,8 @@ struct AccountUsageCard: View {
             // Money where there is money: this Mac's logs priced at API rates,
             // or a provider's own log of what it charged.
             if ledger.origin == .localTranscripts || ledger.origin == .providerLogs {
-                Text(Self.money(cost, currency: ledger.currency))
+                // None of it priced: a dash, as the Token spend pane draws it.
+                Text(verbatim: cost.map { Self.money($0, currency: ledger.currency) } ?? "—")
                     .font(.system(size: 17, weight: .semibold))
                     .monospacedDigit()
 
@@ -438,15 +447,22 @@ private extension View {
 }
 
 /// Daily totals as bars, oldest on the left.
+///
+/// **Sized for the whole span, not for the days on record** — the same rule
+/// as the panel card's chart. A history two days old, divided across the
+/// width, drew two blocks each half the card wide; it now draws two bars at
+/// the left that the following days join.
 struct DailyTokensChart: View {
     let days: [LedgerDay]
+    let slots: Int
 
     var body: some View {
         GeometryReader { proxy in
             let peak = max(days.map(\.tokens).max() ?? 1, 1)
-            let spacing = max(proxy.size.width / CGFloat(max(days.count, 1)) * 0.22, 2)
+            let count = max(days.count, slots, 1)
+            let spacing = max(proxy.size.width / CGFloat(count) * 0.22, 2)
             let width = max(
-                (proxy.size.width - spacing * CGFloat(max(days.count - 1, 0))) / CGFloat(max(days.count, 1)),
+                (proxy.size.width - spacing * CGFloat(count - 1)) / CGFloat(count),
                 1
             )
 
@@ -467,7 +483,7 @@ struct DailyTokensChart: View {
                         .accessibilityValue(SpendFormat.tokens(day.tokens))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             .overlay {
                 ChartHoverOverlay(samples: days.enumerated().map { index, day in
                     .init(
@@ -494,14 +510,26 @@ enum TokenCount {
     /// `MyriadUnitsTests` can drive it without setting the app's language; do
     /// not tidy it back.
     static func short(_ tokens: Int, units: (tenThousand: String, hundredMillion: String)?) -> String {
+        let (number, unit) = parts(tokens, units: units)
+        return number + unit
+    }
+
+    /// The same figure as `short`, split at the unit: ("4.19", "亿"), ("5.9", "B"),
+    /// ("812", ""). The recap cards draw the number large and the unit small,
+    /// so they need the two apart — and take them from here so there is one
+    /// rule for where 万 and 亿 begin, not two.
+    static func parts(
+        _ tokens: Int,
+        units: (tenThousand: String, hundredMillion: String)?
+    ) -> (number: String, unit: String) {
         if let units { return grouped(tokens, units) }
 
         let value = Double(tokens)
         switch value {
-        case 1_000_000_000...: return format(value / 1_000_000_000, decimals: value < 1e10 ? 1 : 0) + "B"
-        case 1_000_000...: return format(value / 1_000_000, decimals: value < 1e7 ? 1 : 0) + "M"
-        case 1_000...: return format(value / 1_000, decimals: value < 1e4 ? 1 : 0) + "K"
-        default: return "\(tokens)"
+        case 1_000_000_000...: return (format(value / 1_000_000_000, decimals: value < 1e10 ? 1 : 0), "B")
+        case 1_000_000...: return (format(value / 1_000_000, decimals: value < 1e7 ? 1 : 0), "M")
+        case 1_000...: return (format(value / 1_000, decimals: value < 1e4 ? 1 : 0), "K")
+        default: return ("\(tokens)", "")
         }
     }
 
@@ -514,18 +542,18 @@ enum TokenCount {
     private static func grouped(
         _ tokens: Int,
         _ units: (tenThousand: String, hundredMillion: String)
-    ) -> String {
+    ) -> (number: String, unit: String) {
         let value = Double(tokens)
         switch value {
         case 100_000_000...:
             let scaled = value / 100_000_000
             // Three significant figures, which is what "419M" carried.
-            return format(scaled, decimals: scaled < 10 ? 2 : (scaled < 100 ? 1 : 0)) + units.hundredMillion
+            return (format(scaled, decimals: scaled < 10 ? 2 : (scaled < 100 ? 1 : 0)), units.hundredMillion)
         case 10_000...:
             let scaled = value / 10_000
-            return format(scaled, decimals: scaled < 10 ? 1 : 0) + units.tenThousand
+            return (format(scaled, decimals: scaled < 10 ? 1 : 0), units.tenThousand)
         default:
-            return "\(tokens)"
+            return ("\(tokens)", "")
         }
     }
 

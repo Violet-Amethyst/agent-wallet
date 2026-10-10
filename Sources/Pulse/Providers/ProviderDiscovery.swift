@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 extension Provider {
@@ -38,12 +39,22 @@ extension Provider {
             return ["Devin", "Windsurf"].map {
                 local("Library/Application Support/\($0)/User/globalStorage/state.vscdb")
             }
+        // The editor, either edition. A hint only: what is read is the
+        // browser's session for the account page, not anything the app keeps.
         case .qoder:
             return ["Qoder", "QoderCN", "com.qodercn.app.stable"].map { local("Library/Application Support/\($0)") } + app("Qoder") + app("Qoder CN")
+        // StepFun's own coding CLI, Step Code. A hint only: what is read is the
+        // console's browser session, not the CLI's saved credential.
         case .stepFun:
             return [local(".stepcode")]
+        // sub2api is somebody's own deployment and V2EX is a website; there
+        // is nothing on this Mac that says either is in use.
         case .openAI, .kimiCode, .ollamaCloud, .zai, .minimax, .minimaxCN, .copilot,
-             .volcengine, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .xai, .pulseExtension:
+             .volcengine, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .xai:
+            return []
+        // Found by its manifest in the extensions folder, not by anything
+        // installed. See `ExtensionCatalog`.
+        case .pulseExtension:
             return []
         }
     }

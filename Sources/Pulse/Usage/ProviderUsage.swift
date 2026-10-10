@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// One rate-limit window exactly as a provider reports it.
@@ -156,11 +157,25 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
 
     var estimate: Estimate?
 
-    /// The soonest a part of this allowance stops existing.
+    /// The soonest a part of this allowance **stops existing**, as the
+    /// provider states it: how much, and when.
+    ///
+    /// Not a reset. A reset gives the allowance back; this takes it away —
+    /// Qoder's bonus packs each carry their own `expires_at`, and a total of
+    /// 586 can hold 500 that are gone by the end of the month. The card shows
+    /// whichever of this and `resetsAt` comes first. Nil where the provider
+    /// states no expiry, which is everywhere but Qoder.
     struct Expiry: Equatable, Codable, Sendable {
+        /// In the allowance's own unit — Qoder's or StepFun's credits.
         let amount: Double
         let at: Date
 
+        /// The soonest parts to lapse: everything ending on the same day as
+        /// the first one to, added up. Six packs a day apart are six dates;
+        /// two an hour apart are one, and "86 expire" beside another 100 going
+        /// that same evening would understate the day. Only parts still ahead
+        /// of `now` with something left in them count; nil when there are
+        /// none.
         static func soonest(of parts: [(amount: Double, at: Date)], after now: Date,
                             calendar: Calendar = .current) -> Expiry? {
             let ahead = parts.filter { $0.at > now && $0.amount > 0 }
@@ -171,6 +186,13 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
     }
 
     var nextExpiry: Expiry?
+
+    /// A name the reporter gave this limit, used in place of the one built
+    /// from `kind`.
+    ///
+    /// **Extensions only.** A built-in provider's limits are named by Pulse,
+    /// in the reader's language; an extension's are named by the program,
+    /// which knows what they are and Pulse does not. Never translated.
     var label: String?
 
     /// Spelled out because the hand-written `init(from:)` below suppresses the
@@ -221,6 +243,8 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         resetsAt = try container.decodeIfPresent(Date.self, forKey: .resetsAt)
         reportsLength = try container.decodeIfPresent(Bool.self, forKey: .reportsLength) ?? true
         isExhausted = try container.decodeIfPresent(Bool.self, forKey: .isExhausted) ?? false
+        nextExpiry = try container.decodeIfPresent(Expiry.self, forKey: .nextExpiry)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
 
         if let estimate = try container.decodeIfPresent(Estimate.self, forKey: .estimate) {
             self.estimate = estimate
@@ -245,11 +269,13 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         try container.encode(reportsLength, forKey: .reportsLength)
         try container.encodeIfPresent(estimate, forKey: .estimate)
         try container.encode(isExhausted, forKey: .isExhausted)
+        try container.encodeIfPresent(nextExpiry, forKey: .nextExpiry)
+        try container.encodeIfPresent(label, forKey: .label)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, scope, usedFraction, windowSeconds, resetsAt
-        case reportsLength, isExhausted, estimate
+        case reportsLength, isExhausted, estimate, nextExpiry, label
         /// Written by 1.0.9 and earlier. Read, never written.
         case isEstimated
     }
@@ -302,6 +328,7 @@ struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
     }
 
     var name: String {
+        if let label { return label }
         let base: String = switch kind {
         case .fiveHour: .localized("5-hour limit")
         case .weekly: .localized("Weekly limit")
@@ -571,6 +598,8 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         /// A complete answer — nothing has been granted — and not a ring at
         /// 100%, which would say something was spent.
         case qoderNoCredits
+        /// StepFun's console answers only to a browser session, and a working
+        /// one can find no Step Plan on the account — an answer, like Xiaomi's.
         case stepFunSessionMissing
         case stepFunSessionExpired
         case stepFunNoPlan
@@ -595,15 +624,29 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
         case unreadableReply
         case rateLimited
         case serverError
+        /// An extension's folder is still listed but its program is not there,
+        /// or can no longer be run.
         case extensionMissing
+        /// An extension's program ran past its time limit and was stopped.
         case extensionTimedOut
+        /// An extension's program finished with an error, or printed nothing.
         case extensionFailed
+        /// An extension says its own login has expired. Its own, not one Pulse
+        /// holds, so the remedy is wherever that program keeps it.
         case extensionSignedOut
+        // Shared by every profiled provider, so none of them may name one.
+        /// No browser session has been read for it yet.
         case sessionMissing
+        /// The session that was read has been refused.
         case sessionExpired
+        /// It reads a login its own app or CLI saves, and there isn't one.
         case localLoginMissing
+        /// That login is there and has been refused.
         case localLoginExpired
+        /// It reads what its own app keeps on this Mac, and nothing is there.
         case localAppMissing
+        /// The service answered: this account has no plan with limits. An
+        /// answer, not an outage.
         case noPlan
 
         var message: String {
@@ -854,10 +897,6 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
 
     func headlineWindow(preferring id: String? = nil) -> UsageWindow? {
         if let id, let pinned = windows.first(where: { $0.id == id }) { return pinned }
-        // Codex reports one account-wide allowance plus optional model pools.
-        // The account-wide pool controls whether the account can continue to
-        // use other models, so it is the default headline. Model-specific
-        // pools remain available through the existing "Ring shows" picker.
         if provider == .codex {
             let general = windows.filter { $0.scope == nil }
             if let weekly = general.filter({ $0.kind == .weekly }).max(by: { $0.usedFraction < $1.usedFraction }) {
@@ -921,7 +960,28 @@ struct ProviderUsage: Identifiable, Equatable, Sendable {
             creditBalance: nil
         )
     }
+}
 
+extension UsageWindow {
+    /// The longest length a reply may state for a window: ten years.
+    static let longestLength = 10 * 366 * 86_400
+
+    /// `count` units of `unitSeconds` each, or nil when that overflows or runs
+    /// past any plausible window.
+    ///
+    /// **A malformed reply drops the window; it does not stop the app.** Four
+    /// readers multiplied a stated duration by its unit unchecked, and a
+    /// count near `Int.max` — which decodes as an `Int` without complaint —
+    /// trapped, ending the whole process rather than one provider's reading.
+    static func length(_ count: Int, unitSeconds: Int) -> Int? {
+        guard count > 0, unitSeconds > 0 else { return nil }
+        let (seconds, overflow) = count.multipliedReportingOverflow(by: unitSeconds)
+        guard !overflow, seconds <= longestLength else { return nil }
+        return seconds
+    }
+}
+
+extension ProviderUsage {
     /// Whether this usage reading resolves to a monetary balance or spend limit.
     var isMoney: Bool {
         WalletAdapter.snapshot(from: self, title: "").mode.isMoney

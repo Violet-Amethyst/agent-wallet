@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 /// Reads Codex's usage.
@@ -184,17 +185,13 @@ struct CodexUsageService: Sendable {
             )
         }
 
-        let credits = root["credits"] as? [String: Any]
-
         return ProviderUsage(
             account: account,
             windows: windows,
             observedAt: Date(),
             state: windows.isEmpty ? .unavailable(.noLimitsReported) : .live,
             plan: (root["plan_type"] as? String).map(planName),
-            creditBalance: (credits?["unlimited"] as? Bool == true)
-                ? nil
-                : credits?["balance"] as? String
+            creditBalance: creditBalance(root["credits"] as? [String: Any])
         )
     }
 
@@ -319,9 +316,7 @@ struct CodexUsageService: Sendable {
             windows += ofThisGroup
 
             plan = plan ?? group["planType"] as? String
-            if credits == nil, let node = group["credits"] as? [String: Any] {
-                credits = (node["unlimited"] as? Bool == true) ? nil : node["balance"] as? String
-            }
+            credits = credits ?? creditBalance(group["credits"] as? [String: Any])
         }
 
         return ProviderUsage(
@@ -391,17 +386,21 @@ struct CodexUsageService: Sendable {
         }
     }
 
-    private static func number(_ value: Any?) -> Double? {
-        (value as? Double) ?? (value as? Int).map(Double.init) ?? (value as? NSNumber)?.doubleValue
+    /// The credit balance as the reader should see it. Codex sends it as a
+    /// decimal string with ten places — `"2500.0000000000"` — which Settings
+    /// printed verbatim. The figure is credits, not money, so it is shown as
+    /// a number in the reader's locale with at most two places. A balance
+    /// that is not a number is passed through rather than blanked; an
+    /// unlimited one is no balance at all.
+    static func creditBalance(_ node: [String: Any]?) -> String? {
+        guard let node, node["unlimited"] as? Bool != true else { return nil }
+        let raw = node["balance"]
+        let value = number(raw) ?? (raw as? String).flatMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard let value, value.isFinite else { return raw as? String }
+        return value.formatted(.number.precision(.fractionLength(0...2)).locale(LocalizationSource.locale))
     }
 
-    private static func isSparkLimit(_ value: [String: Any]) -> Bool {
-        let labels = [
-            value["limit_name"] as? String,
-            value["limitName"] as? String,
-            value["metered_feature"] as? String,
-            value["meteredFeature"] as? String
-        ].compactMap { $0?.lowercased() }
-        return labels.contains { $0.contains("spark") }
+    private static func number(_ value: Any?) -> Double? {
+        (value as? Double) ?? (value as? Int).map(Double.init) ?? (value as? NSNumber)?.doubleValue
     }
 }

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import Foundation
 
 extension Provider {
@@ -40,6 +41,9 @@ extension Provider {
         // says where the key goes: nowhere but the server they named.
         case .sub2api, .newAPI:
             .localized("Sends the key you enter only to the server address you enter. No Keychain prompt.")
+        // A program Pulse did not write and has not reviewed. What it reads
+        // is its own business, so the sentence says what Pulse gives it —
+        // nothing — rather than guess.
         case .pulseExtension:
             .localized("Runs a program from your extensions folder on the refresh schedule. Pulse passes it no credentials; what it reads and where it connects are up to the program.")
         }

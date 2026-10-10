@@ -1,3 +1,4 @@
+// Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 import AppKit
 import CryptoKit
 import Foundation
@@ -64,7 +65,8 @@ enum OAuthLogin {
         let deviceFlow: DeviceFlow?
 
         static func of(_ provider: Provider) -> Configuration? {
-            switch provider {
+            guard let written = provider.handWritten else { return nil }
+            return switch written {
             case .claudeCode:
                 // Read out of the installed CLI rather than remembered: an
                 // OAuth flow with one parameter wrong fails in a way that
@@ -142,7 +144,10 @@ enum OAuthLogin {
                     exchangeCarriesState: false,
                     deviceFlow: .standard(code: URL(string: "https://auth.x.ai/oauth2/device/code")!)
                 )
-            default:
+            case .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grokBot, .volcengine,
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
+             .v2ex, .qoder, .stepFun, .openAI, .xai, .pulseExtension:
                 nil
             }
         }

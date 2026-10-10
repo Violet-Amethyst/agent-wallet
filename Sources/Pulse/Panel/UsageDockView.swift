@@ -654,6 +654,7 @@ struct RailEntry: Identifiable, Equatable {
 /// place. They are one thing: a single berth whose size and outline are
 /// animated, with the rings fading in once it has opened enough to hold them.
 struct UsageDockView: View {
+    @State private var tintCache = BotMarkTint.DealCache()
     let entries: [RailEntry]
     /// Where the pointer is in the panel's coordinates, or nil when it is off
     /// the panel. The marks' eyes follow it.
@@ -746,7 +747,8 @@ struct UsageDockView: View {
             let surface = PanelHitArea.notchSurface(rail: CGRect(origin: .zero, size: railSize), notchSize: notchSize)
             PanelSurface(
                 shape: NotchBerthShape(notchSize: notchSize, openness: isExpanded ? 1 : 0),
-                usesGlass: usesGlass
+                usesGlass: usesGlass,
+                screenEdge: .top
             )
             .overlay {
                 // The hardware housing replaces the ordinary collapsed
@@ -777,7 +779,8 @@ struct UsageDockView: View {
             usesGlass: usesGlass,
             // Only the sliver carries the alert colour: expanded, the rings
             // already say which limit is where.
-            tint: isExpanded ? nil : alert
+            tint: isExpanded ? nil : alert,
+            screenEdge: isDocked ? edge.screenSide : []
         )
             .frame(width: currentSize.width, height: currentSize.height)
             .overlay(alignment: edge.stackAlignment) {
@@ -814,8 +817,8 @@ struct UsageDockView: View {
         // rings are actually in — the rail shows enabled accounts, so who sits
         // next to whom is not knowable from `Provider.allCases`.
         let botTints = entries.contains(where: \.showsBotMark)
-            ? BotMarkTint.deal(over: entries.map(\.usage.provider),
-                               chosen: entries.map(\.botColour))
+            ? tintCache.deal(over: entries.map(\.usage.provider),
+                             chosen: entries.map(\.botColour))
             : []
         // Dealt by position so the ring beside this one is a different
         // character; a chosen persona simply wins over the deal.
@@ -1317,4 +1320,16 @@ struct DockBerthShape: Shape {
     .frame(height: DockLayout.maximumHeight + 80)
     .padding()
     .background(.gray)
+}
+
+private extension PanelEdge {
+    /// The side of a docked rail's own frame that lies on the screen's edge.
+    var screenSide: Edge.Set {
+        switch self {
+        case .left: .leading
+        case .right: .trailing
+        case .top: .top
+        case .bottom: .bottom
+        }
+    }
 }

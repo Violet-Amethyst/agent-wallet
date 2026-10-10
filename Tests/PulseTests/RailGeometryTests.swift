@@ -15,8 +15,9 @@ import Testing
 /// catch a wrong count — the numbers *are* the bug. So `shownSlotCount` is
 /// called here for real, and the rest pins the geometry that makes agreeing on
 /// it sufficient, at every edge and both dock states.
-@Suite("Rail geometry", .serialized)
-struct RailGeometryTests {
+extension PanelGlobalsSuite {
+    @Suite("Rail geometry")
+    struct RailGeometryTests {
     private static let edges: [PanelEdge] = [.left, .right, .top]
     /// One, a handful, and a rail longer than any real one.
     private static let counts = [1, 2, 3, 7, 15, 16]
@@ -361,10 +362,64 @@ struct RailOffsetTests {
         #expect(offsets.leading >= 0)
         #expect(offsets.leading <= max(tiny.width - rail.width, 0))
     }
-}
 
-@Suite("Dual-track Olympic rail geometry", .serialized)
-struct DualTrackOlympicRailGeometryTests {
+    /// The two proportions of a rail lying free across, and the top dock's,
+    /// which neither may change.
+    @Suite("Free lying rail proportions", .serialized)
+    struct FreeLyingRailProportionTests {
+        @MainActor
+        @Test("Figures under: closer rings and more room above and below; beside: the upright rail's thickness; docked: untouched")
+        func proportions() {
+            let labels = PanelMetrics.topRailShowsPercentages
+            let beside = PanelMetrics.freeAcrossFiguresBeside
+            let dual = PanelMetrics.usesDualTrack
+            defer {
+                PanelMetrics.showTopPercentages(labels)
+                PanelMetrics.putFreeAcrossFiguresBeside(beside)
+                PanelMetrics.useDualTrack(dual)
+            }
+            PanelMetrics.useDualTrack(false)
+            PanelMetrics.showTopPercentages(true)
+
+            PanelMetrics.putFreeAcrossFiguresBeside(false)
+            // Where the hit test puts a ring is where the drawing does: the
+            // stacked item centred in the free rail's own thickness, behind its
+            // own padding — not the top dock's.
+            if !DockLayout.labelLeads {
+                #expect(DockLayout.ringCentreAcross(on: .horizontal, docked: false)
+                    == DockLayout.crossPadding(on: .horizontal, docked: false) + DockLayout.ringDiameter / 2)
+            }
+            let docked = DockLayout.thickness(on: .horizontal, docked: true)
+            let dockedStep = DockLayout.ringStep(on: .horizontal, docked: true)
+            #expect(DockLayout.thickness(on: .horizontal, docked: false) == docked + 8 * PanelMetrics.scale)
+            #expect(DockLayout.ringStep(on: .horizontal, docked: false) == dockedStep - 10 * PanelMetrics.scale * PanelMetrics.spacing)
+
+            PanelMetrics.putFreeAcrossFiguresBeside(true)
+            #expect(DockLayout.thickness(on: .horizontal, docked: false) == DockLayout.thickness(on: .vertical))
+            // Beside means right of the ring, even with figures set above
+            // (issue #73): the ring leads its item.
+            let above = PanelMetrics.labelAboveRing
+            PanelMetrics.putLabelAboveRing(true)
+            #expect(DockLayout.firstRingAlong(docked: false, on: .horizontal)
+                == DockLayout.endPadding(docked: false) + DockLayout.ringDiameter / 2)
+            PanelMetrics.putLabelAboveRing(above)
+            // The time arc moves a figure 5pt further from its ring.
+            let clock = PanelMetrics.showsWindowClock
+            PanelMetrics.showWindowClock(false)
+            let plain = DockLayout.ringToTextSpacing
+            PanelMetrics.showWindowClock(true)
+            #expect(DockLayout.ringToTextSpacing == plain + 5 * PanelMetrics.scale)
+            PanelMetrics.showWindowClock(clock)
+            #expect(DockLayout.thickness(on: .horizontal, docked: true) == docked)
+            #expect(DockLayout.ringStep(on: .horizontal, docked: true) == dockedStep)
+            // The window is budgeted for the longer and the thicker of the rails.
+            #expect(DockLayout.maximumLength(on: .horizontal, capacity: 7)
+                == DockLayout.length(for: 7, on: .horizontal, docked: false))
+        }
+    }
+
+    @Suite("Dual-track Olympic rail geometry")
+    struct DualTrackOlympicRailGeometryTests {
     private struct TestSlot: Identifiable {
         let id: String
         let isMoney: Bool
@@ -568,5 +623,7 @@ struct DualTrackOlympicRailGeometryTests {
             #expect(hit?.id == slot.id)
         }
     }
+}
+}
 }
 
