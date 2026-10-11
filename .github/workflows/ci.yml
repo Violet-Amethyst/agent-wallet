@@ -87,12 +87,12 @@ jobs:
 
       # Proves the thing that actually ships can be assembled, not just that
       # the sources compile.
-      - name: Assemble Pulse.app
+      - name: Assemble Agent Wallet.app
         run: ./Scripts/bundle.sh
 
       - name: Check the bundle
         run: |
-          APP="build.noindex/Pulse.app"
+          APP="build.noindex/Agent Wallet.app"
           test -x "$APP/Contents/MacOS/Pulse"
           test -d "$APP/Contents/Resources/Pulse_Pulse.bundle"
           test -f "$APP/Contents/Resources/AppIcon.icns"
