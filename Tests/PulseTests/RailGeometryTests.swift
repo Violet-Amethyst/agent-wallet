@@ -378,6 +378,8 @@ struct RailOffsetTests {
                 PanelMetrics.putFreeAcrossFiguresBeside(beside)
                 PanelMetrics.useDualTrack(dual)
             }
+            let prevDualTrack = PanelMetrics.usesDualTrack
+            defer { PanelMetrics.useDualTrack(prevDualTrack) }
             PanelMetrics.useDualTrack(false)
             PanelMetrics.showTopPercentages(true)
 
@@ -412,9 +414,9 @@ struct RailOffsetTests {
             PanelMetrics.showWindowClock(clock)
             #expect(DockLayout.thickness(on: .horizontal, docked: true) == docked)
             #expect(DockLayout.ringStep(on: .horizontal, docked: true) == dockedStep)
-            // The window is budgeted for the longer and the thicker of the rails.
+            // The window is budgeted for the longer and the thicker of the rails, including action area.
             #expect(DockLayout.maximumLength(on: .horizontal, capacity: 7)
-                == DockLayout.length(for: 7, on: .horizontal, docked: false))
+                == DockLayout.length(for: 7, on: .horizontal, docked: false) + DockLayout.actionAreaLength)
         }
     }
 
@@ -626,8 +628,9 @@ struct RailOffsetTests {
 
     @Test("Action buttons (Settings and Quit) lie within rail bounds for dual and single track")
     func actionButtonsWithinRailBounds() {
+        let prevDualTrack = PanelMetrics.usesDualTrack
+        defer { PanelMetrics.useDualTrack(prevDualTrack) }
         PanelMetrics.useDualTrack(true)
-        defer { PanelMetrics.useDualTrack(false) }
 
         for edge in [PanelEdge.left, PanelEdge.right, PanelEdge.top] {
             for (quota, money) in [(2, 2), (3, 1), (4, 0), (0, 3)] {

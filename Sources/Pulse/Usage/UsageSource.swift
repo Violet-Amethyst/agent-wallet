@@ -424,7 +424,7 @@ enum PanelMetrics {
     }
     static var showsDetailedCard: Bool { lock.withLock { storedDetailedCard } }
 
-    nonisolated(unsafe) private static var storedDualTrack = false
+    nonisolated(unsafe) private static var storedDualTrack = true
     static var usesDualTrack: Bool { lock.withLock { storedDualTrack } }
     static func useDualTrack(_ uses: Bool) {
         lock.withLock { storedDualTrack = uses }

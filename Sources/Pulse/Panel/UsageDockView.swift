@@ -260,13 +260,10 @@ enum DockLayout {
 
     /// Maximum rail thickness across axes.
     static func maximumThickness(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
-        if PanelMetrics.usesDualTrack {
-            if axis == .horizontal {
-                return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
-            }
-            return dualTrackWidth
+        if axis == .horizontal {
+            return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
         }
-        return thickness(on: axis, docked: docked)
+        return dualTrackWidth
     }
 
     /// Whether the items are split into dual-track ("五环") layout.
@@ -534,15 +531,19 @@ enum DockLayout {
     /// has to leave room for. Measured docked, which is the longer of the two —
     /// the window never needs to shrink, only the rail drawn inside it.
     static func maximumLength(on axis: PanelEdge.Axis, capacity: Int = PanelMetrics.railCapacity) -> CGFloat {
-        if PanelMetrics.usesDualTrack {
-            let quotaCap = (capacity + 1) / 2
-            let moneyCap = capacity / 2
-            return max(
-                length(quotaCount: quotaCap, moneyCount: moneyCap, on: axis, docked: true),
-                length(quotaCount: quotaCap, moneyCount: moneyCap, on: axis, docked: false)
-            )
-        }
-        return max(length(for: capacity, on: axis, docked: true), length(for: capacity, on: axis, docked: false))
+        let singleLength = max(
+            length(for: capacity, on: axis, docked: true),
+            length(for: capacity, on: axis, docked: false)
+        ) + actionAreaLength
+
+        let quotaCap = (capacity + 1) / 2
+        let moneyCap = capacity / 2
+        let dualLength = max(
+            length(quotaCount: quotaCap, moneyCount: moneyCap, on: axis, docked: true),
+            length(quotaCount: quotaCap, moneyCount: moneyCap, on: axis, docked: false)
+        )
+
+        return max(singleLength, dualLength)
     }
 
     /// Kept for the vertical rail, which is what every existing caller means.
