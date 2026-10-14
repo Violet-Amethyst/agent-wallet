@@ -64,7 +64,7 @@ final class FloatingPanelController {
             switch edge.axis {
             case .vertical:
                 return CGSize(
-                    width: reach + DockLayout.thickness(on: .vertical),
+                    width: reach + DockLayout.maximumThickness(on: .vertical),
                     // Tall enough for whichever is bigger: the rail with every
                     // provider on, or the tallest card that might be shown
                     // beside it. A card taller than the window gets sliced off
@@ -76,7 +76,7 @@ final class FloatingPanelController {
                 return CGSize(
                     // Wide enough for whichever is wider, for the same reason.
                     width: max(DockLayout.maximumLength(on: .horizontal, capacity: capacity), DetailCardLayout.width, notchSize?.width ?? 0),
-                    height: DockLayout.thickness(on: .horizontal, docked: docked)
+                    height: DockLayout.maximumThickness(on: .horizontal, docked: docked)
                         + (notchSize?.height ?? 0)
                         + DetailCardLayout.horizontalGap
                         + DetailCardLayout.pointerWidth
@@ -104,7 +104,13 @@ final class FloatingPanelController {
     /// Watches which display the pointer is on, while that is switched on.
     private let displayFollower = ActiveDisplayFollower()
 
-    init(store: UsageStore, settings: AppSettings, placement: PanelPlacement) {
+    init(
+        store: UsageStore,
+        settings: AppSettings,
+        placement: PanelPlacement,
+        onSettings: @escaping () -> Void = {},
+        onQuit: @escaping () -> Void = {}
+    ) {
         self.store = store
         self.settings = settings
         self.placement = placement
@@ -134,7 +140,13 @@ final class FloatingPanelController {
         configurePanel()
 
         let hostingView = NSHostingView(
-            rootView: FloatingUsagePanelView(store: store, settings: settings, placement: placement)
+            rootView: FloatingUsagePanelView(
+                store: store,
+                settings: settings,
+                placement: placement,
+                onSettings: onSettings,
+                onQuit: onQuit
+            )
         )
         hostingView.sizingOptions = []
         hostingView.frame = NSRect(x: 0, y: 0, width: initialSize.width, height: initialSize.height)
@@ -189,7 +201,7 @@ final class FloatingPanelController {
         panel.railFrame = { [settings, store, placement] in
             PanelHitArea.rail(
                 edge: placement.edge,
-                railSize: DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: placement.edge.axis, docked: placement.isDocked),
+                railSize: Self.shownRailSize(settings, usage: { store.usage(for: $0) }, on: placement.edge.axis, docked: placement.isDocked),
                 railTop: placement.railTop,
                 railLeading: placement.railLeading
             )
@@ -201,18 +213,18 @@ final class FloatingPanelController {
         // an edge, and measuring the old state throws the placement off by that
         // much on the frame it changes.
         panel.railSize = { [settings, store] axis, docked in
-            DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: axis, docked: docked)
+            Self.shownRailSize(settings, usage: { store.usage(for: $0) }, on: axis, docked: docked)
         }
         panel.grabArea = { [settings, store, placement] in
             if placement.notch != nil && !placement.isRailExpanded { return .zero }
-            let size = DockLayout.size(for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }), on: placement.edge.axis, docked: placement.isDocked)
+            let size = Self.shownRailSize(settings, usage: { store.usage(for: $0) }, on: placement.edge.axis, docked: placement.isDocked)
             if placement.isRailExpanded {
                 let rail = PanelHitArea.rail(edge: placement.edge, railSize: size, railTop: placement.railTop, railLeading: placement.railLeading)
                 return placement.notch.map { PanelHitArea.notchSurface(rail: rail, notchSize: $0.size) } ?? rail
             }
             return PanelHitArea.strip(edge: placement.edge, railSize: size, railTop: placement.railTop, railLeading: placement.railLeading)
         }
-        panel.onClick = { [settings, placement, store] point in
+        panel.onClick = { [settings, placement, store, onSettings, onQuit] point in
             guard placement.isRailExpanded else { return }
             // The rail draws them in the user's order, so a click has to be
             // matched against that order — `PanelHitArea.slot` maps a
@@ -226,10 +238,34 @@ final class FloatingPanelController {
                 isSplit: settings.isSplit,
                 groups: { RailSlot.modelGroups(of: store.usage(for: $0)) }
             )
+            let isMoney: (RailSlot) -> Bool = { store.usage(for: $0.account).isMoney }
+            let quotaCount = slots.filter { !isMoney($0) }.count
+            let moneyCount = slots.filter { isMoney($0) }.count
+            let railSize = DockLayout.size(quotaCount: quotaCount, moneyCount: moneyCount, on: placement.edge.axis, docked: placement.isDocked)
+            let rail = PanelHitArea.rail(
+                edge: placement.edge,
+                railSize: railSize,
+                railTop: placement.railTop,
+                railLeading: placement.railLeading
+            )
+            let actionPos = DockLayout.actionPositions(
+                quotaCount: quotaCount,
+                moneyCount: moneyCount,
+                edge: placement.edge,
+                docked: placement.isDocked
+            )
+            for (index, pos) in actionPos.enumerated() {
+                let centre = CGPoint(x: rail.minX + pos.x, y: rail.minY + pos.y)
+                if hypot(point.x - centre.x, point.y - centre.y) <= DockLayout.actionDiameter / 2 {
+                    if index == 0 { onSettings() } else { onQuit() }
+                    return
+                }
+            }
             guard let slot = PanelHitArea.slot(
                 at: point,
                 edge: placement.edge,
                 slots: slots,
+                isMoney: isMoney,
                 railTop: placement.railTop,
                 railLeading: placement.railLeading,
                 docked: placement.isDocked
@@ -368,6 +404,30 @@ final class FloatingPanelController {
         ).count
     }
 
+    static func shownSlotCounts(
+        _ settings: AppSettings,
+        usage: (AccountKey) -> ProviderUsage
+    ) -> (quota: Int, money: Int) {
+        let slots = RailSlot.rail(
+            for: settings.shownAccounts,
+            isSplit: settings.isSplit,
+            groups: { RailSlot.modelGroups(of: usage($0)) }
+        )
+        let money = slots.filter { usage($0.account).isMoney }.count
+        let quota = slots.count - money
+        return (quota, money)
+    }
+
+    static func shownRailSize(
+        _ settings: AppSettings,
+        usage: (AccountKey) -> ProviderUsage,
+        on axis: PanelEdge.Axis,
+        docked: Bool
+    ) -> CGSize {
+        let (quota, money) = shownSlotCounts(settings, usage: usage)
+        return DockLayout.size(quotaCount: quota, moneyCount: money, on: axis, docked: docked)
+    }
+
     /// Parks the panel where it was last left.
     ///
     /// The rail's size is passed in because it changes under the placement —
@@ -393,8 +453,9 @@ final class FloatingPanelController {
         // The dock, not the edge: a rail standing free in the top half of the
         // screen opens its card downwards too, and has no notch to sit in.
         placement.notch = placement.dock == .edge(.top) ? PanelScreen.notch(of: screen) : nil
-        let railSize = DockLayout.size(
-            for: Self.shownSlotCount(settings, usage: { store.usage(for: $0) }),
+        let railSize = Self.shownRailSize(
+            settings,
+            usage: { store.usage(for: $0) },
             on: edge.axis,
             docked: placement.isDocked
         )

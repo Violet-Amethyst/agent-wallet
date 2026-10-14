@@ -152,7 +152,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openRecap: { [weak self] period in self?.showRecap(period: period) }
         )
         recapNotice.start()
-        let controller = FloatingPanelController(store: store, settings: settings, placement: placement)
+        let controller = FloatingPanelController(
+            store: store,
+            settings: settings,
+            placement: placement,
+            onSettings: { [weak self] in self?.showSettings() },
+            onQuit: { NSApplication.shared.terminate(nil) }
+        )
         panelController = controller
         controller.contextMenu = { [weak self] in self?.panelMenu() ?? NSMenu() }
         if settings.isPanelVisible { controller.show() }
@@ -446,6 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// of it is on screen. A forgotten shortcut then left no way back short
     /// of Activity Monitor; opening the app again is the way everybody tries
     /// first, and it did nothing at all.
+    @MainActor
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Before a service is chosen the chooser is the way in, not Settings —
         // the one already open brought forward rather than a second made.

@@ -623,6 +623,39 @@ struct RailOffsetTests {
             #expect(hit?.id == slot.id)
         }
     }
+
+    @Test("Action buttons (Settings and Quit) lie within rail bounds for dual and single track")
+    func actionButtonsWithinRailBounds() {
+        PanelMetrics.useDualTrack(true)
+        defer { PanelMetrics.useDualTrack(false) }
+
+        for edge in [PanelEdge.left, PanelEdge.right, PanelEdge.top] {
+            for (quota, money) in [(2, 2), (3, 1), (4, 0), (0, 3)] {
+                let size = DockLayout.size(quotaCount: quota, moneyCount: money, on: edge.axis, docked: true)
+                let rail = PanelHitArea.rail(edge: edge, railSize: size, railTop: 0, railLeading: 0)
+                let actionPos = DockLayout.actionPositions(
+                    quotaCount: quota,
+                    moneyCount: money,
+                    edge: edge,
+                    docked: true
+                )
+                #expect(actionPos.count == 2)
+                let radius = DockLayout.actionDiameter / 2
+                for pos in actionPos {
+                    let btnRect = CGRect(
+                        x: rail.minX + pos.x - radius,
+                        y: rail.minY + pos.y - radius,
+                        width: radius * 2,
+                        height: radius * 2
+                    )
+                    #expect(
+                        rail.contains(btnRect),
+                        "Action button at \(pos) should be inside rail \(rail) for quota \(quota), money \(money), edge \(edge)"
+                    )
+                }
+            }
+        }
+    }
 }
 }
 }

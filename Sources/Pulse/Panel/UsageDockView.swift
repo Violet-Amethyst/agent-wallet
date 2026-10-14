@@ -297,7 +297,7 @@ enum DockLayout {
     /// Rail length considering single vs dual track.
     static func length(quotaCount: Int, moneyCount: Int, on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
         guard isDualTrack(quotaCount: quotaCount, moneyCount: moneyCount) else {
-            return length(for: quotaCount + moneyCount, on: axis, docked: docked)
+            return length(for: quotaCount + moneyCount, on: axis, docked: docked) + actionAreaLength
         }
         let slots = alongSlotCount(quotaCount: quotaCount, moneyCount: moneyCount)
         let spacing = dualTrackItemSpacing
