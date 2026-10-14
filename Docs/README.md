@@ -8,6 +8,8 @@ Maintained map. Change the topic file that owns a behaviour in the same patch as
 
 | Doc | Owns |
 |---|---|
+| [ROADMAP_AND_LEARNING_PATH.md](ROADMAP_AND_LEARNING_PATH.md) | Agent Wallet 演化全景路线图、先驱架构深度拆解（Pulse / CodexBar）与学习经验总结 |
+| [reference/ARCHIVE_REPORT.md](reference/ARCHIVE_REPORT.md) | 归档与架构演进报告、先驱功能对比与清理清单 |
 | [architecture.md](architecture.md) | App shell, settings state, first-run / offer-once, login item, defaults domain |
 | [networking.md](networking.md) | System/manual proxy boundary, URLSession coverage, helper environment, Sparkle exception |
 | [ui/README.md](ui/README.md) | Panel geometry, input, rail menu, shortcuts, glass/rings, settings window |
@@ -24,6 +26,8 @@ Maintained map. Change the topic file that owns a behaviour in the same patch as
 | [providers/README.md](providers/README.md) | Per-provider routes, auth, cookies, extra accounts |
 | [setup/](setup/) | Per-provider setup pages for users — what the in-app **Setup help** link opens |
 | [decisions/README.md](decisions/README.md) | Why / failure lessons (historical) |
+| [research/](research/) | 前期调研文档集（01-08 篇及阶段截图） |
+| [reference/codexbar/](reference/codexbar/) | CodexBar 架构参考、UI 设计说明与截图库 |
 
 ## Providers
 
