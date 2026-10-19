@@ -30,7 +30,11 @@ enum DetailCardLayout {
     /// Spacing between a row's title line, its progress bar, and its
     /// percent line.
     static var rowInternalSpacing: CGFloat { 7 * PanelMetrics.scale }
-    static var progressBarHeight: CGFloat { 6 * PanelMetrics.scale }
+    /// Taller segmented, so its ticks read as ticks (`UsageBarStyle`).
+    static var progressBarHeight: CGFloat {
+        (PanelMetrics.usageBarStyle == .segmented ? UsageBar.segmentedHeight : UsageBar.continuousHeight)
+            * PanelMetrics.scale
+    }
     /// Rendered line height of the header row (icon + title).
     static var headerHeight: CGFloat { 19 * PanelMetrics.scale }
 
@@ -106,6 +110,13 @@ enum DetailCardLayout {
     static var unpricedFiguresHeight: CGFloat { figureLabelHeight + 2 * PanelMetrics.scale + figureValueHeight }
     static var chartHeight: CGFloat { 30 * PanelMetrics.scale }
 
+    /// How many of an extension's metrics may draw their series on the card
+    /// (issue #80). A trend under a metric is a limit row's height, so four
+    /// of them beside a few limits would run past `maximumHeight`, which the
+    /// window was sized for; the rest show their figure alone, and Settings
+    /// draws every series.
+    static var metricTrendLimit: Int { 2 }
+
     /// The whole activity section: rule, heading, figures, chart, top model,
     /// cache hit rate, the prompt cache's lapse, the line saying what the
     /// money is. Each part is drawn at the height
@@ -148,6 +159,9 @@ struct UsageDetailCard: View {
     var showsRemaining: Bool = false
     /// Say whether each limit will last its window.
     var showsForecast: Bool = false
+    /// Put the allowance in its own unit beside each row's name, where the
+    /// provider states one (`UsageWindow.amounts`; Qoder's credits, #88).
+    var showsAmounts: Bool = false
     /// Codex's limit reset credits, when its switch is on and it has been
     /// asked. Nil draws no row at all.
     var resetCredits: CodexResetCredits?
@@ -158,6 +172,9 @@ struct UsageDetailCard: View {
     /// Nil draws no section: Token spend is off, or this account keeps no
     /// records here.
     var spend: Spend?
+    /// Qoder's last 31 days in credits, from the account's records, for the
+    /// detailed card. Nil draws nothing — not asked yet, or not read whole.
+    var qoderCredits: QoderCreditDays?
     /// When each live session's prompt cache lapses, where the logs say. The
     /// card names the soonest; Settings lists them all.
     var promptCache: PromptCacheReading?
@@ -255,7 +272,8 @@ struct UsageDetailCard: View {
                     isSpent: UsageTint.isSpent(window),
                     showsRemaining: showsRemaining,
                     burn: (showsForecast || isDetailed) ? BurnRate.reading(for: window) : nil,
-                    value: valueText(window)
+                    value: valueText(window),
+                    amount: showsAmounts ? Self.amountText(window, remaining: showsRemaining) : nil
                 )
                 .transition(Self.rowTransition)
             }
@@ -332,6 +350,14 @@ struct UsageDetailCard: View {
                 }
             }
 
+            // An extension's figures that are not limits, in its own words
+            // and units (issue #80), and under the first few that carry one,
+            // the series they came from.
+            ForEach(usage.metrics) { metric in
+                MetricRow(metric: metric, showsTrend: trendedMetrics.contains(metric.id))
+                    .transition(Self.rowTransition)
+            }
+
             // The same rule for the other way a body can come out empty: a
             // reading that says nothing at all still has to say *that*.
             if saysNothing {
@@ -356,6 +382,12 @@ struct UsageDetailCard: View {
 
             if isDetailed, let spend {
                 ActivitySection(spend: spend, provider: usage.provider, promptCache: promptCache)
+                    .transition(Self.rowTransition)
+            }
+            // Qoder keeps no history on this Mac; its account's records stand
+            // in the same place, in credits (issue #88).
+            if isDetailed, let qoderCredits {
+                QoderCreditSection(credits: qoderCredits)
                     .transition(Self.rowTransition)
             }
         }
@@ -452,6 +484,12 @@ struct UsageDetailCard: View {
         return orderedUsageWindows
     }
 
+    /// The metrics that draw their series here: the first ones that have one,
+    /// up to the card's budget.
+    private var trendedMetrics: Set<String> {
+        Set(usage.metrics.filter(\.hasTrend).prefix(DetailCardLayout.metricTrendLimit).map(\.id))
+    }
+
     /// Whether the body would otherwise be nothing but the header.
     ///
     /// An unavailable reading is excluded because its own message is about to
@@ -484,8 +522,8 @@ struct UsageDetailCard: View {
     /// The card's line under a limit, for the menu bar's list too.
     static func resetDescription(_ window: UsageWindow) -> String { resetText(window) }
 
-    /// What a limit is worth, on the detailed card: "Estimated value ≈$220 ·
-    /// ≈$101 used". The settings pane's `BudgetEstimate`, from the ledger the
+    /// What a limit is worth, on the detailed card: "Estimated value $220 ·
+    /// $101 used". The settings pane's `BudgetEstimate`, from the ledger the
     /// card already holds — so only where that ledger carries money and its
     /// quarter-hours, which is this Mac's records and never a provider's own
     /// statistics. Nil wherever the estimator withholds it, and for a provider
@@ -546,7 +584,7 @@ struct UsageDetailCard: View {
         return String.localized("Resets \(formatter.string(from: resets))")
     }
 
-    /// "10月18日 86 积分到期". The date alone unless it is today — a pack
+    /// "其中 86 积分 10月18日 到期". The date alone unless it is today — a pack
     /// ends at whatever minute it was granted, and that minute is noise a
     /// week out.
     private static func expiryText(_ expiry: UsageWindow.Expiry) -> String {
@@ -555,12 +593,51 @@ struct UsageDetailCard: View {
         formatter.setLocalizedDateFormatFromTemplate(
             Calendar.current.isDateInToday(expiry.at) ? "jmm" : "MMMd"
         )
-        // StepFun counts in Credits of which a plan holds billions: "1,599,913,834"
-        // does not fit the slot, and the scale is the point, as with tokens.
-        let amount = expiry.amount >= 10_000
-            ? TokenCount.short(Int(expiry.amount))
-            : expiry.amount.formatted(.number.precision(.fractionLength(0...1)).locale(LocalizationSource.locale))
-        return String.localized("\(formatter.string(from: expiry.at)): \(amount) credits expire")
+        let date = formatter.string(from: expiry.at)
+        // **Several days of lots are said as several.** Naming the soonest
+        // alone said 100 of 400 had a deadline when all four had (issue #76):
+        // the line gives everything that lapses, from the first day, and in
+        // how many lots.
+        // **Everything the row has left needs no amount**: the bar beside it
+        // already says how much that is, and the line has to fit beside the
+        // percentage. "Of which" only where it is part of the row: a part
+        // whose credits all lapse together read as a fraction of itself.
+        if expiry.coversRemainder == true {
+            if let lots = expiry.lots {
+                return String.localized("All expire from \(date), in \(String(lots)) lots")
+            }
+            return String.localized("All expire \(date)")
+        }
+        if let total = expiry.totalAmount {
+            return String.localized("From \(date): \(expiryAmount(total)) credits expire in turn")
+        }
+        return String.localized("\(date): \(expiryAmount(expiry.amount)) credits expire")
+    }
+
+    /// "5,843 / 6,000": what is left of the allowance, or what is gone, out of
+    /// all of it — the same way round as the percentage under it, which says
+    /// "Left" or "Used". Nil where the provider stated no remainder and the row
+    /// counts what is left: the two others are not subtracted for it.
+    nonisolated static func amountText(_ window: UsageWindow, remaining: Bool) -> String? {
+        guard let amounts = window.amounts, amounts.limit > 0,
+              let figure = remaining ? amounts.remaining : amounts.used
+        else { return nil }
+        return "\(creditAmount(max(figure, 0))) / \(creditAmount(amounts.limit))"
+    }
+
+    /// Whole credits in full up to a million, a tenth where there is one.
+    nonisolated static func creditAmount(_ amount: Double) -> String {
+        amount >= 1_000_000
+            ? TokenCount.short(Int(amount))
+            : amount.formatted(.number.precision(.fractionLength(0...1)).locale(LocalizationSource.locale))
+    }
+
+    /// StepFun counts in Credits of which a plan holds billions: "1,599,913,834"
+    /// does not fit the slot, and the scale is the point, as with tokens.
+    private static func expiryAmount(_ amount: Double) -> String {
+        amount >= 10_000
+            ? TokenCount.short(Int(amount))
+            : amount.formatted(.number.precision(.fractionLength(0...1)).locale(LocalizationSource.locale))
     }
 
     private static func relative(_ date: Date) -> String {
@@ -651,6 +728,78 @@ extension UsageDetailCard {
     }
 }
 
+/// Qoder's place for the activity section (issue #88): today, 7 days and 31
+/// days in credits — what was used, and under it what was deducted — and the
+/// month day by day. The account's own records, so the whole account's work,
+/// editor and CLI alike. Drawn in `ActivitySection`'s rows at its heights,
+/// so it fits the budget every detailed card already keeps for one.
+private struct QoderCreditSection: View {
+    let credits: QoderCreditDays
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DetailCardLayout.activitySpacing) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
+                .frame(height: 1)
+
+            Text(localized: "Whole account")
+                .font(.system(size: DetailCardLayout.footnoteFontSize, weight: .medium, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.5))
+                .frame(height: DetailCardLayout.figureLabelHeight)
+
+            HStack(alignment: .top, spacing: 8) {
+                figure(String.localized("Today"), credits.total(overLast: 1))
+                figure(String.localized("7 days"), credits.total(overLast: 7))
+                figure(String.localized("31 days"), credits.total(overLast: QoderCreditDays.span))
+            }
+            .frame(height: DetailCardLayout.figuresHeight, alignment: .top)
+
+            DaysChart(
+                days: credits.days.map {
+                    // Hundredths, so a day of 0.4 credits still has a bar.
+                    LedgerDay(date: $0.date, tokens: Int(($0.used * 100).rounded()), cost: 0,
+                              unpricedTokens: 0, models: [:])
+                },
+                slots: QoderCreditDays.span,
+                label: String.localized("Credits used per day")
+            )
+            .frame(height: DetailCardLayout.chartHeight)
+
+            Text(localized: "From Qoder's usage records, in credits.")
+                .font(.system(size: DetailCardLayout.footnoteFontSize, weight: .regular, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.4))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(height: DetailCardLayout.footnoteHeight)
+        }
+    }
+
+    /// The credits used, large, and what was deducted under it, dim: the
+    /// same two lines `ActivitySection` gives tokens and their money.
+    private func figure(_ label: String, _ total: (used: Double, charged: Double)) -> some View {
+        VStack(alignment: .leading, spacing: 2 * PanelMetrics.scale) {
+            Text(verbatim: label)
+                .font(.system(size: DetailCardLayout.footnoteFontSize, weight: .regular, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.45))
+                .frame(height: DetailCardLayout.figureLabelHeight)
+            Text(verbatim: UsageDetailCard.creditAmount(total.used))
+                .font(.system(size: DetailCardLayout.figureFontSize, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.primary)
+                .frame(height: DetailCardLayout.figureValueHeight)
+            Text(String.localized("Charged \(UsageDetailCard.creditAmount(total.charged))"))
+                .font(.system(size: DetailCardLayout.footnoteFontSize, weight: .regular, design: .rounded).monospacedDigit())
+                .foregroundStyle(.primary.opacity(0.45))
+                .frame(height: DetailCardLayout.figureLabelHeight)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(String.localized("\(UsageDetailCard.creditAmount(total.used)) credits used, \(UsageDetailCard.creditAmount(total.charged)) charged"))
+    }
+}
+
 /// The detailed card's last section: the account's recent usage, from this
 /// Mac's records at the Token spend pane's prices, or — for Z.ai and Zhipu —
 /// from the statistics the provider publishes for the whole account, or — for
@@ -716,7 +865,8 @@ private struct ActivitySection: View {
             case .signedOut:
                 message(String.localized("The console session has expired. Read it again in Settings."))
             case .ledger(let ledger):
-                figures(ledger)
+                let month = ledger.total(overLast: Self.span)
+                figures(ledger, month: month)
                 DaysChart(days: ledger.recent(Self.span), slots: Self.span)
                     .frame(height: DetailCardLayout.chartHeight)
                 topModel(ledger)
@@ -726,7 +876,11 @@ private struct ActivitySection: View {
                     ? String.localized("Costs as \(provider.displayName) charged them, for the whole account.")
                     : isAccountWide
                         ? String.localized("From \(provider.displayName), for the whole account.")
-                        : String.localized("Costs are estimates at API prices."))
+                        // Only beside a `*`: with no money line there is
+                        // none to explain.
+                        : Self.hasMoneyLine(month, isAccountWide: isAccountWide, isCharged: isCharged) && month.unpriced > 0
+                            ? String.localized("API-price estimates. * Partly unpriced.")
+                            : String.localized("Costs are estimates at API prices."))
                     .font(.system(size: DetailCardLayout.footnoteFontSize, weight: .regular, design: .rounded))
                     .foregroundStyle(.primary.opacity(0.4))
                     .lineLimit(1)
@@ -743,18 +897,23 @@ private struct ActivitySection: View {
             .frame(height: DetailCardLayout.rowTextLineHeight)
     }
 
-    private func figures(_ ledger: UsageLedger) -> some View {
+    /// No money line at all where there is no money anywhere — a provider's
+    /// own statistics, or nothing priced — rather than a blank band under the
+    /// figures. One priced column keeps the line on all three, level.
+    private static func hasMoneyLine(_ month: (tokens: Int, cost: Double, unpriced: Int),
+                                     isAccountWide: Bool, isCharged: Bool) -> Bool {
+        (isCharged || !isAccountWide) && month.cost > 0
+    }
+
+    private func figures(_ ledger: UsageLedger, month: (tokens: Int, cost: Double, unpriced: Int)) -> some View {
         let today = ledger.today
         let week = ledger.total(overLast: 7)
-        let month = ledger.total(overLast: Self.span)
-        // No money line at all where there is no money anywhere — a provider's
-        // own statistics, or nothing priced — rather than a blank band under
-        // the figures. One priced column keeps the line on all three, level.
-        let priced = (isCharged || !isAccountWide) && month.cost > 0
+        let priced = Self.hasMoneyLine(month, isAccountWide: isAccountWide, isCharged: isCharged)
         return HStack(alignment: .top, spacing: 8) {
-            figure(String.localized("Today"), tokens: today?.tokens ?? 0, cost: today?.cost ?? 0, priced: priced)
-            figure(String.localized("7 days"), tokens: week.tokens, cost: week.cost, priced: priced)
-            figure(String.localized("31 days"), tokens: month.tokens, cost: month.cost, priced: priced)
+            figure(String.localized("Today"), tokens: today?.tokens ?? 0, cost: today?.cost ?? 0,
+                   unpriced: today?.unpricedTokens ?? 0, priced: priced)
+            figure(String.localized("7 days"), tokens: week.tokens, cost: week.cost, unpriced: week.unpriced, priced: priced)
+            figure(String.localized("31 days"), tokens: month.tokens, cost: month.cost, unpriced: month.unpriced, priced: priced)
         }
         .frame(height: priced ? DetailCardLayout.figuresHeight : DetailCardLayout.unpricedFiguresHeight, alignment: .top)
     }
@@ -762,7 +921,12 @@ private struct ActivitySection: View {
     /// **No money line for work nobody priced.** A day spent entirely on a
     /// model with no published price costs something; "$0.00" would say it
     /// cost nothing.
-    private func figure(_ label: String, tokens: Int, cost: Double, priced: Bool) -> some View {
+    ///
+    /// **A `*` where only part of it was priced** (#90), as the Token spend
+    /// pane marks it: a model with no published price is left out of the
+    /// money, and an unmarked "$0.04" under 740M tokens read as the cost of
+    /// all of them. The footnote then says what the `*` means.
+    private func figure(_ label: String, tokens: Int, cost: Double, unpriced: Int, priced: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2 * PanelMetrics.scale) {
             Text(verbatim: label)
                 .font(.system(size: DetailCardLayout.footnoteFontSize, weight: .regular, design: .rounded))
@@ -773,8 +937,11 @@ private struct ActivitySection: View {
                 .foregroundStyle(.primary)
                 .frame(height: DetailCardLayout.figureValueHeight)
             if priced {
-                // "≈" for an estimate; what the provider charged is stated.
-                Text(verbatim: cost > 0 ? (isCharged ? "" : "≈") + AccountUsageCard.money(cost, currency: currency) : " ")
+                // No "≈": the section's footnote says when the money is an
+                // estimate, and when it is what the provider charged.
+                Text(verbatim: cost > 0
+                    ? AccountUsageCard.money(cost, currency: currency, isCharged: isCharged) + (unpriced > 0 ? "*" : "")
+                    : " ")
                     .font(.system(size: DetailCardLayout.footnoteFontSize, weight: .regular, design: .rounded).monospacedDigit())
                     .foregroundStyle(.primary.opacity(0.45))
                     .frame(height: DetailCardLayout.figureLabelHeight)
@@ -922,6 +1089,8 @@ private struct PromptCacheRow: View {
 private struct DaysChart: View {
     let days: [LedgerDay]
     let slots: Int
+    /// What the bars count, for VoiceOver.
+    var label = String.localized("Tokens per day")
 
     var body: some View {
         GeometryReader { proxy in
@@ -948,7 +1117,7 @@ private struct DaysChart: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String.localized("Tokens per day"))
+        .accessibilityLabel(label)
     }
 }
 
@@ -997,6 +1166,93 @@ private struct ValueRow: View {
     }
 }
 
+/// One of an extension's metrics: its figure, and optionally its series as a
+/// line underneath.
+private struct MetricRow: View {
+    let metric: UsageMetric
+    let showsTrend: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DetailCardLayout.rowInternalSpacing) {
+            ValueRow(title: metric.label, value: metric.valueText)
+            if showsTrend {
+                MetricTrendLine(points: metric.history)
+                    .frame(height: DetailCardLayout.chartHeight)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(metric.label)
+                    .accessibilityValue(MetricTrendLine.summary(of: metric))
+            }
+        }
+    }
+}
+
+/// A metric's series as a line, placed by time and scaled between its own
+/// lowest and highest point, with the newest point marked.
+///
+/// **Static, like the days chart above it** — the panel never becomes key, so
+/// a hover readout would not fire. Settings draws the same series with one.
+/// **Placed by time, not by index**, so a gap in the program's points reads as
+/// a gap rather than being closed up into an even line it never reported.
+/// **One colour whichever way it moves**: lower is better for a first token's
+/// time and worse for an output rate, and only the program knows which this is.
+struct MetricTrendLine: View {
+    let points: [UsageMetric.Point]
+    var lineWidth: CGFloat = 1.5 * PanelMetrics.scale
+    var colour: Color = .primary.opacity(0.75)
+
+    /// Room round the plot, so the line's ends and the newest point's mark
+    /// are not cut by the frame. A hover readout over the line places its
+    /// points with the same figure.
+    var inset: CGFloat { lineWidth * 2 }
+
+    var body: some View {
+        Canvas { context, size in
+            guard let path = Self.path(points, in: size, inset: inset) else { return }
+            context.stroke(path, with: .color(colour), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+            if let last = Self.location(of: points.count - 1, in: points, size: size, inset: inset) {
+                let dot = lineWidth * 2.4
+                context.fill(Path(ellipseIn: CGRect(x: last.x - dot / 2, y: last.y - dot / 2, width: dot, height: dot)),
+                             with: .color(colour))
+            }
+        }
+    }
+
+    /// Where point `index` sits: across by its time between the first and the
+    /// last, up by its value between the lowest and the highest. A series that
+    /// never moves is drawn flat through the middle.
+    static func location(of index: Int, in points: [UsageMetric.Point], size: CGSize, inset: CGFloat) -> CGPoint? {
+        guard points.indices.contains(index), let first = points.first, let last = points.last else { return nil }
+        let span = last.at.timeIntervalSince(first.at)
+        guard span > 0 else { return nil }
+        let values = points.map(\.value)
+        let low = values.min() ?? 0
+        let high = values.max() ?? 0
+        let width = max(size.width - inset * 2, 1)
+        let height = max(size.height - inset * 2, 1)
+        let point = points[index]
+        let x = inset + width * CGFloat(point.at.timeIntervalSince(first.at) / span)
+        let y = high > low
+            ? inset + height * CGFloat(1 - (point.value - low) / (high - low))
+            : size.height / 2
+        return CGPoint(x: x, y: y)
+    }
+
+    private static func path(_ points: [UsageMetric.Point], in size: CGSize, inset: CGFloat) -> Path? {
+        let locations = points.indices.compactMap { location(of: $0, in: points, size: size, inset: inset) }
+        guard locations.count >= 2 else { return nil }
+        var path = Path()
+        path.addLines(locations)
+        return path
+    }
+
+    /// What VoiceOver says for the line: its lowest and highest point.
+    static func summary(of metric: UsageMetric) -> String {
+        let values = metric.history.map(\.value)
+        guard let low = values.min(), let high = values.max() else { return metric.valueText }
+        return .localized("\(metric.valueText). Lowest \(metric.text(for: low)), highest \(metric.text(for: high)).")
+    }
+}
+
 private struct ProgressMetricRow: View {
     let title: String
     let resetDescription: String
@@ -1011,6 +1267,10 @@ private struct ProgressMetricRow: View {
     var burn: BurnRate.Reading?
     /// The detailed card's estimate of what the window is worth. Nil draws no line.
     var value: String?
+    /// The allowance in its own unit, "5,843 / 6,000", beside the name. Nil
+    /// draws nothing; the line is the name's either way, so the row's height
+    /// does not change.
+    var amount: String?
 
     /// "88% Used", or "12% Left" when the figure is counted the other way.
     private var figureLabel: String {
@@ -1027,11 +1287,25 @@ private struct ProgressMetricRow: View {
             // Claude and GPT" next to "Resets 9月6日 18:14" does not fit in a
             // 250pt card, and it was the *name* that got cut — the half that
             // says which limit this is.
-            Text(title)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .font(.system(size: DetailCardLayout.rowFontSize, weight: .regular, design: .rounded))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+
+                if let amount {
+                    Spacer(minLength: 0)
+                    // Dim, as the reset line is: a figure about the row, under
+                    // the one the row is about.
+                    Text(verbatim: amount)
+                        .foregroundStyle(.primary.opacity(0.45))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+            .font(.system(size: DetailCardLayout.rowFontSize, weight: .regular, design: .rounded))
 
             ProgressView(value: progress)
                 .progressViewStyle(PulseProgressStyle(accent: accent))
@@ -1050,6 +1324,12 @@ private struct ProgressMetricRow: View {
                 Text(figureLabel)
                     .font(.system(size: DetailCardLayout.rowFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(isSpent ? Color.pulseExhausted : .primary.opacity(0.9))
+                    // **The figure keeps its line.** The reset line beside it
+                    // took the room first, and a long one — Russian's
+                    // "Сброс 9 нояб., 00:00", an expiry in lots — folded
+                    // "Осталось 58%" onto two lines, a row taller than the card
+                    // is budgeted for. The reset line gives way instead.
+                    .fixedSize()
                     // Swapped outright. A cross-fade drew two figures over each
                     // other; a numeric roll left the digits mid-turn — blank —
                     // for most of a sweep down the rail, since every switch
@@ -1063,6 +1343,8 @@ private struct ProgressMetricRow: View {
                     .font(.system(size: DetailCardLayout.rowFontSize, weight: .regular, design: .rounded))
                     .foregroundStyle(.primary.opacity(0.45))
                     .lineLimit(1)
+                    // Smaller before it is cut short.
+                    .minimumScaleFactor(0.8)
                     .layoutPriority(1)
             }
 
@@ -1081,9 +1363,10 @@ private struct ProgressMetricRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue(
-            showsRemaining
+            (showsRemaining
                 ? String.localized("\(percentageText) left. \(resetDescription)")
-                : String.localized("\(percentageText) used. \(resetDescription)")
+                : String.localized("\(percentageText) used. \(resetDescription)"))
+                + (amount.map { " \($0)" } ?? "")
         )
     }
 }
@@ -1129,16 +1412,13 @@ private struct PulseProgressStyle: ProgressViewStyle {
     let accent: Color
 
     func makeBody(configuration: Configuration) -> some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.primary.opacity(0.17))
-
-                Capsule()
-                    .fill(accent)
-                    .frame(width: proxy.size.width * (configuration.fractionCompleted ?? 0))
-            }
-        }
+        UsageBar(
+            fraction: configuration.fractionCompleted ?? 0,
+            accent: accent,
+            track: Color.primary.opacity(0.17),
+            style: PanelMetrics.usageBarStyle,
+            scale: PanelMetrics.scale
+        )
         .frame(height: DetailCardLayout.progressBarHeight)
     }
 }

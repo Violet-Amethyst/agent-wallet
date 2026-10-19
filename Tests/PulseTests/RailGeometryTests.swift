@@ -16,49 +16,80 @@ import Testing
 /// called here for real, and the rest pins the geometry that makes agreeing on
 /// it sufficient, at every edge and both dock states.
 extension PanelGlobalsSuite {
-    @Suite("Rail geometry")
+    @Suite("Rail geometry", .serialized)
     struct RailGeometryTests {
-    private static let edges: [PanelEdge] = [.left, .right, .top]
-    /// One, a handful, and a rail longer than any real one.
-    private static let counts = [1, 2, 3, 7, 15, 16]
+        private static let edges: [PanelEdge] = [.left, .right, .top, .bottom]
+        /// One, a handful, and a rail longer than any real one.
+        private static let counts = [1, 2, 3, 7, 15, 16]
 
-    /// Runs `body` once per end style.
-    ///
-    /// `AppSettings.usesRoundEnds` picks between two different rails: softened
-    /// ends take a written `verticalPadding` of 46, round ones derive 54 from
-    /// the end's own circle. The invariants below have to hold for both, and
-    /// only one of them is the default — so without this the other ships
-    /// untested. The flag is a global on `PanelMetrics`, which is why the
-    /// suite is serialized and why the original is put back.
-    private func underEachEndStyle(_ body: (String) -> Void) {
-        let original = PanelMetrics.usesRoundEnds
-        defer { PanelMetrics.useRoundEnds(original) }
+        /// Runs `body` once per end style.
+        ///
+        /// `AppSettings.usesRoundEnds` picks between two different rails: softened
+        /// ends take a written `verticalPadding` of 46, round ones derive 54 from
+        /// the end's own circle. The invariants below have to hold for both, and
+        /// only one of them is the default — so without this the other ships
+        /// untested. The flag is a global on `PanelMetrics`, which is why the
+        /// suite is serialized and why the original is put back.
+        ///
+        /// And once per way a lying rail lays out its figures: none (the top
+        /// rail's default), under the rings, and — free across only — beside
+        /// them. Each moves where every ring sits.
+        ///
+        /// And with the time arc off and on, figures under and above the
+        /// rings: the arc moves every figure further off (issue #73) and takes
+        /// room on the ring's side (issue #78), and which side that is depends
+        /// on where the figure is.
+        private func underEachEndStyle(_ body: (String) -> Void) {
+            let original = PanelMetrics.usesRoundEnds
+            let labels = PanelMetrics.topRailShowsPercentages
+            let beside = PanelMetrics.freeAcrossFiguresBeside
+            let clock = PanelMetrics.showsWindowClock
+            let above = PanelMetrics.labelAboveRing
+            defer {
+                PanelMetrics.useRoundEnds(original)
+                PanelMetrics.showTopPercentages(labels)
+                PanelMetrics.putFreeAcrossFiguresBeside(beside)
+                PanelMetrics.showWindowClock(clock)
+                PanelMetrics.putLabelAboveRing(above)
+            }
 
-        for round in [false, true] {
-            PanelMetrics.useRoundEnds(round)
-            body(round ? "round ends" : "softened ends")
+            for round in [false, true] {
+                for (shows, besideRings) in [(false, false), (true, false), (true, true)] {
+                    for arc in [false, true] {
+                        for labelAbove in [false, true] {
+                            PanelMetrics.useRoundEnds(round)
+                            PanelMetrics.showTopPercentages(shows)
+                            PanelMetrics.putFreeAcrossFiguresBeside(besideRings)
+                            PanelMetrics.showWindowClock(arc)
+                            PanelMetrics.putLabelAboveRing(labelAbove)
+                            let figures = !shows ? "no figures across" : besideRings ? "figures beside" : "figures under"
+                            body("\(round ? "round ends" : "softened ends"), \(figures), "
+                                + "time arc \(arc ? "on" : "off"), figure \(labelAbove ? "above" : "below")")
+                        }
+                    }
+                }
+            }
         }
-    }
 
-    /// Where the rail's own hit area sits, for a rail of `count` rings.
-    private func rail(_ count: Int, _ edge: PanelEdge, docked: Bool) -> CGRect {
-        PanelHitArea.rail(
-            edge: edge,
-            railSize: DockLayout.size(for: count, on: edge.axis, docked: docked),
-            railTop: 0,
-            railLeading: 0
-        )
-    }
+        /// Where the rail's own hit area sits, for a rail of `count` rings.
+        private func rail(_ count: Int, _ edge: PanelEdge, docked: Bool) -> CGRect {
+            PanelHitArea.rail(
+                edge: edge,
+                railSize: DockLayout.size(for: count, on: edge.axis, docked: docked),
+                railTop: 0,
+                railLeading: 0
+            )
+        }
 
-    /// The centre of ring `index`, by the same sum the hit test uses.
-    private func ringCentre(_ index: Int, in rail: CGRect, _ edge: PanelEdge, docked: Bool) -> CGPoint {
-        let along = DockLayout.firstRingAlong(docked: docked, on: edge.axis)
-            + CGFloat(index) * DockLayout.ringStep(on: edge.axis)
-        let across = DockLayout.ringCentreAcross(on: edge.axis)
-        return edge.isVertical
-            ? CGPoint(x: rail.minX + across, y: rail.minY + along)
-            : CGPoint(x: rail.minX + along, y: rail.minY + across)
-    }
+        /// The centre of ring `index`, by the same sum the hit test uses.
+        private func ringCentre(_ index: Int, in rail: CGRect, _ edge: PanelEdge, docked: Bool) -> CGPoint {
+            let along = DockLayout.firstRingAlong(docked: docked, on: edge.axis)
+                + CGFloat(index) * DockLayout.ringStep(on: edge.axis, docked: docked)
+            let across = DockLayout.ringCentreAcross(on: edge.axis, docked: docked)
+            return edge.isVertical
+                ? CGPoint(x: rail.minX + across, y: rail.minY + along)
+                : CGPoint(x: rail.minX + along, y: rail.minY + across)
+        }
 
     @MainActor
     @Test("Every ring's centre lies inside the rail it is drawn on")
@@ -362,6 +393,7 @@ struct RailOffsetTests {
         #expect(offsets.leading >= 0)
         #expect(offsets.leading <= max(tiny.width - rail.width, 0))
     }
+    }
 
     /// The two proportions of a rail lying free across, and the top dock's,
     /// which neither may change.
@@ -385,11 +417,11 @@ struct RailOffsetTests {
 
             PanelMetrics.putFreeAcrossFiguresBeside(false)
             // Where the hit test puts a ring is where the drawing does: the
-            // stacked item centred in the free rail's own thickness, behind its
-            // own padding — not the top dock's.
+            // stacked item behind the free rail's own padding — not the top
+            // dock's — and the time arc's reach on the ring's side.
             if !DockLayout.labelLeads {
                 #expect(DockLayout.ringCentreAcross(on: .horizontal, docked: false)
-                    == DockLayout.crossPadding(on: .horizontal, docked: false) + DockLayout.ringDiameter / 2)
+                    == DockLayout.crossInsets(on: .horizontal, docked: false).leading + DockLayout.ringDiameter / 2)
             }
             let docked = DockLayout.thickness(on: .horizontal, docked: true)
             let dockedStep = DockLayout.ringStep(on: .horizontal, docked: true)
@@ -417,6 +449,47 @@ struct RailOffsetTests {
             // The window is budgeted for the longer and the thicker of the rails, including action area.
             #expect(DockLayout.maximumLength(on: .horizontal, capacity: 7)
                 == DockLayout.length(for: 7, on: .horizontal, docked: false) + DockLayout.actionAreaLength)
+        }
+
+        /// Issue #78: a top dock with figures above the rings and the time arc
+        /// on drew the arc 3pt off the rail's bottom edge. The ring's side now
+        /// takes 10pt more, so the clear room past the arc is 5pt more than
+        /// past a ring without one — figures above or under, docked or free.
+        @MainActor
+        @Test("The time arc gets more room from the rail's edge than a bare ring has")
+        func timeArcKeepsItsRoom() {
+            let labels = PanelMetrics.topRailShowsPercentages
+            let beside = PanelMetrics.freeAcrossFiguresBeside
+            let above = PanelMetrics.labelAboveRing
+            let clock = PanelMetrics.showsWindowClock
+            defer {
+                PanelMetrics.showTopPercentages(labels)
+                PanelMetrics.putFreeAcrossFiguresBeside(beside)
+                PanelMetrics.putLabelAboveRing(above)
+                PanelMetrics.showWindowClock(clock)
+            }
+            PanelMetrics.showTopPercentages(true)
+            PanelMetrics.putFreeAcrossFiguresBeside(false)
+
+            /// Clear room between the rail's edge and the outermost thing
+            /// drawn round the ring, on the ring's side.
+            func room(docked: Bool) -> CGFloat {
+                let centre = DockLayout.ringCentreAcross(on: .horizontal, docked: docked)
+                let outer = DockLayout.ringDiameter / 2 + DockLayout.clockReach
+                return DockLayout.labelLeads
+                    ? DockLayout.thickness(on: .horizontal, docked: docked) - centre - outer
+                    : centre - outer
+            }
+            for labelAbove in [true, false] {
+                PanelMetrics.putLabelAboveRing(labelAbove)
+                for docked in [true, false] {
+                    PanelMetrics.showWindowClock(false)
+                    let plain = room(docked: docked)
+                    PanelMetrics.showWindowClock(true)
+                    #expect(room(docked: docked) == plain + 5 * PanelMetrics.scale, "above \(labelAbove), docked \(docked)")
+                    #expect(DockLayout.clockReach == 5 * PanelMetrics.scale)
+                }
+            }
         }
     }
 
@@ -626,6 +699,49 @@ struct RailOffsetTests {
         }
     }
 
+    @Test("Single-column mode groups quota rings before money rings even when input is mixed")
+    func singleColumnGroupsQuotaBeforeMoney() {
+        let prevDualTrack = PanelMetrics.usesDualTrack
+        defer { PanelMetrics.useDualTrack(prevDualTrack) }
+        PanelMetrics.useDualTrack(false)
+
+        let mixed = [
+            TestSlot(id: "deepSeek", isMoney: true),
+            TestSlot(id: "claudeCode", isMoney: false),
+            TestSlot(id: "openAI", isMoney: true),
+            TestSlot(id: "antigravity", isMoney: false),
+        ]
+
+        let geos = DockLayout.slotGeometries(
+            for: mixed,
+            isMoney: { $0.isMoney },
+            edge: .right,
+            docked: true
+        )
+
+        let claudeAlong = geos["claudeCode"]!.along
+        let antigravityAlong = geos["antigravity"]!.along
+        let deepSeekAlong = geos["deepSeek"]!.along
+        let openAIAlong = geos["openAI"]!.along
+
+        // All quota rings precede all money rings along the single-column rail.
+        #expect(claudeAlong < antigravityAlong)
+        #expect(antigravityAlong < deepSeekAlong)
+        #expect(deepSeekAlong < openAIAlong)
+
+        // And the group divider sits strictly between the last quota ring and first money ring.
+        let divider = DockLayout.singleColumnGroupDividerPosition(
+            quotaCount: 2,
+            moneyCount: 2,
+            edge: .right,
+            docked: true
+        )
+        #expect(divider != nil)
+        if let divider {
+            #expect(divider.y > antigravityAlong && divider.y < deepSeekAlong)
+        }
+    }
+
     @Test("Action buttons (Settings and Quit) lie within rail bounds for dual and single track")
     func actionButtonsWithinRailBounds() {
         let prevDualTrack = PanelMetrics.usesDualTrack
@@ -659,7 +775,6 @@ struct RailOffsetTests {
             }
         }
     }
-}
-}
+    }
 }
 

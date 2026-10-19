@@ -50,9 +50,14 @@ enum DockLayout {
     /// Further with the time-until-reset arc on: it is drawn 5pt outside the
     /// ring's edge (`UsageRingView.clockGap` + its stroke), and a figure at
     /// the usual 6pt sat on it — under the ring, beside it, across or down a
-    /// side. The extra keeps the same clear gap from the arc as from a ring
-    /// without one.
-    static var ringToTextSpacing: CGFloat { (PanelMetrics.showsWindowClock ? 11 : 6) * PanelMetrics.scale }
+    /// side (issue #73). The extra keeps the same clear gap from the arc as
+    /// from a ring without one.
+    static var ringToTextSpacing: CGFloat { 6 * PanelMetrics.scale + clockReach }
+
+    /// How much further the time-until-reset arc stands out than the ring it
+    /// circles: 5pt at standard size while it is on, nothing while it is off.
+    /// Measured from `UsageRingView.clockDiameter` and the clock's stroke.
+    static var clockReach: CGFloat { PanelMetrics.showsWindowClock ? 5 * PanelMetrics.scale : 0 }
     static var percentFontSize: CGFloat { 13 * PanelMetrics.scale }
     /// Rendered line height of the percent label, and its width at "100%".
     ///
@@ -247,7 +252,31 @@ enum DockLayout {
     static func thickness(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
         guard axis == .horizontal, showsPercentages(on: .horizontal),
               !labelsBeside(on: axis, docked: docked) else { return width }
-        return itemHeight + crossPadding(on: axis, docked: docked) * 2
+        let insets = crossInsets(on: axis, docked: docked)
+        return itemHeight + insets.leading + insets.trailing
+    }
+
+    /// The padding either side of the items across the rail — top and bottom
+    /// lying across, left and right down a side.
+    ///
+    /// **The ring's side gets 10pt more while the time-until-reset arc is
+    /// on**, when the rail lies across with its figures stacked over or under
+    /// the rings. The arc stands 5pt further out than the ring, and with
+    /// figures above the rings at the top dock it sat 3pt off the rail's
+    /// bottom edge, under a notch's whole housing of black (issue #78). Its
+    /// own reach alone (5pt) was tried first and still read cramped; 10 was
+    /// picked by eye on the bundled app, which leaves 5pt more past the arc
+    /// than a ring without one has. The figures' side is left as it was: the
+    /// gap between a ring and its figure already allows for the arc
+    /// (`ringToTextSpacing`). Down a side, and with figures beside or off, the
+    /// rail is far wider than a ring and its arc, so nothing is added.
+    static func crossInsets(on axis: PanelEdge.Axis,
+                            docked: Bool = true) -> (leading: CGFloat, trailing: CGFloat) {
+        let padding = crossPadding(on: axis, docked: docked)
+        guard axis == .horizontal, showsPercentages(on: .horizontal),
+              !labelsBeside(on: axis, docked: docked) else { return (padding, padding) }
+        let extra = PanelMetrics.showsWindowClock ? 10 * PanelMetrics.scale : 0
+        return labelLeads ? (padding, padding + extra) : (padding + extra, padding)
     }
 
     /// Rail width for dual-track ("五环" Olympic staggered layout).
@@ -260,6 +289,9 @@ enum DockLayout {
 
     /// Maximum rail thickness across axes.
     static func maximumThickness(on axis: PanelEdge.Axis, docked: Bool = true) -> CGFloat {
+        guard PanelMetrics.usesDualTrack else {
+            return thickness(on: axis, docked: docked)
+        }
         if axis == .horizontal {
             return showsPercentages(on: .horizontal) ? 136 * PanelMetrics.scale : dualTrackWidth
         }
@@ -356,6 +388,38 @@ enum DockLayout {
         let across: CGFloat
     }
 
+    /// Midpoint of the gap between the percentage (quota) group and the
+    /// credits/balance (money) group in Single-Column mode, or nil when
+    /// Dual-Column mode is active or one of the two groups is empty.
+    static func singleColumnGroupDividerPosition(
+        quotaCount: Int,
+        moneyCount: Int,
+        edge: PanelEdge,
+        docked: Bool
+    ) -> CGPoint? {
+        guard !isDualTrack(quotaCount: quotaCount, moneyCount: moneyCount),
+              quotaCount > 0, moneyCount > 0
+        else { return nil }
+
+        let firstAlong = firstRingAlong(docked: docked, on: edge.axis)
+        let step = ringStep(on: edge.axis, docked: docked, isDual: false)
+        let itemGap = gap(on: edge.axis, docked: docked)
+        let intoItem = if labelsBeside(on: edge.axis, docked: docked) {
+            ringDiameter / 2
+        } else if edge.axis == .vertical {
+            ringOffsetInItem(on: edge.axis) + ringDiameter / 2
+        } else {
+            itemLength(on: edge.axis, docked: docked) / 2
+        }
+
+        // Exact midpoint of the gap between item (quotaCount - 1) and item (quotaCount).
+        let boundaryAlong = firstAlong - intoItem + CGFloat(quotaCount) * step - itemGap / 2
+        let midAcross = thickness(on: edge.axis, docked: docked) / 2
+        return edge.isVertical
+            ? CGPoint(x: midAcross, y: boundaryAlong)
+            : CGPoint(x: boundaryAlong, y: midAcross)
+    }
+
     static func slotGeometries<T: Identifiable>(
         for items: [T],
         isMoney: (T) -> Bool,
@@ -382,8 +446,11 @@ enum DockLayout {
         if !dual {
             let singleAcross = ringCentreAcross(on: edge.axis, docked: docked)
             let midAcross = thickness(on: edge.axis, docked: docked) / 2
+            // Group percentage (quota) accounts first and credits/balance (money)
+            // accounts second in Single-Column mode so the two types stay separated.
+            let orderedItems = (quotaItems.isEmpty || moneyItems.isEmpty) ? items : (quotaItems + moneyItems)
 
-            for (index, item) in items.enumerated() {
+            for (index, item) in orderedItems.enumerated() {
                 let along = firstAlong + CGFloat(index) * step
                 let alongTop = along - intoItem
                 let itemCentreAlong = alongTop + itemLen / 2
@@ -504,8 +571,10 @@ enum DockLayout {
         let item = axis == .vertical
             ? ringDiameter
             : (showsPercentages(on: axis) ? itemHeight : ringDiameter)
-        let lead = axis == .horizontal ? ringOffsetInItem(on: axis) : 0
-        return (thickness(on: axis, docked: docked) - item) / 2 + lead + ringDiameter / 2
+        guard axis == .horizontal, showsPercentages(on: axis) else {
+            return (thickness(on: axis, docked: docked) - item) / 2 + ringDiameter / 2
+        }
+        return crossInsets(on: axis, docked: docked).leading + ringOffsetInItem(on: axis) + ringDiameter / 2
     }
 
     /// How far along the rail the first ring's centre sits, and the step from
@@ -712,6 +781,9 @@ struct UsageDockView: View {
             berth
 
             rings
+                // Still in the tree while collapsed, so nothing moves as it
+                // opens; but nothing in it may animate for nobody.
+                .environment(\.botMarksPaused, !isExpanded)
                 .opacity(isExpanded ? 1 : 0)
                 // Its own timing, overriding the spring the shape rides on:
                 // the contents appear once the berth has opened enough to hold
@@ -807,6 +879,12 @@ struct UsageDockView: View {
             edge: edge,
             docked: isDocked
         )
+        let dividerPos = DockLayout.singleColumnGroupDividerPosition(
+            quotaCount: quotaCount,
+            moneyCount: moneyCount,
+            edge: edge,
+            docked: isDocked
+        )
         let actionPos = DockLayout.actionPositions(
             quotaCount: quotaCount,
             moneyCount: moneyCount,
@@ -855,6 +933,18 @@ struct UsageDockView: View {
                     )
                     .position(geo.itemCentre)
                 }
+            }
+
+            if let dividerPos {
+                Capsule()
+                    .fill(Color.primary.opacity(0.2))
+                    .frame(
+                        width: edge.isVertical ? 26 * PanelMetrics.scale : 1.5 * PanelMetrics.scale,
+                        height: edge.isVertical ? 1.5 * PanelMetrics.scale : 26 * PanelMetrics.scale
+                    )
+                    .position(dividerPos)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
 
             if actionPos.count >= 2 {

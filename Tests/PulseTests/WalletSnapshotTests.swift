@@ -220,6 +220,29 @@ struct WalletSnapshotTests {
         #expect(snapshot.innerIsSpent == true)
         #expect(snapshot.railCaption == "0%")
     }
+
+    @Test("Qoder desktop credits adapt to money prepaid mode with cr caption and ring progress")
+    func qoderDesktopCreditSnapshot() {
+        let json = """
+        {
+          "displayMode": "qoder",
+          "qoderUsage": {
+            "userQuota": {"total": 300, "used": 0, "remaining": 300, "unit": "Credits"},
+            "addOnQuota": {"total": 0, "used": 0, "remaining": 0},
+            "sharedCreditPackageQuota": {"total": 0, "used": 0, "remaining": 0},
+            "planTag": "Free",
+            "expiresAt": 4896604799
+          }
+        }
+        """
+        let usage = QoderUsageService.parseDesktop(Data(json.utf8), now: Date())
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "Qoder")
+        #expect(snapshot.mode == .money(.prepaid))
+        #expect(snapshot.railCaption == "300 cr")
+        #expect(snapshot.prefersMoneyRingTint == true)
+        #expect(snapshot.innerUsedFraction == 0.0)
+        #expect(snapshot.singleQuota?.resetsAt == nil)
+    }
 }
 
 #if DEBUG

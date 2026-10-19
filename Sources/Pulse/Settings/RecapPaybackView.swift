@@ -21,6 +21,13 @@ struct RecapPaybackView: View {
         RecapFormat.money(amount, currency: recap.currency)
     }
 
+    /// The currency the page is written in: the one chosen in Settings for a
+    /// recap priced in dollars (`Money`), and what one of its units is worth
+    /// in it. The ruler measures in it, so its steps fall on round numbers of
+    /// the currency the labels show.
+    private var shownCode: String { recap.currency == "USD" ? Money.shownCode : recap.currency }
+    private var unitValue: Double { recap.currency == "USD" ? Money.converted(1).amount : 1 }
+
     var body: some View {
         if let payback = deck.payback {
             RecapStoryPage(page: deck.page(of: .payback)) {
@@ -79,7 +86,8 @@ struct RecapPaybackView: View {
                 .fixedSize()
                 .padding(.bottom, 6)
             }
-            Text(String.localized("For every \(RecapFormat.axisMoney(1, step: 1, currency: recap.currency)) of subscription, you used \(money(payback.multiple)) of API value"))
+            // A ratio, not an amount: both sides are already in `shownCode`.
+            Text(String.localized("For every \(RecapFormat.axisMoney(1, step: 1, currency: shownCode)) of subscription, you used \(RecapFormat.money(payback.multiple, currency: shownCode)) of API value"))
                 .font(.recap(20))
                 .foregroundStyle(RecapColor.tertiary)
                 .recapFit(0.6)
@@ -95,13 +103,14 @@ struct RecapPaybackView: View {
     }
 
     private func ruler(_ payback: RecapPayback) -> some View {
-        let scale = RecapRulerScale(for: max(payback.used, payback.paid))
+        let unit = unitValue
+        let scale = RecapRulerScale(for: max(payback.used, payback.paid) * unit)
         let barArea: CGFloat = 690
         let named = Array(pricedModels.prefix(5))
         let shown = named.reduce(0.0) { $0 + ($1.cost ?? 0) }
         let rest = max(payback.used - shown, 0)
         let whole = max(shown + rest, 0.0001)
-        let usedWidth = max(8, barArea * payback.used / scale.maximum)
+        let usedWidth = max(8, barArea * payback.used * unit / scale.maximum)
         let gaps = CGFloat(named.count + (rest > 0.005 * payback.used ? 1 : 0) - 1) * 2
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 18) {
@@ -109,7 +118,7 @@ struct RecapPaybackView: View {
                 HStack(spacing: 12) {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(RecapColor.ink, lineWidth: 2)
-                        .frame(width: max(8, barArea * payback.paid / scale.maximum), height: 56)
+                        .frame(width: max(8, barArea * payback.paid * unit / scale.maximum), height: 56)
                     Text(verbatim: money(payback.paid)).font(.recap(24, .semibold)).lineLimit(1)
                 }
             }
@@ -157,7 +166,7 @@ struct RecapPaybackView: View {
                 VStack(spacing: 6) {
                     Rectangle().fill(RecapColor.ink).frame(width: 1.5, height: labelled ? 14 : 7)
                     if labelled {
-                        Text(verbatim: RecapFormat.axisMoney(value, step: scale.step, currency: recap.currency))
+                        Text(verbatim: RecapFormat.axisMoney(value, step: scale.step, currency: shownCode))
                             .font(.recap(14, .regular, mono: true))
                             .foregroundStyle(RecapColor.tertiary)
                             .fixedSize()
@@ -174,7 +183,9 @@ struct RecapPaybackView: View {
     @ViewBuilder
     private var tiles: some View {
         let saved = deck.cacheSavings
-        let day = insights.costliestDay
+        // A day recap's dearest day, and its average per day, are the day.
+        let isDay = deck.kind == .day
+        let day = isDay ? nil : insights.costliestDay
         let perMillion = insights.costPerMillion
         if saved != nil || day != nil || perMillion != nil {
             HStack(spacing: 14) {
@@ -195,7 +206,7 @@ struct RecapPaybackView: View {
                 if let perMillion {
                     tile(
                         tone: .white, label: .localized("Per million tokens"), value: money(perMillion),
-                        note: insights.costPerActiveDay.map { String.localized("Average per active day: \(money($0))") }
+                        note: isDay ? nil : insights.costPerActiveDay.map { String.localized("Average per active day: \(money($0))") }
                     )
                 }
             }
@@ -344,14 +355,20 @@ struct RecapPaybackView: View {
         }
     }
 
-    /// Day numbers (1, 10, 20 and the last) or the quarter's first months,
-    /// under the bar they belong to.
+    /// Day numbers (1, 10, 20 and the last), each day's weekday in a week, or
+    /// the quarter's first months, under the bar they belong to.
     private func axisLabels(count: Int) -> some View {
-        let labels: [(index: Int, text: String)] = deck.isYear
-            ? [0, 3, 6, 9].map { ($0, RecapFormat.shortMonthName($0 + 1)) }
-            : ([0, 9, 19, count - 1].filter { $0 < count }.reduce(into: [Int]()) { list, index in
+        let labels: [(index: Int, text: String)]
+        switch deck.kind {
+        case .year:
+            labels = [0, 3, 6, 9].map { ($0, RecapFormat.shortMonthName($0 + 1)) }
+        case .week:
+            labels = recap.days.indices.map { ($0, RecapFormat.weekdayName(of: recap.days[$0].date)) }
+        case .day, .month:
+            labels = ([0, 9, 19, count - 1].filter { $0 < count }.reduce(into: [Int]()) { list, index in
                 if !list.contains(index), list.last.map({ index - $0 >= 5 }) ?? true { list.append(index) }
             }).map { ($0, "\($0 + 1)") }
+        }
         return GeometryReader { proxy in
             let cell = proxy.size.width / CGFloat(max(count, 1))
             ForEach(labels, id: \.index) { label in
@@ -374,6 +391,9 @@ struct RecapPaybackView: View {
             // A period still running: both figures stop today.
             if deck.payback?.isToDate == true {
                 Text(localized: "Figures are to date, and the plan price is prorated by the days so far.")
+            } else if deck.kind == .day || deck.kind == .week {
+                // A finished day or week is still a share of a monthly price.
+                Text(localized: "The plan price is the monthly price prorated by the days of this period.")
             }
             if let begin = deck.recap.recordsBegin {
                 Text(String.localized("The plan price is counted from \(RecapFormat.day(begin)), when records on this Mac begin."))

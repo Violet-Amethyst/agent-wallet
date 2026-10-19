@@ -60,11 +60,15 @@ struct AccountPane: View {
                 )
 
                 AccountLiveUsageGroup(account: account, store: store, settings: settings)
+
+                if provider == .pulseExtension {
+                    ExtensionMetricsGroup(account: account, store: store, settings: settings)
+                }
             }
 
             // The service, not the account, so every account of it shows
             // this; a switched-off one fetches nothing.
-            if let page = provider.statusPage, settings.isEnabled(account) {
+            if let page = settings.statusPage(for: provider), settings.isEnabled(account) {
                 ServiceStatusGroup(page: page)
             }
 
@@ -104,6 +108,12 @@ struct AccountPane: View {
                 XAIExtraSettingsGroup(settings: settings, store: store, account: account)
             }
 
+            // Qoder keeps no history on this Mac; the account's own records
+            // are its history, in credits (issue #88).
+            if provider == .qoder, account.isPrimary, settings.isEnabled(account) {
+                QoderCreditsGroup(settings: settings)
+            }
+
             if provider.providesHistory, account.isPrimary {
                 // Live, so ahead of the history: which conversations still
                 // hold a cache, and for how long — where the logs let it be
@@ -120,7 +130,10 @@ struct AccountPane: View {
                     EstimatedValueGroup(account: account, store: store, history: history)
                 }
 
-                AccountHistoryGroup(account: account, history: history)
+                AccountHistoryGroup(
+                    account: account, history: history, settings: settings,
+                    openTokenSpend: { navigation.open(.spend) }
+                )
             }
 
             // Read from this Mac's sessions, like the history above: the

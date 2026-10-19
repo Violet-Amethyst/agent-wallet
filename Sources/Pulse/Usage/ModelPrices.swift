@@ -317,8 +317,10 @@ actor ModelPrices {
         }
 
         // Devin's CLI writes the version with dashes and an effort on the end:
-        // `gpt-5-6-sol-medium` is OpenAI's `gpt-5.6-sol`.
-        for effort in ["-medium", "-high", "-low", "-minimal"] where model.hasSuffix(effort) {
+        // `gpt-5-6-sol-medium` is OpenAI's `gpt-5.6-sol`. Antigravity's
+        // lowest Flash effort is `-extra-low`, which `-low` alone would leave
+        // as `gemini-3.5-flash-extra`, a model nobody prices (#90).
+        for effort in ["-medium", "-high", "-extra-low", "-low", "-minimal"] where model.hasSuffix(effort) {
             let base = String(model.dropLast(effort.count))
             candidates.append(base)
             candidates.append(Self.dotted(base))
@@ -440,10 +442,11 @@ enum PulseStorage {
             || isOlder(name, prefix: "ledger-", than: ledgerVersion)
     }
 
-    /// `<prefix><n>-<name>.json` with `n` below `current`. A name without the
-    /// number — `ledger-codex.json` — is not this rule's to judge.
+    /// `<prefix><n>-<name>.json` (or `.bin`, the transcript cache's bytes)
+    /// with `n` below `current`. A name without the number —
+    /// `ledger-codex.json` — is not this rule's to judge.
     private static func isOlder(_ name: String, prefix: String, than current: Int) -> Bool {
-        guard name.hasPrefix(prefix), name.hasSuffix(".json") else { return false }
+        guard name.hasPrefix(prefix), name.hasSuffix(".json") || name.hasSuffix(".bin") else { return false }
         let rest = name.dropFirst(prefix.count)
         guard let dash = rest.firstIndex(of: "-"), let number = Int(rest[..<dash]) else { return false }
         return number < current

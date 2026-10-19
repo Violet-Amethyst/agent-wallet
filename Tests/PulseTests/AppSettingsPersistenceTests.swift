@@ -40,8 +40,11 @@ struct AppSettingsPersistenceTests {
             ("settings.showsUsageInMenuBar", \.showsUsageInMenuBar, true),
             ("settings.showsMenuDashboard", \.showsMenuDashboard, true),
             ("settings.hidesInFullScreen", \.hidesInFullScreen, false),
+            ("settings.hidesFromScreenCapture", \.hidesFromScreenCapture, true),
             ("settings.followsActiveDisplay", \.followsActiveDisplay, true),
+            ("settings.snapsToEdges", \.snapsToEdges, false),
             ("settings.showsCodexResetCredits", \.showsCodexResetCredits, true),
+            ("settings.qoderShowsAmounts", \.qoderShowsAmounts, true),
             ("settings.usesGlass", \.usesGlass, true),
             ("settings.usesLightPanel", \.usesLightPanel, true),
             ("settings.autoCollapse", \.autoCollapse, false),
@@ -78,6 +81,12 @@ struct AppSettingsPersistenceTests {
 
         settings.menuBarStyle = .ring
         #expect(defaults.string(forKey: "settings.menuBarStyle") == "ring")
+        settings.displayCurrency = .cny
+        #expect(defaults.string(forKey: "settings.displayCurrency") == "cny")
+        settings.setManualExchangeRate(7.1, for: .cny)
+        #expect(defaults.dictionary(forKey: "settings.manualExchangeRates") as? [String: Double] == ["CNY": 7.1])
+        settings.setManualExchangeRate(nil, for: .cny)
+        #expect(defaults.dictionary(forKey: "settings.manualExchangeRates") as? [String: Double] == [:])
         settings.menuBarAccount = "claudeCode"
         #expect(defaults.string(forKey: "settings.menuBarAccount") == "claudeCode")
         settings.menuBarAccount = nil
@@ -101,6 +110,8 @@ struct AppSettingsPersistenceTests {
         #expect(defaults.string(forKey: "settings.panelSize") == "large")
         settings.railSpacing = .roomy
         #expect(defaults.string(forKey: "settings.railSpacing") == "roomy")
+        settings.usageBarStyle = .segmented
+        #expect(defaults.string(forKey: "settings.usageBarStyle") == "segmented")
         settings.windowClockDirection = .remaining
         #expect(defaults.string(forKey: "settings.windowClockDirection") == "remaining")
         settings.warningThreshold = .ninety
@@ -197,6 +208,8 @@ struct AppSettingsPersistenceTests {
         first.showsMenuDashboard = true
         first.menuBarAccount = "codex"
         first.menuBarStyle = .ring
+        first.displayCurrency = .jpy
+        first.setManualExchangeRate(150, for: .jpy)
         first.hidesInFullScreen = false
         first.followsActiveDisplay = true
         first.openSettingsShortcut = GlobalShortcut(keyCode: 35, modifiers: [.command, .option])
@@ -222,6 +235,7 @@ struct AppSettingsPersistenceTests {
         first.autoCollapse = false
         first.panelSize = .large
         first.railSpacing = .roomy
+        first.usageBarStyle = .segmented
         first.usesGlass = true
         first.glassTransparency = 0.25
         first.usesLightPanel = true
@@ -268,6 +282,8 @@ struct AppSettingsPersistenceTests {
         #expect(back.showsMenuDashboard)
         #expect(back.menuBarAccount == "codex")
         #expect(back.menuBarStyle == .ring)
+        #expect(back.displayCurrency == .jpy)
+        #expect(back.manualExchangeRates == ["JPY": 150])
         #expect(back.hidesInFullScreen == false)
         #expect(back.followsActiveDisplay)
         #expect(back.openSettingsShortcut == first.openSettingsShortcut)
@@ -294,6 +310,7 @@ struct AppSettingsPersistenceTests {
         #expect(back.autoCollapse == false)
         #expect(back.panelSize == .large)
         #expect(back.railSpacing == .roomy)
+        #expect(back.usageBarStyle == .segmented)
         #expect(back.usesGlass)
         #expect(back.glassTransparency == 0.25)
         #expect(back.usesLightPanel)
@@ -367,6 +384,25 @@ struct AppSettingsPersistenceTests {
         #expect(back.alertsOnRecap == false)
         #expect(back.primerHours == .default)
         #expect(!back.wantsAlerts)
+    }
+
+    @Test("A ring pinned to Qoder's total survives a relaunch with the parts on (#89)")
+    func qoderTotalPinSurvivesRelaunch() {
+        let (defaults, cleanup) = Self.isolatedDefaults()
+        defer { cleanup() }
+        defaults.set(true, forKey: "settings.qoderShowsParts")
+        defaults.set(["qoder": "qoder.credits"], forKey: "settings.pinnedWindows")
+
+        let back = AppSettings.restoredSettings(from: defaults, detected: [], scan: ExtensionCatalog.Scan())
+
+        #expect(back.qoderShowsParts)
+        #expect(back.pinnedWindows["qoder"] == "qoder.credits")
+        #expect((defaults.dictionary(forKey: "settings.pinnedWindows") as? [String: String])?["qoder"] == "qoder.credits")
+
+        // Turning the parts on by hand still frees the total's pin (#76).
+        back.qoderShowsParts = false
+        back.qoderShowsParts = true
+        #expect(back.pinnedWindows["qoder"] == nil)
     }
 
     @Test("The enabled set refuses to go empty")

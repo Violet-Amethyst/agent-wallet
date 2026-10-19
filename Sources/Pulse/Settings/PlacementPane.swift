@@ -10,11 +10,10 @@ struct PlacementPane: View {
     /// The row a reorder drag is currently over, so it can say so.
     @State private var dropTarget: AccountKey?
 
-    private func positionRow(controlBelow: Bool, fitsLabels: Bool = true) -> some View {
+    private var positionRow: some View {
         SettingsRow(
             String.localized("Position"),
-            subtitle: String.localized("Drag it anywhere; near an edge it snaps on."),
-            controlBelow: controlBelow
+            subtitle: String.localized("Drag it anywhere; near an edge it snaps on.")
         ) {
             Picker("", selection: Binding(
                 get: { placement.dock },
@@ -28,10 +27,8 @@ struct PlacementPane: View {
                 Text(localized: "Right").tag(PanelDock.edge(.right))
             }
             .labelsHidden()
-            .pickerStyle(.segmented)
-            // Six segments do not fit the usual ceiling without truncating
-            // both free ones, so this one is as wide as its labels.
-            .fixedSize(horizontal: fitsLabels, vertical: true)
+            .pickerStyle(.menu)
+            .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
         }
     }
 
@@ -68,6 +65,21 @@ struct PlacementPane: View {
                 SettingsRowDivider()
 
                 SettingsRow(
+                    String.localized("Hide from screenshots"),
+                    subtitle: String.localized("Screenshot tools that support it leave the floating panel out. Recordings and screen sharing may still show it.")
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { settings.hidesFromScreenCapture },
+                        set: { settings.hidesFromScreenCapture = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!settings.isPanelVisible)
+                }
+
+                SettingsRowDivider()
+
+                SettingsRow(
                     String.localized("Hide until pointed at"),
                     subtitle: String.localized("Against a screen edge, the rail shrinks to a sliver until you point at it.")
                 ) {
@@ -82,16 +94,21 @@ struct PlacementPane: View {
 
                 SettingsRowDivider()
 
-                // Six segments as wide as their labels leave the label a
-                // sliver beside them in the usual window ("位置" wrapped a
-                // character a line): side by side only when both fit, else
-                // the picker goes under the label, and only in the narrowest
-                // window, where even that overflows the card, do its segments
-                // give up width and truncate.
-                ViewThatFits(in: .horizontal) {
-                    positionRow(controlBelow: false)
-                    positionRow(controlBelow: true)
-                    positionRow(controlBelow: true, fitsLabels: false)
+                positionRow
+
+                SettingsRowDivider()
+
+                SettingsRow(
+                    String.localized("Snap to screen edges"),
+                    subtitle: String.localized("Dragged near an edge, the rail docks to it and turns to run along it. When this is off, dragging only moves the rail and keeps its direction.")
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { settings.snapsToEdges },
+                        set: { settings.snapsToEdges = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!settings.isPanelVisible)
                 }
 
                 SettingsRowDivider()
@@ -112,15 +129,19 @@ struct PlacementPane: View {
                 SettingsRowDivider()
 
                 SettingsRow(
-                    String.localized("Olympic dual-track layout"),
-                    subtitle: String.localized("Arrange quota and balance rings in a compact Olympic 5-ring dual track.")
+                    String.localized("Rail columns"),
+                    subtitle: String.localized("Single column separates percentage and balance groups in one compact line; dual column staggers them side by side.")
                 ) {
-                    Toggle("", isOn: Binding(
+                    Picker("", selection: Binding(
                         get: { settings.usesDualTrackDock },
                         set: { settings.usesDualTrackDock = $0 }
-                    ))
+                    )) {
+                        Text(localized: "Single column").tag(false)
+                        Text(localized: "Dual column").tag(true)
+                    }
                     .labelsHidden()
-                    .toggleStyle(.switch)
+                    .pickerStyle(.segmented)
+                    .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
                     .disabled(!settings.isPanelVisible)
                 }
             }

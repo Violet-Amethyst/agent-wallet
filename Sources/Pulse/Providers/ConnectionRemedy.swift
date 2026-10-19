@@ -47,7 +47,7 @@ enum ConnectionRemedy: Equatable {
              .stepFunSessionMissing, .stepFunSessionExpired,
              .deepSeekWebLoginRequired, .openAIWebLoginRequired,
              .openAIWebSessionExpired, .xaiWebLoginRequired: return .readBrowser
-        case .claudeDesktopKeyRefused, .unreachable, .rateLimited, .serverError,
+        case .claudeDesktopKeyRefused, .unreachable, .systemProxyOff, .rateLimited, .serverError,
              .codexServerFailed, .extensionTimedOut, .extensionFailed: return .retry
         // Its login is the program's own, so the page that says how an
         // extension works is the nearest thing to a remedy Pulse has.
@@ -55,7 +55,7 @@ enum ConnectionRemedy: Equatable {
         case .sessionMissing, .sessionExpired: return .readBrowser
         case .localLoginMissing, .localLoginExpired, .localAppMissing, .noPlan: return .help
         case .codexNotInstalled, .kiroNotInstalled, .kiroVersionUnsupported,
-             .volcengineCLIMissing, .noLimitsReported,
+             .volcengineCLIMissing, .antigravityCLIMissing, .antigravityCLIOutdated, .noLimitsReported,
              .grokBotNotIncluded, .zaiNoCodingPlan, .xiaomiNoCodingPlan, .qoderNoCredits,
              .stepFunNoPlan,
              .ollamaPageChanged, .unreadableReply:
@@ -99,7 +99,7 @@ enum ConnectionRemedy: Equatable {
             case .ollamaCloud: "ollama-cloud"
             case .xiaomiMiMo: "xiaomi-coding-plan"
             case .zai, .glmCoding: "zai"
-            case .minimax, .minimaxCN: "minimax"
+            case .minimax: "minimax"
             case .copilot: "copilot"
             case .grok: "grok"
             case .grokBot: "grok-bot"

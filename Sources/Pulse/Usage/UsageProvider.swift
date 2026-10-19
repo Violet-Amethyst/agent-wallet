@@ -18,7 +18,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     case zai
     case glmCoding
     case minimax
-    case minimaxCN
     case copilot
     case grok
     case grokBot
@@ -121,7 +120,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case zai
         case glmCoding
         case minimax
-        case minimaxCN
         case copilot
         case grok
         case grokBot
@@ -182,8 +180,9 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .ollamaCloud: "Ollama Cloud"
         case .zai: "z.ai"
         case .glmCoding: "Zhipu"
+        // One provider for both storefronts, minimax.io and minimaxi.com:
+        // which one is a setting (`AppSettings.minimaxSite`), as Qoder's is.
         case .minimax: "MiniMax"
-        case .minimaxCN: "MiniMax CN"
         case .copilot: "GitHub Copilot"
         case .grok: "Grok"
         case .grokBot: "Grok Bot"
@@ -216,7 +215,9 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .kimiCode: "kimi"
         case .ollamaCloud: "ollama"
         case .zai, .glmCoding: "zai"
-        case .minimax, .minimaxCN: "minimax"
+        // One mark for both, since there is only one brand. Two accounts of one
+        // provider already share a mark on the rail; this is the same case.
+        case .minimax: "minimax"
         case .copilot: "github"
         case .grok: "grok"
         case .grokBot, .xai: "xai"
@@ -239,8 +240,13 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         guard let written = handWritten else { return false }
         return switch written {
         case .claudeCode, .codex: true
+        // Antigravity is an editor and keeps nothing. OpenCode *does* keep
+        // sessions with token counts — `opencode stats` adds them up — but in
+        // its own store rather than the JSONL both CLIs above write, so the
+        // ledger cannot read it yet. False here means "no history shown",
+        // which is true today and better than a column of zeroes.
         case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
-             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
+             .zai, .glmCoding, .minimax, .copilot, .grok, .grokBot,
              .volcengine, .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api,
              .newAPI, .v2ex, .qoder, .stepFun, .xai, .pulseExtension: false
         }
@@ -253,7 +259,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         return switch written {
         case .claudeCode, .codex, .kiro, .zai, .glmCoding: true
         case .openAI, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
-             .minimax, .minimaxCN, .copilot, .grok, .grokBot, .volcengine,
+             .minimax, .copilot, .grok, .grokBot, .volcengine,
              .commandCode, .deepSeek, .devin, .xiaomiMiMo,
              .sub2api, .newAPI, .v2ex, .qoder, .stepFun, .xai, .pulseExtension: false
         }
@@ -266,15 +272,43 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     var modelGroupCount: Int { splitsByModelGroup ? 2 : 1 }
 
     /// Whether a spending history can be shown for this provider at all.
-    var providesHistory: Bool { keepsLocalTranscripts || self == .zai || self == .glmCoding }
+    ///
+    /// **Not the same question as `keepsLocalTranscripts`**, which it used to
+    /// be. Two different sources answer it: the CLIs leave session files on
+    /// this Mac, and Z.ai and Zhipu publish the account's own statistics — the
+    /// endpoint their console draws its charts from. The second is the better
+    /// data (it covers every machine) and the poorer (one token total per
+    /// model, so nothing can be priced), which is what `UsageLedger.Origin`
+    /// exists to keep straight.
+    /// OpenCode Go joins them once its console session is kept: the console's
+    /// request log is the account's own record, priced as charged. DeepSeek
+    /// likewise once its console's sign-in is kept: the console's day-by-day
+    /// usage, charged in the account's own currency.
+    ///
+    /// **Exactly where the detailed card has one** (`cardHistory`), the Token
+    /// spend agents that borrow a provider's mark included — MiniMax Code for
+    /// MiniMax, the Kimi CLI for Kimi Code. The settings pane used to ask a
+    /// narrower question of its own, so those providers' cards had a history
+    /// their panes did not.
+    var providesHistory: Bool { cardHistory != nil }
 
     /// Whether the route to this provider's figures is a choice.
+    ///
+    /// **Every provider with more than one route offers the choice**, with
+    /// *Automatic* the default. Antigravity's are its desktop app's language
+    /// server and its `agy` CLI; Cursor has exactly one route, a login it
+    /// stored, so it is stated rather than offered.
+    /// **Not `keepsLocalTranscripts`**, which it used to be. The two happened
+    /// to agree while only the CLIs had a choice, and reading one for the other
+    /// is the kind of coincidence that breaks silently: Volcengine has two routes
+    /// and no transcripts, and would have been given a stated route it does not
+    /// have instead of the picker it needs.
     var hasSourceChoice: Bool {
         guard let written = handWritten else { return false }
         return switch written {
-        case .claudeCode, .codex, .volcengine, .devin: true
-        case .openAI, .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
-             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .grok, .grokBot,
+        case .claudeCode, .codex, .volcengine, .devin, .antigravity: true
+        case .openAI, .kiro, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
+             .zai, .glmCoding, .minimax, .copilot, .grok, .grokBot,
              .commandCode, .deepSeek, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder, .stepFun,
              .xai, .pulseExtension: false
         }
@@ -284,9 +318,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     var soleRoute: (name: String, note: String)? {
         guard let written = handWritten else { return profile?.soleRoute?() }
         return switch written {
-        case .antigravity:
-            (String.localized("Antigravity's language server"),
-             String.localized("Only while Antigravity is open."))
         case .cursor:
             (String.localized("Cursor's own login"),
              String.localized("Uses the login Cursor already saved."))
@@ -299,10 +330,14 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .kiro:
             (String.localized("Kiro CLI ACP"),
              String.localized("Uses Kiro CLI's signed-in session without reading its credentials."))
-        case .claudeCode, .codex, .openAI, .openCodeGo, .kimiCode, .ollamaCloud,
-             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
-             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder, .stepFun, .xai,
-             .pulseExtension:
+        // Either a choice of routes, or a key the user pastes: both are asked
+        // about elsewhere, so there is nothing here to state.
+        case .claudeCode, .codex, .openAI, .antigravity, .openCodeGo, .kimiCode, .ollamaCloud,
+             .zai, .glmCoding, .minimax, .copilot, .volcengine,
+             .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI, .v2ex, .qoder, .stepFun, .xai:
+            nil
+        // Stated on its own pane, which names the program instead.
+        case .pulseExtension:
             nil
         }
     }
@@ -310,7 +345,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
     /// Whether Pulse needs an API key from the user for this one.
     var usesAPIKey: Bool {
         if let profile { return profile.credential != .localLogin }
-        return [.openAI, .openCodeGo, .kimiCode, .ollamaCloud, .zai, .glmCoding, .minimax, .minimaxCN, .volcengine,
+        return [.openAI, .openCodeGo, .kimiCode, .ollamaCloud, .zai, .glmCoding, .minimax, .volcengine,
          .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
          .v2ex, .qoder, .stepFun, .xai].contains(self)
     }

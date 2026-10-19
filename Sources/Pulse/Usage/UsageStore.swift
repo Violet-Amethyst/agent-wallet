@@ -32,6 +32,8 @@ final class UsageStore {
 
     private let settings: AppSettings
     private var networkProxy: NetworkProxySettings
+    /// Each site-setting provider's site as last seen (`AppSettings.site(of:)`).
+    private var sites: [Provider: String]
     /// Posts notifications about the readings that land here. Nil in previews,
     /// which have no bundle to post from and nothing to say anyway.
     private let alerts: UsageAlerts?
@@ -113,6 +115,7 @@ final class UsageStore {
         self.activity = activity
         self.elsewhere = elsewhere
         networkProxy = settings.networkProxy
+        sites = Self.sites(in: settings)
         self.alerts = alerts
         self.services = services ?? LiveUsageServices(settings: settings, appServer: appServer)
         self.cache = cache
@@ -213,7 +216,9 @@ final class UsageStore {
         apiKeys = Dictionary(
             uniqueKeysWithValues: Provider.builtIn
                 .filter { $0.keepsOwnCredential && settings.isEnabled(AccountKey($0)) }
-                .compactMap { provider in APIKeyStore.key(for: provider).map { (provider, $0) } }
+                .compactMap { provider in
+                    APIKeyStore.key(for: provider, slot: settings.keySlot(for: provider)).map { (provider, $0) }
+                }
         )
 
         // Entering or clearing a key changes what a provider *can* report, and
@@ -356,20 +361,39 @@ final class UsageStore {
         guard !settings.needsProviderSelection else { return }
         let proxyChanged = networkProxy != settings.networkProxy
         networkProxy = settings.networkProxy
+        // A provider whose site changed is reading another account now: what
+        // is shown and kept for it is the other site's, and goes — from the
+        // table and from disk, so neither the panel nor `--json` shows it.
+        let now = Self.sites(in: settings)
+        let moved = Set(now.keys.filter { now[$0] != sites[$0] })
+        sites = now
+        let stale = settings.shownAccounts.filter { moved.contains($0.provider) }
+        for account in stale { usage[account.id] = .unavailable(account, reason: .loading) }
         loadAPIKeys()
         updateActivityMonitor()
-        guard proxyChanged else {
+        guard proxyChanged || !stale.isEmpty else {
             refresh()
             return
         }
 
         // The process inherits its environment only when it starts. Tear down
         // one already running before the full pass is queued, so its next call
-        // is made by a child carrying the new proxy.
-        Task { [weak self, appServer] in
-            await appServer.shutDown()
+        // is made by a child carrying the new proxy. A moved site's kept
+        // reading goes first, so the pass cannot fall back to it.
+        Task { [weak self, appServer, cache] in
+            for account in stale { await cache.forget(account) }
+            if proxyChanged { await appServer.shutDown() }
             self?.refresh()
         }
+    }
+
+    /// The site each provider with a site setting is on.
+    private static func sites(in settings: AppSettings) -> [Provider: String] {
+        [
+            .minimax: settings.minimaxSite.rawValue,
+            .qoder: settings.qoderSite.rawValue,
+            .stepFun: settings.stepFunSite.rawValue,
+        ]
     }
 
     /// Nothing shows the spinner while the panel is off screen or the display
@@ -626,7 +650,9 @@ final class UsageStore {
         } else {
             key = apiKeys[provider]
         }
-        return services.fetch(for: account, key: key)
+        // Every request the check makes is recorded for the diagnostics.
+        let fetch = services.fetch(for: account, key: key)
+        return { await ResponseLog.capture(fetch) }
     }
 
     /// Asks every account at once and returns the answers in the order given.
@@ -645,8 +671,22 @@ final class UsageStore {
     /// cache's say. Returns both, because the alert rules and the diagnostics
     /// want the raw answer as well as the reconciled one.
     private func settle(_ raw: ProviderUsage) async -> (raw: ProviderUsage, fetched: ProviderUsage) {
-        let answered = ringed(raw)
+        let answered = ringed(Self.namingHeldBack(raw, isHoldingBack: NetworkSession.isHoldingBack))
         return (answered, await cache.reconciled(answered))
+    }
+
+    /// A request "System Proxy Only" refused fails like a dropped connection,
+    /// and a service reports that as unreachable. While the guard is refusing,
+    /// that is what happened, so the reading says so — a route that did not
+    /// need the network (a helper, a local file) answers as it would anyway.
+    nonisolated static func namingHeldBack(_ raw: ProviderUsage, isHoldingBack: Bool) -> ProviderUsage {
+        guard isHoldingBack, raw.state == .unavailable(.unreachable) else { return raw }
+        var named = ProviderUsage.unavailable(raw.account, reason: .systemProxyOff)
+        named.attempts = raw.attempts
+        named.responses = raw.responses
+        named.origin = raw.origin
+        named.sourceScope = raw.sourceScope
+        return named
     }
 
     /// An API account's balance with the ring its basis gives it. DeepSeek
@@ -687,6 +727,10 @@ final class UsageStore {
     /// restored cache through the alert rules would announce a fortnight of
     /// crossings the moment the app opened.
     private func commit(_ fetched: ProviderUsage, raw: ProviderUsage, for id: String) {
+        // The replies belong to the diagnostics, not to the table every view
+        // of the panel reads.
+        var fetched = fetched
+        fetched.responses = []
         usage[id] = fetched
         diagnostics[id] = ConnectionDiagnostic(
             raw: raw.recordingSoleRoute(), displayed: fetched,

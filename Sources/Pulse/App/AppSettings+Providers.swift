@@ -12,7 +12,10 @@ extension AppSettings.Key {
     static let deepSeekBudget = "settings.deepSeekBudget"
     static let deepSeekCurrency = "settings.deepSeekCurrency"
     static let qoderSite = "settings.qoderSite"
+    static let qoderShowsParts = "settings.qoderShowsParts"
+    static let qoderShowsAmounts = "settings.qoderShowsAmounts"
     static let stepFunSite = "settings.stepFunSite"
+    static let minimaxSite = "settings.minimaxSite"
     static let serverAddresses = "settings.serverAddresses"
     static let showsCodexResetCredits = "settings.showsCodexResetCredits"
     static let balanceBases = "settings.balanceBases"
@@ -30,6 +33,7 @@ extension AppSettings.Key {
 extension AppSettings.Default {
     static let qoderSite = QoderSite.international
     static let stepFunSite = StepFunSite.china
+    static let minimaxSite = MiniMaxSite.international
 }
 
 extension AppSettings {
@@ -55,6 +59,44 @@ extension AppSettings {
         guard qoderSite != old else { return }
         defaults.set(qoderSite.rawValue, forKey: Key.qoderSite)
         onChange?()
+    }
+
+    func qoderShowsPartsChanged(from old: Bool) {
+        guard qoderShowsParts != old else { return }
+        defaults.set(qoderShowsParts, forKey: Key.qoderShowsParts)
+        // **Turning the parts on frees a ring pinned to the total.** Before
+        // the parts existed the total was the only limit, so a pin to it —
+        // made by hand or by choosing the only entry there was — was the same
+        // as automatic. Kept, it held the ring on the total and silently
+        // overrode the new default of following the part closest to spent
+        // (issue #76). A pin to anything else is a choice and stays.
+        if qoderShowsParts {
+            for account in allAccounts where account.provider == .qoder
+                && pinnedWindows[account.id] == "qoder.credits" {
+                pinnedWindows[account.id] = nil
+            }
+        }
+        onChange?()
+    }
+
+    func qoderShowsAmountsChanged(from old: Bool) {
+        guard qoderShowsAmounts != old else { return }
+        defaults.set(qoderShowsAmounts, forKey: Key.qoderShowsAmounts)
+    }
+
+    /// Through `onChange`: the store reloads its keys there, and the chosen
+    /// site's key is a different one (`keySlot(for:)`).
+    func minimaxSiteChanged(from old: MiniMaxSite) {
+        guard minimaxSite != old else { return }
+        defaults.set(minimaxSite.rawValue, forKey: Key.minimaxSite)
+        onChange?()
+    }
+
+    /// Where a provider's key is kept beside its own entry, for a provider
+    /// whose key depends on a setting: MiniMax's, one per site. Nil for every
+    /// other provider, which keeps one key.
+    func keySlot(for provider: Provider) -> String? {
+        provider == .minimax ? minimaxSite.keySlot : nil
     }
 
     func stepFunSiteChanged(from old: StepFunSite) {

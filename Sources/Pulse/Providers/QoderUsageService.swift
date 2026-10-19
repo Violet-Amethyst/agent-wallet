@@ -60,6 +60,26 @@ enum QoderSite: String, CaseIterable, Codable, Sendable {
 
     var usageURL: URL { URL(string: "\(origin)/api/v2/me/usages/big_model_credits")! }
 
+    /// One page of the account's own usage records, newest first — what the
+    /// account page's detail table asks (issue #88). **No `userId`:** the
+    /// session already says whose records these are.
+    func historiesURL(page: Int, from: Date, to: Date) -> URL? {
+        var components = URLComponents(string: "\(origin)/api/v1/me/usages/big_model_credits/histories")
+        components?.queryItems = [
+            .init(name: "page", value: String(page)),
+            .init(name: "page_size", value: String(Self.historyPageSize)),
+            .init(name: "start_time", value: String(Int(from.timeIntervalSince1970 * 1_000))),
+            .init(name: "end_time", value: String(Int(to.timeIntervalSince1970 * 1_000))),
+            .init(name: "order_by", value: "begin_at"),
+            .init(name: "order", value: "-1"),
+        ]
+        return components?.url
+    }
+
+    /// The page itself asks 100; the route takes 500, so a month is one or
+    /// two requests for every account seen.
+    static let historyPageSize = 500
+
     /// Where somebody is sent to sign in, and the page that makes this request
     /// — so the `Referer` is true rather than invented.
     var accountPage: URL { URL(string: "\(origin)/account/usage")! }
@@ -170,6 +190,72 @@ struct QoderSnapshot: Equatable, Sendable {
     }
 
     var packs: [Pack] = []
+
+    /// One of the three things `totalQuota` adds up — the plan's own credits,
+    /// a resource pack bought on top, and the credits tied to one model
+    /// family — with the dated entries of its own detail list.
+    struct Part: Equatable, Sendable {
+        let pool: Pool
+        var packs: [Pack] = []
+    }
+
+    /// Nil when the reply leaves a part out or states it in a shape this
+    /// cannot read: a part is drawn only on request, and never costs the
+    /// total its reading.
+    var plan: Part?
+    var resourcePack: Part?
+    var dedicated: Part?
+}
+
+/// The account's last 31 local days of usage, day by day, from its own
+/// records (`QoderClient.fetchCreditDays`, issue #88). Two figures a day
+/// because Qoder keeps two: what the work cost before discounts and free
+/// allowances, and what was deducted — on the reporter's account 1,341 and 51
+/// for the same week.
+struct QoderCreditDays: Equatable, Sendable {
+    /// The days asked for, today included: the detailed card's span.
+    static let span = 31
+
+    struct Day: Equatable, Sendable {
+        /// Local midnight.
+        let date: Date
+        /// Σ `original_credits` of the records that began that day.
+        let used: Double
+        /// Σ `credits`.
+        let charged: Double
+    }
+
+    /// Every day from `from` through today, oldest first, quiet ones as zero:
+    /// the records cover the whole window, so a day without one used nothing.
+    let days: [Day]
+
+    /// `begin_at` decides the day, in the reader's calendar: a session that
+    /// starts at 23:58 is that day's. A record from before `from` (one the
+    /// route returned for overlapping the window) is not counted.
+    init(records: [QoderClient.HistoryReply.Record], from: Date, now: Date = Date(),
+         calendar: Calendar = .current) {
+        var used: [Date: Double] = [:]
+        var charged: [Date: Double] = [:]
+        for record in records where record.beginAt >= from {
+            let day = calendar.startOfDay(for: record.beginAt)
+            used[day, default: 0] += record.originalCredits
+            charged[day, default: 0] += record.credits
+        }
+        var days: [Day] = []
+        var cursor = calendar.startOfDay(for: from)
+        let today = calendar.startOfDay(for: now)
+        while cursor <= today {
+            days.append(Day(date: cursor, used: used[cursor] ?? 0, charged: charged[cursor] ?? 0))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = calendar.startOfDay(for: next)
+        }
+        self.days = days
+    }
+
+    /// The last `count` days' figures added up, today included.
+    func total(overLast count: Int) -> (used: Double, charged: Double) {
+        days.suffix(count).reduce((0, 0)) { ($0.0 + $1.used, $0.1 + $1.charged) }
+    }
 }
 
 /// A read-only adapter for the account page's route. Kept apart from the app
@@ -182,8 +268,31 @@ struct QoderClient: Sendable {
 
     func fetch(cookie: String, site: QoderSite) async throws -> QoderSnapshot {
         let header = try QoderCookie.normalize(cookie)
+        let request = Self.request(site.usageURL, header: header, site: site)
 
-        var request = URLRequest(url: site.usageURL)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await (session ?? NetworkSession.shared).recordedData(for: request)
+        } catch {
+            throw QoderError.unreachable
+        }
+
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200: return try Self.parse(data)
+        // A signed-out page answers the API call by redirecting it at the
+        // sign-in flow; `URLSession` follows redirects, so a 3xx is only seen
+        // when one was not followed, and it means the same thing.
+        case .some(300..<400), 401, 403: throw QoderError.sessionExpired
+        case 429: throw QoderError.rateLimited
+        case .some(500...599): throw QoderError.serverError
+        default: throw QoderError.unreadableReply
+        }
+    }
+
+    /// A GET as the account page sends it, for either of its routes.
+    static func request(_ url: URL, header: String, site: QoderSite) -> URLRequest {
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 15
         request.setValue(header, forHTTPHeaderField: "Cookie")
@@ -203,24 +312,135 @@ struct QoderClient: Sendable {
                 + "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
             forHTTPHeaderField: "User-Agent"
         )
+        return request
+    }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await (session ?? NetworkSession.shared).data(for: request)
-        } catch {
-            throw QoderError.unreachable
+    // MARK: - The account's own records (issue #88)
+
+    /// The last 31 local days of the account's usage records, day by day:
+    /// what was used and what was deducted, the whole account's — the editor's
+    /// work as much as the CLI's.
+    ///
+    /// **The records, not the account page's chart.** Its daily route leaves
+    /// the day in progress at zero until the next day, and its figure is the
+    /// consumption before discounts under the name of what was charged —
+    /// measured by the issue's reporter against this route, which the page's
+    /// own detail table reads.
+    ///
+    /// **Nothing unless the week closed.** A page that fails, a body that is
+    /// not this shape, a record with no start or no credit figure, or paging
+    /// that still points on at `historyPageLimit`: any of them is nil, never a
+    /// sum of the part that came back, which would read as a quiet month. No
+    /// records at all is a month of zeroes, which the route stated.
+    func fetchCreditDays(cookie: String, site: QoderSite, now: Date = Date(),
+                         calendar: Calendar = .current) async -> QoderCreditDays? {
+        guard let header = try? QoderCookie.normalize(cookie),
+              let from = calendar.date(byAdding: .day, value: -(QoderCreditDays.span - 1),
+                                       to: calendar.startOfDay(for: now))
+        else { return nil }
+        var records: [HistoryReply.Record] = []
+        var page = 1
+        for _ in 0..<Self.historyPageLimit {
+            guard let url = site.historiesURL(page: page, from: from, to: now),
+                  let (data, response) = try? await (session ?? NetworkSession.shared)
+                    .recordedData(for: Self.request(url, header: header, site: site)),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let reply = try? JSONDecoder().decode(HistoryReply.self, from: data)
+            else { return nil }
+            records += reply.records
+            switch reply.pageResult.following(after: page) {
+            case .last: return QoderCreditDays(records: records, from: from, now: now, calendar: calendar)
+            case .next(let later): page = later
+            case .unreadable: return nil
+            }
+        }
+        return nil
+    }
+
+    /// Pages one read may ask for: 3,000 records, four times the busiest month
+    /// seen (about 700). Past it the sum would be a sample, so the read ends
+    /// instead.
+    static let historyPageLimit = 6
+
+    /// One page of records and the paging beside it.
+    ///
+    /// `original_credits` is what the work cost before any discount or free
+    /// allowance; `credits` is what Qoder deducted, and a record it does not
+    /// bill states zero there. `begin_at` places the record in time; `time`
+    /// repeats it and `finish_at` is not read.
+    struct HistoryReply: Decodable {
+        struct Record: Decodable, Equatable {
+            let beginAt: Date
+            let credits: Double
+            let originalCredits: Double
+
+            init(beginAt: Date, credits: Double, originalCredits: Double) {
+                self.beginAt = beginAt
+                self.credits = credits
+                self.originalCredits = originalCredits
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: AnyKey.self)
+                // A record that cannot be placed, or cannot say what it cost,
+                // cannot be left out of a total either: the page stops being
+                // the whole week, so the read fails rather than sum around it.
+                guard let beginAt = container.date("beginAt") ?? container.date("begin_at"),
+                      let credits = (try? container.decodeIfPresent(Double.self, forKey: .init(stringValue: "credits"))) ?? nil,
+                      let original = (try? container.either(Double.self, "originalCredits", "original_credits")) ?? nil,
+                      credits.isFinite, credits >= 0, original.isFinite, original >= 0
+                else { throw QoderError.unreadableReply }
+                self.init(beginAt: beginAt, credits: credits, originalCredits: original)
+            }
         }
 
-        switch (response as? HTTPURLResponse)?.statusCode {
-        case 200: return try Self.parse(data)
-        // A signed-out page answers the API call by redirecting it at the
-        // sign-in flow; `URLSession` follows redirects, so a 3xx is only seen
-        // when one was not followed, and it means the same thing.
-        case .some(300..<400), 401, 403: throw QoderError.sessionExpired
-        case 429: throw QoderError.rateLimited
-        case .some(500...599): throw QoderError.serverError
-        default: throw QoderError.unreadableReply
+        enum Following: Equatable {
+            /// The window is closed: what came back is all of it.
+            case last
+            case next(Int)
+            /// The paging points on and past its own end at once.
+            case unreadable
+        }
+
+        struct PageResult: Decodable, Equatable {
+            let nextPage: Int?
+            let lastPage: Int?
+
+            init(nextPage: Int?, lastPage: Int?) {
+                self.nextPage = nextPage
+                self.lastPage = lastPage
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: AnyKey.self)
+                nextPage = (try? container.either(Int.self, "nextPage", "next_page")) ?? nil
+                lastPage = (try? container.either(Int.self, "lastPage", "last_page")) ?? nil
+            }
+
+            /// An empty or absent `next_page`, or this page being the
+            /// `last_page`, closes the window; anything else names the next.
+            func following(after page: Int) -> Following {
+                guard let nextPage, nextPage > 0 else { return .last }
+                if let lastPage, page >= lastPage { return .last }
+                guard nextPage > page else { return .unreadable }
+                if let lastPage, nextPage > lastPage { return .unreadable }
+                return .next(nextPage)
+            }
+        }
+
+        let records: [Record]
+        let pageResult: PageResult
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: AnyKey.self)
+            // **The paging is what says the window closed.** The route sends
+            // `page_result` even with nothing in the window, so a reply without
+            // it, or without `data`, is not an empty week.
+            guard let records = try container.decodeIfPresent([Record].self, forKey: .init(stringValue: "data")),
+                  let result = (try? container.either(PageResult.self, "pageResult", "page_result")) ?? nil
+            else { throw QoderError.unreadableReply }
+            self.records = records
+            pageResult = result
         }
     }
 
@@ -242,13 +462,26 @@ struct QoderClient: Sendable {
         } else {
             shared = nil
         }
-        let packs = (reply.totalQuota?.quotaDetail ?? []).compactMap { detail -> QoderSnapshot.Pack? in
+        return QoderSnapshot(personal: personal, shared: shared, resetsAt: reply.nextResetAt,
+                             packs: Self.packs(reply.totalQuota),
+                             plan: Self.part(reply.planQuota),
+                             resourcePack: Self.part(reply.resourcePackageQuota),
+                             dedicated: Self.part(reply.dedicatedResourcePackageQuota))
+    }
+
+    /// The entries of a detail list with credits left and an end date stated.
+    private static func packs(_ container: Reply.Container?) -> [QoderSnapshot.Pack] {
+        (container?.quotaDetail ?? []).compactMap { detail -> QoderSnapshot.Pack? in
             guard detail.isActive != false, let remaining = detail.remainingValue,
                   remaining.isFinite, remaining > 0, let expiresAt = detail.expiresAt
             else { return nil }
             return .init(remaining: remaining, expiresAt: expiresAt)
         }
-        return QoderSnapshot(personal: personal, shared: shared, resetsAt: reply.nextResetAt, packs: packs)
+    }
+
+    private static func part(_ container: Reply.Container?) -> QoderSnapshot.Part? {
+        guard let pool = container?.quotaSummary.flatMap(Self.pool) else { return nil }
+        return .init(pool: pool, packs: packs(container))
     }
 
     /// A summary Qoder stated in full, or nil. Negative figures are not a
@@ -267,6 +500,9 @@ struct QoderClient: Sendable {
         let totalQuota: Container?
         let sharedQuota: Container?
         let nextResetAt: Date?
+        let planQuota: Container?
+        let resourcePackageQuota: Container?
+        let dedicatedResourcePackageQuota: Container?
 
         struct Container: Decodable {
             let quotaSummary: Summary?
@@ -314,6 +550,13 @@ struct QoderClient: Sendable {
             totalQuota = try container.either(Container.self, "totalQuota", "total_quota")
             sharedQuota = try container.either(Container.self, "sharedQuota", "shared_quota")
             nextResetAt = container.date("nextResetAt") ?? container.date("next_reset_at")
+            // The parts are read on request and must never cost the total:
+            // one this cannot read is no part, not an unreadable reply.
+            planQuota = (try? container.either(Container.self, "planQuota", "plan_quota")) ?? nil
+            resourcePackageQuota = (try? container.either(
+                Container.self, "resourcePackageQuota", "resource_package_quota")) ?? nil
+            dedicatedResourcePackageQuota = (try? container.either(
+                Container.self, "dedicatedResourcePackageQuota", "dedicated_resource_package_quota")) ?? nil
         }
     }
 
@@ -353,6 +596,8 @@ private extension KeyedDecodingContainer where Key == QoderClient.AnyKey {
 struct QoderUsageService: Sendable {
     let cookie: String?
     let site: QoderSite
+    /// `AppSettings.qoderShowsParts`: draw the three parts after the total.
+    var showsParts = false
     var client = QoderClient()
     var session = QoderCNSession()
 
@@ -386,6 +631,7 @@ struct QoderUsageService: Sendable {
         switch http.statusCode {
         case 200:
             var usage = Self.parseDesktop(reply)
+            usage.origin = .desktopSession
             usage.sourceScope = UsageScope(route: .desktopSession, organization: "qoder.cn", identity: "desktop")
             return usage
         case 401, 403:
@@ -404,7 +650,11 @@ struct QoderUsageService: Sendable {
         }
         let expiry = (usage["expiresAt"] as? Double).flatMap { value -> Date? in
             guard value > 0, value.isFinite else { return nil }
-            return Date(timeIntervalSince1970: value > 1e12 ? value / 1000 : value)
+            let seconds = value > 1e12 ? value / 1000 : value
+            // Qoder CN returns 253402214400000 (9999-12-31) when a pool has no real reset date.
+            guard seconds < 4_102_444_800 else { return nil }
+            let date = Date(timeIntervalSince1970: seconds)
+            return date > now ? date : nil
         }
         var windows: [UsageWindow] = []
         var remaining = 0.0
@@ -428,7 +678,8 @@ struct QoderUsageService: Sendable {
                 windowSeconds: 30 * 86_400,
                 resetsAt: field == "userQuota" ? expiry : nil,
                 reportsLength: false,
-                isExhausted: rem <= 0 || used >= total
+                isExhausted: rem <= 0 || used >= total,
+                amounts: UsageWindow.Amounts(used: used, remaining: rem, limit: total)
             ))
         }
         guard !windows.isEmpty else { return .unavailable(.qoder, reason: .qoderNoCredits) }
@@ -461,7 +712,7 @@ struct QoderUsageService: Sendable {
         do {
             let snapshot = try await client.fetch(cookie: cookie, site: site)
             let now = Date()
-            let windows = Self.windows(from: snapshot, at: now)
+            let windows = Self.windows(from: snapshot, at: now, showsParts: showsParts)
             // A complete answer: the account has no allowance to display.
             guard !windows.isEmpty else { return .unavailable(.qoder, reason: .qoderNoCredits) }
             return .init(account: AccountKey(.qoder),
@@ -502,13 +753,44 @@ struct QoderUsageService: Sendable {
     /// as reset, the cache drops it as expired, and a complete reading
     /// becomes "no limits reported". The credits are real; the date is not,
     /// so the ring is drawn without one.
-    static func windows(from snapshot: QoderSnapshot, at now: Date) -> [UsageWindow] {
+    ///
+    /// **The parts, when asked for, follow the total and never replace it.**
+    /// They are the same credits counted again, so they are drawn only where
+    /// they say something the total does not: two or more with an allowance.
+    /// One alone is the total under another name. Each takes the end dates of
+    /// its own detail list; only the plan's is a reset (`nextResetAt`), since
+    /// the plan is the part that refreshes and a pack only lapses.
+    static func windows(from snapshot: QoderSnapshot, at now: Date,
+                        showsParts: Bool = false, calendar: Calendar = .current) -> [UsageWindow] {
         var windows: [UsageWindow] = []
         let resetsAt = snapshot.resetsAt.flatMap { $0 > now ? $0 : nil }
         if var window = window(snapshot.personal, id: "qoder.credits", kind: .credits,
                                resetsAt: resetsAt) {
-            window.nextExpiry = nextExpiry(of: snapshot.packs, at: now)
+            window.nextExpiry = nextExpiry(of: snapshot.packs, at: now, remaining: snapshot.personal.remaining,
+                                           calendar: calendar)
             windows.append(window)
+        }
+        if showsParts, !windows.isEmpty {
+            let parts: [(QoderSnapshot.Part?, String, UsageWindow.Kind, Date?)] = [
+                (snapshot.plan, "qoder.plan", .planCredits, resetsAt),
+                (snapshot.resourcePack, "qoder.pack", .topUp, nil),
+                (snapshot.dedicated, "qoder.dedicated", .dedicatedCredits, nil),
+            ]
+            let drawn = parts.compactMap { part, id, kind, resetsAt -> UsageWindow? in
+                guard let part, var window = window(part.pool, id: id, kind: kind, resetsAt: resetsAt)
+                else { return nil }
+                window.nextExpiry = nextExpiry(of: part.packs, at: now, remaining: part.pool.remaining,
+                                               calendar: calendar)
+                return window
+            }
+            if drawn.count > 1 {
+                // **Each part says its own expiry; the total no longer does.**
+                // The total's soonest lapse is always one of the parts', so
+                // with the parts drawn it repeated a part's line word for word
+                // and read as the same row listed twice (issue #76).
+                windows[0].nextExpiry = nil
+                windows += drawn
+            }
         }
         // The reset Qoder states is the account's. Whether a team's pool turns
         // over on the same day is not something the reply says, so it is not
@@ -521,10 +803,15 @@ struct QoderUsageService: Sendable {
     }
 
     /// The soonest packs to lapse, by `UsageWindow.Expiry.soonest`'s rule.
-    static func nextExpiry(of packs: [QoderSnapshot.Pack], at now: Date,
+    /// `remaining` is what the row has left, as Qoder states it: when the
+    /// soonest lapse is all of that, the card says so instead of "of which".
+    static func nextExpiry(of packs: [QoderSnapshot.Pack], at now: Date, remaining: Double? = nil,
                            calendar: Calendar = .current) -> UsageWindow.Expiry? {
-        UsageWindow.Expiry.soonest(of: packs.map { ($0.remaining, $0.expiresAt) },
-                                   after: now, calendar: calendar)
+        guard var expiry = UsageWindow.Expiry.soonest(of: packs.map { ($0.remaining, $0.expiresAt) },
+                                                      after: now, calendar: calendar)
+        else { return nil }
+        if let remaining { expiry.coversRemainder = (expiry.totalAmount ?? expiry.amount) >= remaining }
+        return expiry
     }
 
     private static func window(_ pool: QoderSnapshot.Pool, id: String, kind: UsageWindow.Kind,
@@ -544,6 +831,7 @@ struct QoderUsageService: Sendable {
             windowSeconds: 30 * 86_400,
             resetsAt: resetsAt,
             reportsLength: false,
-            isExhausted: pool.remaining.map { $0 <= 0 } ?? (pool.used >= pool.limit))
+            isExhausted: pool.remaining.map { $0 <= 0 } ?? (pool.used >= pool.limit),
+            amounts: UsageWindow.Amounts(used: pool.used, remaining: pool.remaining, limit: pool.limit))
     }
 }

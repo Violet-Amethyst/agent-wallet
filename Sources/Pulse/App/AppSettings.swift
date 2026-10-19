@@ -134,6 +134,28 @@ final class AppSettings {
         didSet { languageChanged(from: oldValue) }
     }
 
+    /// The currency estimates are shown in. Dollars by default, which is what
+    /// the price lists are in; any other is converted at `exchangeRates` or a
+    /// rate typed into `manualExchangeRates`. What a service reports itself
+    /// is never converted — see `DisplayCurrency`.
+    var displayCurrency: DisplayCurrency = .default {
+        didSet { displayCurrencyChanged(from: oldValue) }
+    }
+
+    /// A rate the reader typed, units of the currency to one US dollar, keyed
+    /// by ISO code. Wins over the fetched rate; a missing entry means "use the
+    /// fetched one".
+    var manualExchangeRates: [String: Double] = [:] {
+        didSet { manualExchangeRatesChanged(from: oldValue) }
+    }
+
+    /// The last rates fetched (`ExchangeRateKeeper`), kept on disk rather
+    /// than here in `UserDefaults`. Nil until a currency other than the dollar
+    /// has been chosen once.
+    var exchangeRates: ExchangeRates.Stored? {
+        didSet { exchangeRatesChanged(from: oldValue) }
+    }
+
     // MARK: - Panel (AppSettings+Panel)
 
     /// Whether the floating panel is on screen.
@@ -152,6 +174,19 @@ final class AppSettings {
         didSet { hidesInFullScreenChanged(from: oldValue) }
     }
 
+    /// Whether the floating panel is left out of screenshots and screen
+    /// recordings (`NSWindow.sharingType = .none`).
+    ///
+    /// **Off by default, because it hides Pulse from its own pictures too.**
+    /// The panel's window is sized for the tallest card it may show and is
+    /// mostly transparent, so a screenshot tool's automatic window selection
+    /// picks a frame far larger than the rail. Switching this on takes the
+    /// window out of capture altogether — which is also what keeps a README
+    /// image or a bug report's screenshot from showing it.
+    var hidesFromScreenCapture: Bool {
+        didSet { hidesFromScreenCaptureChanged(from: oldValue) }
+    }
+
     /// Whether the panel moves itself onto whichever display the pointer is on.
     ///
     /// Off by default: with one display it can do nothing, and with two it
@@ -164,6 +199,16 @@ final class AppSettings {
     /// which is the opposite of what this is for.
     var followsActiveDisplay: Bool {
         didSet { followsActiveDisplayChanged(from: oldValue) }
+    }
+
+    /// Whether dragging the panel near a screen edge docks it there, turning
+    /// it to run along that edge.
+    ///
+    /// On by default. Off, a drag only moves the panel: it stays free and
+    /// keeps the direction it had, so a rail lying across can be put in a
+    /// corner (issue #85). Choosing a position in Settings still docks it.
+    var snapsToEdges: Bool {
+        didSet { snapsToEdgesChanged(from: oldValue) }
     }
 
     /// How big the floating panel is drawn.
@@ -278,6 +323,13 @@ final class AppSettings {
     /// panel measures the size it is about to be.
     var showsForecast: Bool {
         didSet { showsForecastChanged(from: oldValue) }
+    }
+
+    /// How limit bars are drawn on the card and in the menu (`UsageBarStyle`).
+    /// A `PanelMetrics` entry for the forecast's reason: a segmented bar is
+    /// taller, and the card's frame is worked out before SwiftUI lays it out.
+    var usageBarStyle: UsageBarStyle {
+        didSet { usageBarStyleChanged(from: oldValue) }
     }
 
     /// The accounts whose card is the detailed one, by account id: the plan,
@@ -403,7 +455,7 @@ final class AppSettings {
     }
 
     /// Whether this is the settings the running app is drawn from, and so the
-    /// one allowed to move `PanelMetrics`.
+    /// one allowed to move `PanelMetrics` — and `Money`, by the same rule.
     ///
     /// **Global state, owned by one instance.** The rail's budget is a static
     /// the AppKit frame reads, and every other `AppSettings` — a preview's, a
@@ -672,12 +724,46 @@ final class AppSettings {
         didSet { qoderSiteChanged(from: oldValue) }
     }
 
+    /// Whether Qoder's credits are drawn part by part as well as in total.
+    ///
+    /// `total_quota` adds up the plan's credits, a resource pack bought on
+    /// top and the credits tied to one model family, and each of those is
+    /// spent and lapses on its own: a total at 57% can hold a pack at 95%.
+    /// Off by default, so an account with one part reads as it always has; on,
+    /// each part with an allowance gets its own row after the total, and the
+    /// ring's automatic choice follows whichever is fullest. Changes what the
+    /// service returns, so it goes through `onChange`.
+    ///
+    /// **Restored through `init`, never by assignment** (#89): turning it on
+    /// unpins a ring pinned to the total, and an assignment at launch, from
+    /// the `false` default to the stored `true`, read as a person turning it
+    /// on and dropped that pin on every launch.
+    var qoderShowsParts = false {
+        didSet { qoderShowsPartsChanged(from: oldValue) }
+    }
+
+    /// Whether Qoder's rows on the detailed card say how many credits as well
+    /// as what share (issue #88): "5,843 / 6,000" beside the row's name, counted
+    /// the way the percentage is. Off by default. Display only, so it refetches
+    /// nothing; restored through `init` like the rest.
+    var qoderShowsAmounts = false {
+        didSet { qoderShowsAmountsChanged(from: oldValue) }
+    }
+
     /// Which StepFun site the saved session belongs to: `platform.stepfun.com`
     /// or `platform.stepfun.ai`, two sign-ins on two hosts. The same rules as
     /// `qoderSite`: it decides where cookies are read from and where the
     /// request goes, and changing it discards the saved session.
     var stepFunSite: StepFunSite {
         didSet { stepFunSiteChanged(from: oldValue) }
+    }
+
+    /// Which MiniMax site the key is from: `minimax.io` or `minimaxi.com`,
+    /// one company's two storefronts and two accounts. It decides where the
+    /// request goes and which key is used — each site keeps its own
+    /// (`keySlot(for:)`), so changing it loses neither.
+    var minimaxSite: MiniMaxSite {
+        didSet { minimaxSiteChanged(from: oldValue) }
     }
 
     /// Where Pulse sends a self-hosted gateway's request, per account.
@@ -762,6 +848,13 @@ final class AppSettings {
         didSet { spendSpanChanged(from: oldValue) }
     }
 
+    /// The first and last day the span `custom` counts, both included. The
+    /// last seven days until the reader picks their own, and their pick is
+    /// kept like the span's, so switching back to "Custom range" finds it.
+    var spendCustomDays: ClosedRange<Date> {
+        didSet { spendCustomDaysChanged(from: oldValue) }
+    }
+
     /// Which view of the Token spend pane's year-long "Token activity" chart is
     /// open: the daily grid until the reader picks another, and their pick is
     /// kept like the span's. No `onChange?()` for the same reason.
@@ -819,9 +912,9 @@ final class AppSettings {
         didSet { alertsOnFailureChanged(from: oldValue) }
     }
 
-    /// Say when a provider's own status page — Codex's, Claude Code's,
-    /// DeepSeek's — reports an outage: for whichever is switched on, and only
-    /// about what it runs on (`StatusPage.notifiesAbout`). Rules: `OutageMemory`.
+    /// Say when a provider's own status page reports an outage: for whichever
+    /// is switched on, and only about what it runs on
+    /// (`StatusPage.notifiesAbout`). Rules: `OutageMemory`.
     var alertsOnOutage = false {
         didSet { alertsOnOutageChanged(from: oldValue) }
     }
@@ -908,14 +1001,19 @@ final class AppSettings {
         hidesMenuBarIcon: Bool = Default.hidesMenuBarIcon,
         showsDockIconInSettings: Bool = Default.showsDockIconInSettings,
         hidesInFullScreen: Bool = Default.hidesInFullScreen,
+        hidesFromScreenCapture: Bool = Default.hidesFromScreenCapture,
         followsActiveDisplay: Bool = Default.followsActiveDisplay,
+        snapsToEdges: Bool = Default.snapsToEdges,
         openSettingsShortcut: GlobalShortcut? = nil,
         togglePanelShortcut: GlobalShortcut? = nil,
         deepSeekBasis: BalanceBasis = .default,
         deepSeekBudget: Double? = nil,
         deepSeekCurrency: String? = nil,
         qoderSite: QoderSite = Default.qoderSite,
+        qoderShowsParts: Bool = false,
+        qoderShowsAmounts: Bool = false,
         stepFunSite: StepFunSite = Default.stepFunSite,
+        minimaxSite: MiniMaxSite = Default.minimaxSite,
         serverAddresses: [String: String] = [:],
         lowBalanceAlerts: [String: Double] = [:],
         enabledAccounts: Set<String> = Set(Provider.builtIn.map(\.rawValue)),
@@ -953,10 +1051,12 @@ final class AppSettings {
         warningThreshold: WarningThreshold = .default,
         dockShowsAlertColor: Bool = Default.dockShowsAlertColor,
         showsForecast: Bool = Default.showsForecast,
+        usageBarStyle: UsageBarStyle = .default,
         showsSecondRing: Bool = Default.showsSecondRing,
         animatesRingActivity: Bool = Default.animatesRingActivity,
         splitAccounts: Set<String> = [],
         spendSpan: SpendSpan = .default,
+        spendCustomDays: ClosedRange<Date>? = nil,
         spendActivityView: ActivityView = .default,
         readsTokenSpend: Bool = Default.readsTokenSpend,
         alertThreshold: AlertThreshold = .default,
@@ -969,14 +1069,19 @@ final class AppSettings {
         self.hidesMenuBarIcon = hidesMenuBarIcon
         self.showsDockIconInSettings = showsDockIconInSettings
         self.hidesInFullScreen = hidesInFullScreen
+        self.hidesFromScreenCapture = hidesFromScreenCapture
         self.followsActiveDisplay = followsActiveDisplay
+        self.snapsToEdges = snapsToEdges
         self.openSettingsShortcut = openSettingsShortcut
         self.togglePanelShortcut = togglePanelShortcut
         self.deepSeekBasis = deepSeekBasis
         self.deepSeekBudget = deepSeekBudget
         self.deepSeekCurrency = deepSeekCurrency
         self.qoderSite = qoderSite
+        self.qoderShowsParts = qoderShowsParts
+        self.qoderShowsAmounts = qoderShowsAmounts
         self.stepFunSite = stepFunSite
+        self.minimaxSite = minimaxSite
         self.serverAddresses = serverAddresses
         self.lowBalanceAlerts = lowBalanceAlerts
         self.enabledAccounts = enabledAccounts
@@ -1014,10 +1119,12 @@ final class AppSettings {
         self.warningThreshold = warningThreshold
         self.dockShowsAlertColor = dockShowsAlertColor
         self.showsForecast = showsForecast
+        self.usageBarStyle = usageBarStyle
         self.showsSecondRing = showsSecondRing
         self.animatesRingActivity = animatesRingActivity
         self.splitAccounts = splitAccounts
         self.spendSpan = spendSpan
+        self.spendCustomDays = spendCustomDays ?? Self.defaultSpendCustomDays()
         self.spendActivityView = spendActivityView
         self.readsTokenSpend = readsTokenSpend
         self.alertThreshold = alertThreshold
@@ -1031,6 +1138,8 @@ final class AppSettings {
     /// everything that has to follow it put into effect — the language, the
     /// proxy session, `PanelMetrics`.
     static func restored() -> AppSettings {
+        // Before anything is read: MiniMax CN's settings become MiniMax's.
+        MiniMaxMerge.migrate(defaults: .standard)
         let settings = restoredSettings(from: .standard)
         settings.applyRestored()
         return settings
@@ -1070,9 +1179,13 @@ final class AppSettings {
                 Key.showsDockIconInSettings, default: Default.showsDockIconInSettings
             ),
             hidesInFullScreen: defaults.settingsFlag(Key.hidesInFullScreen, default: Default.hidesInFullScreen),
+            hidesFromScreenCapture: defaults.settingsFlag(
+                Key.hidesFromScreenCapture, default: Default.hidesFromScreenCapture
+            ),
             followsActiveDisplay: defaults.settingsFlag(
                 Key.followsActiveDisplay, default: Default.followsActiveDisplay
             ),
+            snapsToEdges: defaults.settingsFlag(Key.snapsToEdges, default: Default.snapsToEdges),
             openSettingsShortcut: defaults.string(forKey: Key.openSettingsShortcut)
                 .flatMap(GlobalShortcut.init(storage:)),
             togglePanelShortcut: defaults.string(forKey: Key.togglePanelShortcut)
@@ -1081,7 +1194,10 @@ final class AppSettings {
             deepSeekBudget: defaults.object(forKey: Key.deepSeekBudget) as? Double,
             deepSeekCurrency: defaults.string(forKey: Key.deepSeekCurrency),
             qoderSite: defaults.settingsChoice(Key.qoderSite) ?? Default.qoderSite,
+            qoderShowsParts: defaults.bool(forKey: Key.qoderShowsParts),
+            qoderShowsAmounts: defaults.bool(forKey: Key.qoderShowsAmounts),
             stepFunSite: defaults.settingsChoice(Key.stepFunSite) ?? Default.stepFunSite,
+            minimaxSite: defaults.settingsChoice(Key.minimaxSite) ?? Default.minimaxSite,
             serverAddresses: defaults.dictionary(forKey: Key.serverAddresses) as? [String: String] ?? [:],
             lowBalanceAlerts: defaults.dictionary(forKey: Key.lowBalanceAlerts) as? [String: Double] ?? [:],
             enabledAccounts: selection.enabledAccounts,
@@ -1125,12 +1241,14 @@ final class AppSettings {
             warningThreshold: defaults.settingsIntChoice(Key.warningThreshold) ?? .default,
             dockShowsAlertColor: defaults.settingsFlag(Key.dockShowsAlertColor, default: Default.dockShowsAlertColor),
             showsForecast: defaults.settingsFlag(Key.showsForecast, default: Default.showsForecast),
+            usageBarStyle: defaults.settingsChoice(Key.usageBarStyle) ?? .default,
             showsSecondRing: defaults.settingsFlag(Key.showsSecondRing, default: Default.showsSecondRing),
             animatesRingActivity: defaults.settingsFlag(
                 Key.animatesRingActivity, default: Default.animatesRingActivity
             ),
             splitAccounts: Set(defaults.stringArray(forKey: Key.splitAccounts) ?? []),
             spendSpan: Self.storedSpendSpan(in: defaults),
+            spendCustomDays: Self.storedSpendCustomDays(in: defaults),
             spendActivityView: Self.storedSpendActivityView(in: defaults),
             readsTokenSpend: Self.storedReadsTokenSpend(in: defaults),
             alertThreshold: defaults.settingsIntChoice(Key.alertThreshold) ?? .default,
@@ -1151,9 +1269,16 @@ final class AppSettings {
     /// Everything outside this object that has to agree with what was just
     /// restored, and only then the right to move `PanelMetrics` afterwards.
     private func applyRestored() {
+        if defaults.object(forKey: Key.qoderSite) == nil,
+           APIKeyStore.key(for: .qoder) == nil,
+           QoderCNSession.isInstalled {
+            qoderSite = .china
+        }
         applyLanguage()
         NetworkSession.apply(networkProxy)
         applyPanelMetrics()
+        exchangeRates = ExchangeRates.load()
+        applyMoney()
         drivesPanelMetrics = true
         resizeRail()
     }
