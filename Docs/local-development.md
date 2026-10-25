@@ -4,7 +4,7 @@
 
 ## 项目位置
 
-Mac 开发目录：`~/Developer/NativeApps/AgentWallet`。
+Mac 开发目录：`~/Developer/NativeApps/Agent-Wallet`。
 
 此目录包含 `Package.swift`、`Sources/`、`Tests/`、`Docs/` 和完整 Git 历史。
 2026-10-25 从 `~/Developer/Personal/agent-wallet/AgentWallet` 迁入。
@@ -23,7 +23,7 @@ Mac 开发目录：`~/Developer/NativeApps/AgentWallet`。
 ## 日常提交
 
 ```sh
-cd ~/Developer/NativeApps/AgentWallet
+cd ~/Developer/NativeApps/Agent-Wallet
 git status --short --branch
 git fetch origin
 # 先核对上游差异；有未提交修改时不切分支、不自动 stash。
