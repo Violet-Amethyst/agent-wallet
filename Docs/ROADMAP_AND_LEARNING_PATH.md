@@ -1,5 +1,7 @@
 # Agent Wallet 演进路线图与全景学习路径 (Roadmap & Learning Journey)
 
+> 这是 2026-10 的学习记录。跟上游时以 [agent-wallet-identity.md](agent-wallet-identity.md) 和代码为准。下文里的单列描述、环的内外分工和里程碑，有一部分已经被后来的单列/双列开关和 `WalletSnapshot` 改过。
+
 > 本文档详细记录了 Agent Wallet 从立项探索、技术选型、吸收两款先驱产品（CodexBar 与 Pulse）精华、演化出独创的“双轨 Olympic 五环坞”，到后续规划的完整路线图与工程实践经验。
 
 ---
@@ -61,7 +63,7 @@ flowchart TD
 - **高密度数据分析**：CodexBar 针对 API 计费型模型设计了完善的消费分析体系，包含今日、7天、30天以及全部周期的 Token 消耗统计、分时速率、Burndown 预测图表，支持 CSV/JSON 导出。
 - **丰富的提供商矩阵**：支持包括 Codex、Claude、OpenAI、DeepSeek、Zhipu、Kimi、MiniMax、Grok、OpenRouter 等在内的 40 多个提供商。
 - **WidgetKit 支持**：原生开发了三种规格（Compact、Wide、Large）的桌面小组件，方便在桌面上快捷监控。
-- **资产存档位置**：全套设计规范、小组件设计草图、面板截图均已归档至 [Docs/reference/codexbar/](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Docs/reference/codexbar/)。
+- **资产存档位置**：全套设计规范、小组件设计草图、面板截图均已归档至 [Docs/reference/codexbar/](../Docs/reference/codexbar/)。
 
 #### 局限与工程反思
 - **菜单栏物理空间拥挤**：macOS 菜单栏（尤其是带刘海 MacBook）在开启多应用后极易被折叠隐藏，当用户开启多个模型时，菜单栏图标准备空间严重不足。
@@ -164,12 +166,12 @@ timeline
 
 | 页面 / 组件 | 核心职责 | 实现文件 | 关键技术机制 |
 | :--- | :--- | :--- | :--- |
-| **边缘吸附坞 (Edge Rail)** | 展现全部配额与金额环形状态，负责屏幕边缘隐现 | [`UsageDockView.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Panel/UsageDockView.swift) | `DockBerthShape` 超椭圆绘制、Olympic 双轨错落布局算法 |
-| **浮动面板主控制器** | 管理原生非激活窗口（`NSPanel`），接管全局指针事件 | [`FloatingPanelController.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Panel/FloatingPanelController.swift) | `PanelHitArea` 纯数学几何命中、`ActiveDisplayFollower` 跨屏幕跟随 |
-| **底部动作控制栏 (Action Bar)** | 提供设置与退出快捷操作 | [`UsageDockView.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Panel/UsageDockView.swift) | `actionPositions` 坐标解算、`railButton` 悬停微动效 |
-| **详情卡片模态 (Detail Card)** | 展开显示选定提供商的全部周期窗口、重置倒计时与账单 | [`DetailCardView.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Panel/DetailCardView.swift) | 动态高度自适应、重置时间国际化模版、多模型配额分解 |
-| **设置窗口 (Settings Window)** | 配置提供商连接、外观风格、快捷键、声音警报 | [`SettingsView.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Settings/SettingsView.swift) | 多标签分页（General, Providers, Appearance, Shortcuts, Alerts, Spend） |
-| **Bot Mark 情感化组件** | 萌系小机器人表情，目光跟随指针 | [`BotMarkView.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Panel/BotMarkView.swift) | 空间坐标转换（`coordinateSpace`）、眼球注视角度三角函数计算 |
+| **边缘吸附坞 (Edge Rail)** | 展现全部配额与金额环形状态，负责屏幕边缘隐现 | [`UsageDockView.swift`](../Sources/Pulse/Panel/UsageDockView.swift) | `DockBerthShape` 超椭圆绘制、Olympic 双轨错落布局算法 |
+| **浮动面板主控制器** | 管理原生非激活窗口（`NSPanel`），接管全局指针事件 | [`FloatingPanelController.swift`](../Sources/Pulse/Panel/FloatingPanelController.swift) | `PanelHitArea` 纯数学几何命中、`ActiveDisplayFollower` 跨屏幕跟随 |
+| **底部动作控制栏 (Action Bar)** | 提供设置与退出快捷操作 | [`UsageDockView.swift`](../Sources/Pulse/Panel/UsageDockView.swift) | `actionPositions` 坐标解算、`railButton` 悬停微动效 |
+| **详情卡片模态 (Detail Card)** | 展开显示选定提供商的全部周期窗口、重置倒计时与账单 | [`UsageDetailCard.swift`](../Sources/Pulse/Panel/UsageDetailCard.swift) | 动态高度自适应、重置时间国际化模版、多模型配额分解 |
+| **设置窗口 (Settings Window)** | 配置提供商连接、外观风格、快捷键、声音警报 | [`SettingsView.swift`](../Sources/Pulse/Settings/SettingsView.swift) | 多标签分页（General, Providers, Appearance, Shortcuts, Alerts, Spend） |
+| **Bot Mark 情感化组件** | 萌系小机器人表情，目光跟随指针 | [`BotMarkView.swift`](../Sources/Pulse/Panel/BotMark/BotMarkView.swift) | 空间坐标转换（`coordinateSpace`）、眼球注视角度三角函数计算 |
 
 ---
 

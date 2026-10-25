@@ -29,10 +29,7 @@ Topic docs, at the top of this folder. Subfolders are under [Folders](#folders).
 | [releasing.md](releasing.md) | Tag, bundle, Sparkle, DMG, CI |
 | [update-mirror.md](update-mirror.md) | update.qunqin.org: the Cloudflare mirror of the feed and downloads, deploying it, how the app picks GitHub or the mirror |
 | [ollama-cloud.md](ollama-cloud.md) | The current contract for Ollama Cloud: how usage is read from a signed-in page (no quota API); [providers/ollama-cloud.md](providers/ollama-cloud.md) only places it in the matrix |
-| [wallet-ui-v0.md](wallet-ui-v0.md) | Agent Wallet v0: remaining-first dual rings, prepaid cash and credit rails, period spend, DEBUG fixtures |
-| [wallet-ui-gap-analysis.md](wallet-ui-gap-analysis.md) | Gap analysis between the target Agent Wallet UI and Pulse's live provider data |
-| [wallet-provider-audit.md](wallet-provider-audit.md) | Current Audit of supported providers, capabilities, and roadmaps |
-| [api-capability-investigation.md](api-capability-investigation.md) | Deep dive into unofficial API routes and reverse-engineered session formats |
+| [agent-wallet-identity.md](agent-wallet-identity.md) | What Agent Wallet keeps when Pulse or CodexBar moves: remaining-first wallet readings, single/dual-column rail, action keys, and the account readers that are ours. This is the merge contract |
 
 ## Folders
 
@@ -50,3 +47,7 @@ Topic docs, at the top of this folder. Subfolders are under [Folders](#folders).
 
 - Release notes: what each release changed, and the source of both the GitHub release page and the Sparkle update text, is [../CHANGELOG.md](../CHANGELOG.md). How a release is cut: [releasing.md](releasing.md).
 - [../README.md](../README.md) with [zh-CN](../README.zh-CN.md) / [zh-Hant](../README.zh-Hant.md) / [ja](../README.ja.md) / [ko](../README.ko.md) — product pages. Keep all five in parity. They are not the architecture source of truth.
+
+## 本地开发与 GitHub 同步
+
+本机目录、远端分工和提交步骤见 [local-development.md](local-development.md)。

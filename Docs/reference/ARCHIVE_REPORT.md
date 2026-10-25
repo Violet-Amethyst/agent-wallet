@@ -17,17 +17,17 @@
    - Antigravity 双模型分列 (`isSplit`) 需要在设置窗口中调配，由于入口失效造成模型分列难以被唤出与观察。
 
 ### 1.2 修复代码清单
-- [`UsageDockView.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Panel/UsageDockView.swift)：
+- [`UsageDockView.swift`](../../Sources/Pulse/Panel/UsageDockView.swift)：
   - 修复 `DockLayout.length(quotaCount:moneyCount:)`，在非双轨分支中补齐 `+ actionAreaLength`，确保任何账户组合下按键区域均完整保留。
-- [`FloatingPanelController.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/Panel/FloatingPanelController.swift)：
+- [`FloatingPanelController.swift`](../../Sources/Pulse/Panel/FloatingPanelController.swift)：
   - 恢复 `Layout.unrounded` 对 `maximumThickness` 的引用，确保窗口宽度足够容纳双轨 120pt 坞。
   - 恢复 `shownSlotCounts` 与 `shownRailSize` 辅助方法，在 `railFrame`、`railSize`、`grabArea`、`placePanel` 中使用真实双轨尺寸计算窗口偏移。
   - 恢复 `init(..., onSettings:onQuit:)` 参数绑定，传递给 `FloatingUsagePanelView`。
   - 恢复 `panel.onClick` 中的 `DockLayout.actionPositions` 半径判定（0 触发 `onSettings()`，1 触发 `onQuit()`），并在 `PanelHitArea.slot` 中注入 `isMoney` 闭包。
-- [`AppDelegate.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Sources/Pulse/App/AppDelegate.swift)：
+- [`AppDelegate.swift`](../../Sources/Pulse/App/AppDelegate.swift)：
   - 在 `startMonitoring()` 中向 `FloatingPanelController` 注入 `{ [weak self] in self?.showSettings() }` 与 `{ NSApplication.shared.terminate(nil) }`。
   - 为 `applicationShouldHandleReopen` 补充 `@MainActor` 隔离注解。
-- [`RailGeometryTests.swift`](file:///Users/richard_seong/Developer/Personal/agent-wallet/AgentWallet/Tests/PulseTests/RailGeometryTests.swift)：
+- [`RailGeometryTests.swift`](../../Tests/PulseTests/RailGeometryTests.swift)：
   - 新增 `Action buttons (Settings and Quit) lie within rail bounds for dual and single track` 单元测试，全量测试 100% 通过。
 
 ---
