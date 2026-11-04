@@ -137,11 +137,11 @@ struct WalletSnapshot: Equatable, Sendable {
         case .dualQuota:
             return (shortQuota ?? longQuota)?.percentText(remaining: true) ?? "—"
         case .singleQuota:
-            if let creditCount {
-                return "\(creditCount) cr"
-            }
             if let singleQuota {
                 return singleQuota.percentText(remaining: true)
+            }
+            if let creditCount {
+                return "\(creditCount) cr"
             }
             return prepaid?.railText() ?? "—"
         case .money(.prepaid):
@@ -257,6 +257,30 @@ enum WalletAdapter {
             )
         }
         if usage.provider == .qoder, !isFixture {
+            // A team or add-on pool is a percentage of a limit, same as the
+            // other quota rings. Forcing it onto the balance track put that
+            // percentage after the divider, beside cash balances. A plan that
+            // only reports a credit count stays a balance: the rail says
+            // "300 cr", not "100%".
+            let team = usage.windows.first { if case .sharedCredits = $0.kind { return true } else { return false } }
+            if let team {
+                let primary = pinnedWindow.flatMap { id in usage.windows.first { $0.id == id } } ?? team
+                return WalletSnapshot(
+                    mode: .singleQuota,
+                    displayName: title,
+                    iconResource: nil,
+                    shortQuota: nil,
+                    longQuota: nil,
+                    singleQuota: primary,
+                    prepaid: usage.creditRemaining,
+                    creditCount: Self.qoderCreditCount(from: usage),
+                    periodSpend: nil,
+                    extras: usage.extras,
+                    updatedAt: usage.observedAt,
+                    periodSpendShowsRemaining: false,
+                    isFixture: isFixture
+                )
+            }
             return WalletSnapshot(
                 mode: .money(.prepaid),
                 displayName: title,

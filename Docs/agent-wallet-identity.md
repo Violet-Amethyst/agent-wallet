@@ -39,7 +39,8 @@ CodexBar 不进 `Package.swift`，也不作为子模块编译。工作区里若�
 | Codex，且已有配额窗口 | 只留一个环，用 `headlineWindow`。周限额和 5 小时不再拆成双环。 |
 | Cursor 同时有 `cursorModels` 与 `otherModels` | 内环 Cursor Models，外环 Other Models。钉住某一侧时内外对调。 |
 | Antigravity 同时报 Gemini 与 Claude and GPT，且账号未拆成两枚环 | 内环 Gemini，外环 Claude and GPT。优先用已耗尽的窗口，否则用周限额。 |
-| Qoder | 余额轨。标题是个人额度加共享额度的整数积分（`qoder.credits` + `qoder.shared`）。 |
+| Qoder，且有团队或附加额度池（`.sharedCredits` 窗口） | `singleQuota`：这是限额的百分比，和其他额度环一样排在额度一侧，标题是剩余百分比。积分数（`creditCount`）仍保留，只在没有百分比时才印。 |
+| Qoder，只报告积分数 | 余额轨。标题是个人额度加共享额度的整数积分（`qoder.credits` + `qoder.shared`），例如 `300 cr`，不是 `100%`。 |
 | OpenAI、xAI，且花费窗口的估计是用户自己的预算 | `money(.periodSpend)`，标题印剩余预算。 |
 | 只有预付余额 | `money(.prepaid)`。满环按 100 个货币单位画，例如 ¥90.07 画成约 90% 的剩余弧。 |
 | 只有一条配额 | `singleQuota`，标题是剩余百分比或 `300 cr` 这种积分。 |

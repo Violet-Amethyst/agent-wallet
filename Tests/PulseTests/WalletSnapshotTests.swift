@@ -243,6 +243,30 @@ struct WalletSnapshotTests {
         #expect(snapshot.innerUsedFraction == 0.0)
         #expect(snapshot.singleQuota?.resetsAt == nil)
     }
+
+    @Test("Qoder team credits stay a percentage, so the rail groups them with quotas")
+    func qoderTeamCreditsAreQuota() {
+        let usage = Self.usage(
+            .qoder,
+            windows: [
+                UsageWindow(
+                    id: "qoder.addOnQuota",
+                    kind: .sharedCredits,
+                    scope: "Add-on credits",
+                    usedFraction: 0.485,
+                    windowSeconds: 30 * 86_400,
+                    resetsAt: nil,
+                    amounts: UsageWindow.Amounts(used: 97, remaining: 103, limit: 200)
+                )
+            ]
+        )
+        let snapshot = WalletAdapter.snapshot(from: usage, title: "Qoder")
+        #expect(snapshot.mode == .singleQuota)
+        #expect(snapshot.isMoney == false)
+        #expect(snapshot.railCaption == "52%")
+        #expect(snapshot.prefersMoneyRingTint == false)
+        #expect(snapshot.creditCount == 103)
+    }
 }
 
 #if DEBUG
