@@ -34,13 +34,23 @@ struct CursorUsageService: Sendable {
         URL(string: "https://cursor.com/api/dashboard/get-current-period-usage")!
 
     func fetch() async -> ProviderUsage {
-        guard let session = CursorAppLogin.session() else {
+        let session: CursorAppLogin.Session
+        switch CursorAppLogin.load() {
+        case .token(let token):
             // A token that is stored but spent is a login gone stale, not an
             // absent one — so say what actually helps.
-            return .unavailable(
-                .cursor,
-                reason: CursorAppLogin.hasStoredToken() ? .cursorLoginExpired : .cursorSignInRequired
-            )
+            guard let built = CursorAppLogin.session(from: token) else {
+                return .unavailable(.cursor, reason: .cursorLoginExpired)
+            }
+            session = built
+        case .keychainRefused:
+            return .unavailable(.cursor, reason: .cursorKeyRefused)
+        // A key that opens nothing even read afresh: what Cursor wrote is not
+        // something this can read, and opening Cursor rewrites it.
+        case .unreadable:
+            return .unavailable(.cursor, reason: .cursorLoginExpired)
+        case .absent:
+            return .unavailable(.cursor, reason: .cursorSignInRequired)
         }
 
         // The session goes out as a `Cookie` header, which `URLSession` will
