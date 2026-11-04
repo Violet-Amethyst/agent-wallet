@@ -36,7 +36,41 @@ struct QoderSiteRow: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
+            .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
+        }
+    }
+}
+
+/// Which MiniMax site the key is from: minimax.io or minimaxi.com.
+///
+/// **Unlike Qoder's, changing it keeps the key.** A pasted key is not read
+/// back from a browser, so clearing it would lose it; instead each site keeps
+/// its own (`MiniMaxSite.keySlot`), and the field shows the chosen site's.
+struct MiniMaxSiteRow: View {
+    let account: AccountKey
+    let settings: AppSettings
+    let credentials: ProviderCredentialModel
+
+    var body: some View {
+        SettingsRow(
+            String.localized("Site"),
+            subtitle: String.localized("Where your key is from. Each site keeps its own key.")
+        ) {
+            Picker("", selection: Binding(
+                get: { settings.minimaxSite },
+                set: { site in
+                    guard site != settings.minimaxSite else { return }
+                    settings.minimaxSite = site
+                    credentials.seed(for: account)
+                }
+            )) {
+                ForEach(MiniMaxSite.allCases, id: \.self) { site in
+                    Text(verbatim: site.label).tag(site)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
             .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
         }
     }
@@ -68,7 +102,7 @@ struct StepFunSiteRow: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
         }
     }
@@ -132,11 +166,11 @@ struct BalanceBasisRow: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.segmented)
-            // Its own width, not `controlWidth`: three segments need more than
-            // that, and a frame narrower than the control does not shrink it —
-            // it overflows leftwards over the subtitle. Sized to itself, the
-            // row makes room and the subtitle wraps instead.
+            .pickerStyle(.menu)
+            // Its own width, not `controlWidth`: a frame narrower than the
+            // control does not shrink it — it overflows leftwards over the
+            // subtitle. Sized to itself, the row makes room and the subtitle
+            // wraps instead.
             .fixedSize()
         }
     }

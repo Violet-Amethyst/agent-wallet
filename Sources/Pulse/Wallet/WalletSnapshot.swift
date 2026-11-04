@@ -137,11 +137,11 @@ struct WalletSnapshot: Equatable, Sendable {
         case .dualQuota:
             return (shortQuota ?? longQuota)?.percentText(remaining: true) ?? "—"
         case .singleQuota:
-            if let creditCount {
-                return "\(creditCount) cr"
-            }
             if let singleQuota {
                 return singleQuota.percentText(remaining: true)
+            }
+            if let creditCount {
+                return "\(creditCount) cr"
             }
             return prepaid?.railText() ?? "—"
         case .money(.prepaid):
@@ -159,7 +159,7 @@ struct WalletSnapshot: Equatable, Sendable {
         switch mode {
         case .dualQuota: shortQuota?.usedFraction
         case .singleQuota: singleQuota?.usedFraction
-        case .money(.prepaid): prepaidMoneyUsedFraction
+        case .money(.prepaid): prepaidMoneyUsedFraction ?? singleQuota?.usedFraction
         case .money(.periodSpend): periodSpend?.usedFraction
         }
     }
@@ -173,9 +173,18 @@ struct WalletSnapshot: Equatable, Sendable {
     var innerIsSpent: Bool {
         switch mode {
         case .money(.prepaid):
-            prepaidMoneyUsedFraction.map { $0 >= 1 } ?? false
+            if let prepaidMoneyUsedFraction {
+                return prepaidMoneyUsedFraction >= 1
+            }
+            if let singleQuota {
+                return UsageTint.isSpent(singleQuota)
+            }
+            if let creditCount {
+                return creditCount <= 0
+            }
+            return false
         default:
-            UsageTint.isSpent(shortQuota ?? singleQuota)
+            return UsageTint.isSpent(shortQuota ?? singleQuota)
         }
     }
 
@@ -203,7 +212,7 @@ struct WalletSnapshot: Equatable, Sendable {
     /// Currency balances are shown with a money-coloured ring instead
     /// of the quota traffic-light tint.
     var prefersMoneyRingTint: Bool {
-        if case .money = mode, (prepaid != nil || periodSpend != nil) { return true }
+        if case .money = mode, (prepaid != nil || periodSpend != nil || creditCount != nil) { return true }
         return false
     }
 
@@ -245,6 +254,47 @@ enum WalletAdapter {
                 singleQuota: usage.headlineWindow(preferring: pinnedWindow),
                 prepaid: nil, creditCount: nil, periodSpend: nil, extras: [],
                 updatedAt: usage.observedAt, isFixture: isFixture
+            )
+        }
+        if usage.provider == .qoder, !isFixture {
+            // A team or add-on pool is a percentage of a limit, same as the
+            // other quota rings. Forcing it onto the balance track put that
+            // percentage after the divider, beside cash balances. A plan that
+            // only reports a credit count stays a balance: the rail says
+            // "300 cr", not "100%".
+            let team = usage.windows.first { if case .sharedCredits = $0.kind { return true } else { return false } }
+            if let team {
+                let primary = pinnedWindow.flatMap { id in usage.windows.first { $0.id == id } } ?? team
+                return WalletSnapshot(
+                    mode: .singleQuota,
+                    displayName: title,
+                    iconResource: nil,
+                    shortQuota: nil,
+                    longQuota: nil,
+                    singleQuota: primary,
+                    prepaid: usage.creditRemaining,
+                    creditCount: Self.qoderCreditCount(from: usage),
+                    periodSpend: nil,
+                    extras: usage.extras,
+                    updatedAt: usage.observedAt,
+                    periodSpendShowsRemaining: false,
+                    isFixture: isFixture
+                )
+            }
+            return WalletSnapshot(
+                mode: .money(.prepaid),
+                displayName: title,
+                iconResource: nil,
+                shortQuota: nil,
+                longQuota: nil,
+                singleQuota: usage.headlineWindow(preferring: pinnedWindow),
+                prepaid: usage.creditRemaining,
+                creditCount: Self.qoderCreditCount(from: usage),
+                periodSpend: nil,
+                extras: usage.extras,
+                updatedAt: usage.observedAt,
+                periodSpendShowsRemaining: false,
+                isFixture: isFixture
             )
         }
         let quotas = usage.windows.filter(isQuota)
@@ -402,8 +452,12 @@ enum WalletAdapter {
             )
         }
 
+        let isMoneyProvider = usage.creditRemaining != nil
+            || usage.provider.billing == .api
+            || usage.provider == .qoder
+            || isFixture
         return WalletSnapshot(
-            mode: .money(.prepaid),
+            mode: isMoneyProvider ? .money(.prepaid) : .singleQuota,
             displayName: title,
             iconResource: nil,
             shortQuota: nil,
@@ -419,26 +473,54 @@ enum WalletAdapter {
         )
     }
 
+    private static func qoderCreditCount(from usage: ProviderUsage) -> Int? {
+        func remaining(in window: UsageWindow) -> Double? {
+            guard let amounts = window.amounts else { return nil }
+            let value = amounts.remaining ?? max(0, amounts.limit - amounts.used)
+            return value.isFinite && value >= 0 ? value : nil
+        }
+
+        if let totalWindow = usage.windows.first(where: { $0.id == "qoder.credits" }),
+           let personal = remaining(in: totalWindow) {
+            let shared = usage.windows.first(where: { $0.id == "qoder.shared" }).flatMap(remaining(in:)) ?? 0
+            return Int((personal + shared).rounded())
+        }
+
+        let windowRemainders = usage.windows.compactMap(remaining(in:))
+        if !windowRemainders.isEmpty {
+            return Int(windowRemainders.reduce(0, +).rounded())
+        }
+
+        if let balance = usage.creditBalance {
+            let digits = balance.prefix { $0.isNumber || $0 == "." || $0 == "," }
+                .replacingOccurrences(of: ",", with: "")
+            if let value = Double(digits), value.isFinite {
+                return Int(value.rounded())
+            }
+        }
+        return nil
+    }
+
     private static func isQuota(_ window: UsageWindow) -> Bool {
         switch window.kind {
-        case .fiveHour, .daily, .weekly, .monthly, .messages, .other, .topUp, .credits, .sharedCredits: true
+        case .fiveHour, .daily, .weekly, .monthly, .messages, .other, .topUp, .credits, .planCredits, .dedicatedCredits, .sharedCredits: true
         case .spend, .balance: false
         }
     }
 
     private static func isShort(_ window: UsageWindow) -> Bool {
         switch window.kind {
-        case .fiveHour, .daily, .messages, .credits: true
+        case .fiveHour, .daily, .messages, .credits, .planCredits: true
         case .other(let seconds): seconds <= shortCeiling
-        case .weekly, .monthly, .topUp, .sharedCredits, .spend, .balance: false
+        case .weekly, .monthly, .topUp, .dedicatedCredits, .sharedCredits, .spend, .balance: false
         }
     }
 
     private static func isLong(_ window: UsageWindow) -> Bool {
         switch window.kind {
-        case .weekly, .monthly, .topUp, .sharedCredits: true
+        case .weekly, .monthly, .topUp, .dedicatedCredits, .sharedCredits: true
         case .other(let seconds): seconds > shortCeiling
-        case .fiveHour, .daily, .messages, .credits, .spend, .balance: false
+        case .fiveHour, .daily, .messages, .credits, .planCredits, .spend, .balance: false
         }
     }
 }

@@ -74,6 +74,28 @@ struct QoderParsingTests {
         #expect(windows[0].resetsAt == Self.resetDate)
         #expect(!windows[0].reportsLength)
         #expect(!windows[0].isExhausted)
+        // The credits themselves, as Qoder states them (#88).
+        #expect(windows[0].amounts == .init(used: 125, remaining: 375, limit: 500))
+    }
+
+    @Test("The card's credit amounts count the way the percentage does (#88)")
+    func creditAmountText() {
+        var window = UsageWindow(id: "qoder.credits", kind: .credits, scope: nil, usedFraction: 0.02,
+                                 windowSeconds: 30 * 86_400, resetsAt: nil, reportsLength: false)
+        #expect(UsageDetailCard.amountText(window, remaining: true) == nil)
+
+        window.amounts = .init(used: 157, remaining: 5_843, limit: 6_000)
+        let left = UsageDetailCard.amountText(window, remaining: true)
+        let used = UsageDetailCard.amountText(window, remaining: false)
+        #expect(left?.hasSuffix(" / " + 6_000.formatted(.number.locale(LocalizationSource.locale))) == true)
+        #expect(left?.hasPrefix(5_843.formatted(.number.locale(LocalizationSource.locale))) == true)
+        #expect(used?.hasPrefix("157 / ") == true)
+
+        // No remainder stated: nothing to say about what is left, and it is
+        // not worked out from the other two.
+        window.amounts = .init(used: 157, remaining: nil, limit: 6_000)
+        #expect(UsageDetailCard.amountText(window, remaining: true) == nil)
+        #expect(UsageDetailCard.amountText(window, remaining: false) != nil)
     }
 
     /// The earlier build's field names, and a reset stated in milliseconds.
@@ -111,13 +133,21 @@ struct QoderParsingTests {
         #expect(snapshot.personal == .init(used: 14, limit: 600, remaining: 586))
         #expect(snapshot.resetsAt == Date(timeIntervalSince1970: 1_787_304_668.180))
 
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
         let read = Date(timeIntervalSince1970: 1_790_179_680) // 2026-09-23T16:08Z
-        let windows = QoderUsageService.windows(from: snapshot, at: read)
+        let windows = QoderUsageService.windows(from: snapshot, at: read, calendar: utc)
         #expect(windows.count == 1)
         #expect(windows[0].resetsAt == nil)
         #expect(!windows[0].isExhausted)
-        // What the card says instead: the pack with 86 left, lapsing first.
-        #expect(windows[0].nextExpiry == .init(amount: 86, at: Date(timeIntervalSince1970: 1_792_313_971.562)))
+        // What the card says instead: the pack with 86 left lapses first, and
+        // six packs on six days hold all 586 that is left (issue #76).
+        let expiry = try #require(windows[0].nextExpiry)
+        #expect(expiry.amount == 86)
+        #expect(expiry.at == Date(timeIntervalSince1970: 1_792_313_971.562))
+        #expect(expiry.lots == 6)
+        #expect(expiry.totalAmount == 586)
+        #expect(expiry.coversRemainder == true)
 
         let usage = ProviderUsage(account: AccountKey(.qoder), windows: windows, observedAt: Date(),
                                   state: .live, plan: nil, creditBalance: nil)
@@ -151,8 +181,13 @@ struct QoderParsingTests {
             .init(remaining: 86, expiresAt: morning),
             .init(remaining: 100, expiresAt: morning.addingTimeInterval(2 * 86_400)),
         ]
-        let expiry = QoderUsageService.nextExpiry(of: packs, at: now, calendar: utc)
-        #expect(expiry == .init(amount: 186, at: morning))
+        let expiry = QoderUsageService.nextExpiry(of: packs, at: now, remaining: 1_000, calendar: utc)
+        #expect(expiry?.amount == 186)
+        #expect(expiry?.at == morning)
+        // Two days of lots, and part of a row with more left.
+        #expect(expiry?.lots == 2)
+        #expect(expiry?.totalAmount == 286)
+        #expect(expiry?.coversRemainder == false)
         #expect(QoderUsageService.nextExpiry(of: [], at: now) == nil)
     }
 
@@ -237,6 +272,99 @@ struct QoderParsingTests {
         #expect(next.hasTurnedOver(since: 0.9, resetsAt: before))
     }
 
+    // MARK: - The parts
+
+    /// The figures from issue #76, which the fixture's shape follows: a total
+    /// at 43% used holding a resource pack at 95%. The details' `source` names
+    /// and the pack's undated entry are written to the trial reply's shape,
+    /// not captured from this account.
+    private static let partsRead = Date(timeIntervalSince1970: 1_791_590_400) // 2026-10-10T00:00Z
+
+    @Test("The parts are read beside the total")
+    func partsAreRead() throws {
+        let snapshot = try QoderClient.parse(Self.fixture("qoder-credits-parts"))
+        #expect(snapshot.personal == .init(used: 6_068, limit: 14_000, remaining: 7_932))
+        #expect(snapshot.plan?.pool == .init(used: 157, limit: 6_000, remaining: 5_843))
+        #expect(snapshot.resourcePack?.pool == .init(used: 1_900, limit: 2_000, remaining: 100))
+        #expect(snapshot.dedicated?.pool == .init(used: 4_011, limit: 6_000, remaining: 1_989))
+    }
+
+    /// Off, the card is what it always was. On, the parts follow the total,
+    /// and the ring's automatic choice — the fullest — is the pack at 95%
+    /// rather than the total at 43%.
+    @Test("The parts are drawn only when asked, after the total")
+    func partsFollowTheTotal() throws {
+        let snapshot = try QoderClient.parse(Self.fixture("qoder-credits-parts"))
+        #expect(QoderUsageService.windows(from: snapshot, at: Self.partsRead).map(\.id) == ["qoder.credits"])
+
+        let windows = QoderUsageService.windows(from: snapshot, at: Self.partsRead, showsParts: true)
+        #expect(windows.map(\.id) == ["qoder.credits", "qoder.plan", "qoder.pack", "qoder.dedicated"])
+        #expect(windows.map(\.kind) == [.credits, .planCredits, .topUp, .dedicatedCredits])
+        #expect(windows[2].usedFraction == 0.95)
+
+        let usage = ProviderUsage(account: AccountKey(.qoder), windows: windows, observedAt: Self.partsRead,
+                                  state: .live, plan: nil, creditBalance: nil)
+        #expect(usage.headlineWindow()?.id == "qoder.pack")
+    }
+
+    /// Only the plan refreshes; the packs lapse. Each part's expiry is its
+    /// own, so the 1,989 lapsing on 7 November sits on the dedicated row.
+    @Test("Only the plan has a reset, and each part its own expiry")
+    func partsKeepTheirOwnDates() throws {
+        let snapshot = try QoderClient.parse(Self.fixture("qoder-credits-parts"))
+        let windows = QoderUsageService.windows(from: snapshot, at: Self.partsRead, showsParts: true)
+        let reset = Date(timeIntervalSince1970: 1_794_186_000)
+        let lapse = Date(timeIntervalSince1970: 1_794_063_600)
+        #expect(windows.map(\.resetsAt) == [reset, reset, nil, nil])
+        // The total says no expiry of its own once the parts are drawn: it
+        // was the dedicated row's line again, word for word (issue #76).
+        #expect(windows[0].nextExpiry == nil)
+        #expect(windows[1].nextExpiry == nil)
+        #expect(windows[2].nextExpiry == nil)
+        // All 1,989 the dedicated row has left lapse that day, so the card
+        // does not say "of which".
+        #expect(windows[3].nextExpiry?.amount == 1_989)
+        #expect(windows[3].nextExpiry?.at == lapse)
+        #expect(windows[3].nextExpiry?.coversRemainder == true)
+        #expect(windows[3].nextExpiry?.lots == nil)
+        // A pack bought on top of a part is not a reset either.
+        #expect(!windows[1].hasTurnedOver(since: 0.9, resetsAt: reset))
+        #expect(!windows[3].hasTurnedOver(since: 0.9, resetsAt: nil))
+    }
+
+    /// Without the parts the total keeps its expiry: nothing else on the card
+    /// says when credits lapse.
+    @Test("Without the parts, the total names the soonest lapse")
+    func totalKeepsExpiryAlone() throws {
+        let snapshot = try QoderClient.parse(Self.fixture("qoder-credits-parts"))
+        let windows = QoderUsageService.windows(from: snapshot, at: Self.partsRead)
+        #expect(windows[0].nextExpiry?.amount == 1_989)
+        #expect(windows[0].nextExpiry?.coversRemainder == false)
+    }
+
+    /// The trial reply has one part with an allowance; drawn, it would be the
+    /// total again under another name.
+    @Test("One part alone is not drawn twice")
+    func onePartIsTheTotal() throws {
+        let snapshot = try QoderClient.parse(Self.fixture("qoder-credits-trial-stale-reset"))
+        let read = Date(timeIntervalSince1970: 1_790_179_680)
+        #expect(QoderUsageService.windows(from: snapshot, at: read, showsParts: true).map(\.id) == ["qoder.credits"])
+    }
+
+    /// A part this cannot read is left out; the total it belongs to is not.
+    @Test("An unreadable part never costs the total")
+    func unreadablePartIsDropped() throws {
+        let reply = Data("""
+        { "total_quota": { "quota_summary": { "used_value": 10, "limit_value": 100, "remaining_value": 90 } },
+          "plan_quota": { "quota_summary": { "used_value": "many", "limit_value": 50 } },
+          "resource_package_quota": "nonsense" }
+        """.utf8)
+        let snapshot = try QoderClient.parse(reply)
+        #expect(snapshot.personal == .init(used: 10, limit: 100, remaining: 90))
+        #expect(snapshot.plan == nil)
+        #expect(snapshot.resourcePack == nil)
+    }
+
     // MARK: - Sites
 
     @Test("Each site asks its own host, and only its own")
@@ -251,5 +379,26 @@ struct QoderParsingTests {
         let usage = await QoderUsageService(cookie: nil, site: .international).fetch()
         #expect(usage.state == .unavailable(.qoderSessionMissing))
         #expect(usage.sourceScope == nil)
+    }
+}
+
+/// Turning the parts on frees a ring pinned to the total (issue #76).
+@MainActor
+@Suite("Qoder parts and the pinned ring")
+struct QoderPartsPinTests {
+    @Test("A pin to the total is cleared when the parts are turned on; any other pin stays")
+    func partsClearTotalPin() {
+        let (defaults, cleanup) = TestDefaults.make("qoderPartsPin")
+        defer { cleanup() }
+        let settings = AppSettings(enabledAccounts: ["qoder"], defaults: defaults)
+        let qoder = AccountKey(.qoder)
+        settings.pinnedWindows[qoder.id] = "qoder.credits"
+        settings.qoderShowsParts = true
+        #expect(settings.pinnedWindows[qoder.id] == nil)
+
+        settings.qoderShowsParts = false
+        settings.pinnedWindows[qoder.id] = "qoder.pack"
+        settings.qoderShowsParts = true
+        #expect(settings.pinnedWindows[qoder.id] == "qoder.pack")
     }
 }

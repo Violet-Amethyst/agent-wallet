@@ -40,7 +40,7 @@
 "Copy diagnostics" = "診断情報をコピー";
 "Not recorded" = "記録なし";
 "Read cached usage" = "キャッシュされた使用量を読む";
-"Reads saved figures without fetching or opening credentials." = "保存済みの数値を読むだけで、通信も認証情報へのアクセスも行いません。";
+"Prints Pulse's saved readings, not the provider's original reply, without fetching or opening credentials." = "Pulse が保存した読み取り結果を出力します。プロバイダの元の応答ではありません。通信や認証情報へのアクセスは行いません。";
 "Copy command" = "コマンドをコピー";
 "Developer kit" = "開発者キット";
 "Raycast extension, tmux and shell status, and a sketchybar plugin." = "Raycast 拡張、tmux とシェルのステータス、sketchybar プラグインが含まれます。";
@@ -77,8 +77,12 @@
 "The usage rail at the edge of the screen." = "画面の端に使用量のレールを表示します。";
 "Hide in full screen" = "フルスクリーン中は隠す";
 "Keep the floating panel out of full-screen apps." = "他の App がフルスクリーンのときは自動的に隠します。";
+"Hide from screenshots" = "スクリーンショットに写さない";
+"Screenshot tools that support it leave the floating panel out. Recordings and screen sharing may still show it." = "対応するスクリーンショットツールにはフローティングパネルが写りません。画面収録や画面共有では写ることがあります。";
 "Follow the active display" = "使用中のディスプレイを追う";
 "With more than one display, the rail moves to the one the pointer is on." = "ディスプレイが複数あるとき、ポインタのある方へレールが移動します。";
+"Snap to screen edges" = "画面の端に吸着";
+"Dragged near an edge, the rail docks to it and turns to run along it. When this is off, dragging only moves the rail and keeps its direction." = "画面の端の近くまでドラッグすると、レールが端に吸着し、端に沿う向きに変わります。オフにすると、ドラッグしても位置が変わるだけで、向きはそのままです。";
 "Left" = "左";
 "Top" = "上";
 "Percentages across" = "横置きでパーセントを表示";
@@ -241,6 +245,13 @@
 "Usage history" = "使用量の履歴";
 "Today" = "今日";
 "All time" = "累計";
+"This month" = "今月";
+"Last month" = "先月";
+"This year" = "今年";
+"Custom range" = "期間を指定";
+"Dates" = "日付";
+"First day" = "開始日";
+"Last day" = "終了日";
 "Limit reset credits" = "上限リセット券";
 "Next expiry" = "次の期限";
 "1 available" = "残り 1 枚";
@@ -252,6 +263,8 @@
 "Reading logs" = "ログを読んでいます";
 "No history yet" = "履歴はまだありません";
 "Nothing has been logged on this Mac yet, so there is no history to add up." = "この Mac にはまだログがないため、集計できる履歴がありません。";
+"Token spend reading is off" = "「ローカルの使用量記録を読み取る」がオフです";
+"This history comes from the usage records on this Mac, which Pulse reads only while Token spend reading is on." = "この履歴は、この Mac の使用量記録から集計します。Pulse が記録を読むのは、「ローカルの使用量記録を読み取る」がオンのときだけです。";
 "Account total" = "アカウント累計";
 
 /* Budget estimate */
@@ -282,6 +295,10 @@
 "Size" = "全体のサイズ";
 "Spacing" = "間隔";
 "Round ends" = "端を丸く";
+"Progress bars" = "進捗バー";
+"How limit bars are drawn on the card and in the menu." = "カードとメニューに表示する上限バーの描き方です。";
+"Continuous" = "連続";
+"Segmented" = "区切り";
 "The rail's ends and the card's tail follow the ring's own curve." = "レールの両端とカードの尾が、リングと同じ弧を描きます。";
 "How much air there is between the rings." = "リングどうしの間隔を調整します。";
 "Tight" = "狭い";
@@ -311,11 +328,14 @@
 "Black" = "黒";
 "Light" = "ライト";
 "Transparency" = "透明度";
-"Clearer to the right. Darker reads better over bright pages." = "右ほど透明になります。暗めにすると、明るいページの上でも読みやすくなります。";
+"Clearer to the right, and the text turns from white to black. Black text is hard to read over dark windows." = "右へ行くほど透明になり、文字は白から黒へ変わります。黒い文字は暗いウインドウの上では読みにくくなります。";
 "Open Antigravity to see its usage." = "使用量を読むには Antigravity を開いてください。";
 "Asks the language server Antigravity runs while it is open." = "Antigravity が起動中に走らせている言語サーバに問い合わせます。";
-"Only while Antigravity is open." = "Antigravity が開いているあいだだけ読めます。";
-"Antigravity's language server" = "Antigravity の言語サーバ";
+"Reads Antigravity while it is open, and the agy CLI when it is not." = "Antigravity が開いているときはそこから、開いていないときは agy CLI から読み取ります。";
+"CLI" = "CLI";
+"Asks the agy CLI, using the login it already saved." = "agy CLI を呼び出し、既に保存されているログインを使います。";
+"The agy CLI isn't installed. Install it, or choose another source in Settings." = "agy CLI がインストールされていません。インストールするか、設定で別の読み取り元を選んでください。";
+"This version of the agy CLI can't report usage. Update it to 1.1.11 or later." = "このバージョンの agy CLI は使用量を報告できません。1.1.11 以降に更新してください。";
 
 /* Cursor */
 "Sign in to Cursor to see usage." = "使用量を読むには Cursor にサインインしてください。";
@@ -445,6 +465,7 @@
 "Uses the session the Claude desktop app is signed in with." = "Claude デスクトップ App がサインインしているセッションを使います。";
 "Sign in to the Claude desktop app to see usage." = "Claude デスクトップ App にサインインすると使用量が表示されます。";
 "Pulse needs your keychain to read the Claude desktop app's session. Refresh to be asked again." = "Claude デスクトップ App のセッションを読むにはキーチェーンの許可が必要です。更新するともう一度尋ねます。";
+"Pulse needs your keychain to read Cursor's saved login. Refresh to be asked again." = "Cursor の保存済みログインを読むにはキーチェーンの許可が必要です。更新するともう一度尋ねます。";
 "The Claude desktop app's session was refused. Open it and sign in again." = "Claude デスクトップ App のセッションが拒否されました。App を開いてサインインし直してください。";
 
 /* Notifications */
@@ -467,6 +488,8 @@
 
 /* Settings sidebar search */
 "Search" = "検索";
+"Back" = "戻る";
+"Forward" = "進む";
 "No matches" = "一致する項目はありません";
 
 /* Resetting the rail order */
@@ -611,9 +634,16 @@
 /* ネットワークプロキシ */
 "Network" = "ネットワーク";
 "Proxy" = "プロキシ";
-"Use macOS settings or a proxy only for Pulse." = "macOS のシステム設定を使うか、Pulse 専用のプロキシを指定します。";
+"No Proxy" = "プロキシを使わない";
 "Follow System" = "システム設定に従う";
-"Manual" = "手動";
+"System Proxy Only" = "システムのプロキシのみ";
+"Custom Proxy" = "カスタムプロキシ";
+"Pulse connects directly and ignores the proxy in macOS settings." = "Pulse は直接接続し、macOS の設定にあるプロキシを使いません。";
+"Uses the proxy in macOS settings, or connects directly when there is none." = "macOS の設定にあるプロキシを使います。設定がなければ直接接続します。";
+"Uses the proxy in macOS settings, and doesn't connect when there is none." = "macOS の設定にあるプロキシを使います。プロキシがオフのときは接続しません。";
+"A proxy for Pulse only." = "Pulse 専用のプロキシを指定します。";
+"macOS has no proxy switched on, so Pulse isn't connecting." = "macOS でプロキシがオンになっていないため、Pulse は接続していません。";
+"No proxy is switched on in macOS, so Pulse didn't connect." = "macOS でプロキシがオンになっていないため、Pulse は接続しませんでした。";
 "Type" = "種類";
 "HTTP" = "HTTP";
 "SOCKS5" = "SOCKS5";
@@ -636,7 +666,7 @@
 "Enable a service in its settings to start monitoring." = "監視を始めるには、そのサービスの設定で有効にしてください。";
 "Reads Claude Code's saved login from Keychain or its credentials file. May ask for Keychain access, including Claude Desktop's cookie storage." = "キーチェーンまたは認証情報ファイルから Claude Code のログインを読み取ります。Claude デスクトップの Cookie 保存領域を含め、キーチェーンへのアクセスを求めることがあります。";
 "Reads ~/.codex/auth.json and may run codex app-server with its saved login. Pulse does not request Keychain access." = "~/.codex/auth.json を読み取り、保存済みのログインで codex app-server を起動する場合があります。Pulse はキーチェーンへのアクセスを求めません。";
-"Reads the running editor's local language server and connection token. No Keychain prompt." = "起動中のエディタのローカル言語サーバから使用量と接続トークンを読み取ります。キーチェーンの確認はありません。";
+"Reads the running editor's local language server and connection token, or runs the agy CLI with its saved login. Pulse does not request Keychain access." = "起動中のエディタのローカル言語サーバから使用量と接続トークンを読み取るか、保存済みのログインで agy CLI を起動します。Pulse はキーチェーンへのアクセスを求めません。";
 "Reads the login saved in Cursor's local database. No Keychain prompt." = "Cursor のローカルデータベースに保存されたログインを読み取ります。キーチェーンの確認はありません。";
 "Reads the login saved in ~/.grok/auth.json. No Keychain prompt." = "~/.grok/auth.json に保存されたログインを読み取ります。キーチェーンの確認はありません。";
 "Uses a key entered in Settings, or reads OpenCode's auth.json. No Keychain prompt." = "設定で入力したキーを使うか、OpenCode の auth.json を読み取ります。キーチェーンの確認はありません。";
@@ -666,7 +696,23 @@
 "The same key your AI client uses for this gateway. Sent only to the address above. Stored encrypted on this Mac." = "この ゲートウェイ に AI クライアントが使っているのと同じキーです。上のアドレスにだけ送られます。この Mac に暗号化して保存されます。";
 "Credit allowance" = "クレジット枠";
 "Team credits" = "チーム共有クレジット";
-"%@: %@ credits expire" = "%@に %@ クレジット失効";
+"Plan credits" = "プランのクレジット";
+"Dedicated credits" = "専用クレジット";
+"Show each part of the credits" = "クレジットを内訳ごとに表示";
+"Show credit amounts" = "クレジット数を表示";
+"Each row on the card also shows the credits, such as 5,843 / 6,000. The rail keeps its percentages." = "カードの各行にクレジット数も表示します（例：5,843 / 6,000）。レールには引き続き割合を表示します。";
+"No session" = "セッションがありません";
+"Read the session from your browser above to see the account's usage history." = "上でブラウザからセッションを読み込むと、アカウントの使用記録が表示されます。";
+"The whole account, editor and CLI alike. Used is before discounts and free allowances; charged is what was deducted." = "エディタと CLI を含むアカウント全体の使用量です。使用は割引や無料枠を差し引く前のクレジット、差し引きは実際に差し引かれたクレジットです。";
+"Credits used per day" = "1 日ごとの使用クレジット";
+"From Qoder's usage records, in credits." = "Qoder の使用記録から。単位はクレジット。";
+"Charged %@" = "差し引き %@";
+"%@ credits used, %@ charged" = "%@ クレジット使用、%@ 差し引き";
+"Plan credits, a top-up pack and dedicated credits are spent separately. The total can look ample while one of them is nearly gone." = "プランのクレジット、追加パック、専用クレジットは別々に消費されます。合計に余裕があるように見えても、そのうち一つが残りわずかなことがあります。";
+"%@: %@ credits expire" = "うち %2$@ クレジットが %1$@に失効";
+"All expire %@" = "%@にすべて失効";
+"All expire from %@, in %@ lots" = "%1$@から%2$@回ですべて失効";
+"From %@: %@ credits expire in turn" = "うち %2$@ クレジットが %1$@から順次失効";
 "Sign in to Qoder in a browser to see usage." = "ブラウザで Qoder にサインインすると使用量が表示されます。";
 "Qoder's saved session expired. Sign in again in your browser." = "Qoder の保存済みセッションが期限切れです。ブラウザでサインインし直してください。";
 "This Qoder account has no credits." = "この Qoder アカウントにクレジットはありません。";
@@ -674,6 +720,7 @@
 "No Qoder session found. Sign in at %@ first." = "Qoder のセッションが見つかりません。先に %@ でサインインしてください。";
 "Site" = "サイト";
 "Where you signed in. Changing it clears the saved session." = "サインインしたサイトです。切り替えると保存済みのセッションは消去されます。";
+"Where your key is from. Each site keeps its own key." = "キーを発行したサイトです。キーはサイトごとに別々に保存されます。";
 "Sign in to StepFun's platform in a browser to see usage." = "ブラウザで StepFun のプラットフォームにサインインすると使用量が表示されます。";
 "StepFun's saved session expired. Sign in again in your browser." = "StepFun の保存済みセッションが期限切れです。ブラウザでサインインし直してください。";
 "No Step Plan on this StepFun account." = "この StepFun アカウントには Step Plan がありません。";
@@ -700,6 +747,7 @@
 "Its program isn't there, or isn't executable." = "プログラムが見つからないか、実行できません。";
 "Look again" = "再読み込み";
 "Manage extensions" = "拡張機能の管理";
+"Metrics" = "指標";
 "No pulse-extension.json in this folder." = "このフォルダに pulse-extension.json がありません。";
 "None yet" = "まだありません";
 "Program" = "プログラム";
@@ -715,6 +763,7 @@
 "Time limit" = "制限時間";
 "Written for extension schema %@, which this version of Pulse doesn't read." = "拡張機能スキーマ %@ 向けに書かれていますが、このバージョンの Pulse は読み込めません。";
 "pulse-extension.json isn't valid JSON, or is missing a field." = "pulse-extension.json が正しい JSON ではないか、必要な項目が欠けています。";
+"%@. Lowest %@, highest %@." = "%@。最低 %@、最高 %@。";
 
 /* Profiled providers: shared wording */
 "No session found. Sign in at %@ first." = "セッションが見つかりません。先に %@ でサインインしてください。";
@@ -893,6 +942,7 @@
 "7 days" = "7 日間";
 "31 days" = "31 日間";
 "Costs are estimates at API prices." = "金額は API 価格での推定です。";
+"API-price estimates. * Partly unpriced." = "API 価格での推定。* は価格未設定分を除く。";
 "Whole account" = "アカウント全体";
 "Couldn't read the history." = "利用履歴を読み取れませんでした。";
 "From %@, for the whole account." = "%@ から取得した、アカウント全体の数値です。";
@@ -963,24 +1013,21 @@
 "Signs of a weaker model" = "性能低下の兆候";
 "Period" = "期間";
 "No Codex replies with reasoning in this period" = "この期間に推論付きの Codex の応答はありません";
-"%@ of %@ long replies had their reasoning cut off" = "長い応答 %2$@ 件中 %1$@ 件で推論が途中で打ち切られました";
+"%@ of %@ long replies stopped at a fixed point" = "長い応答 %2$@ 件中 %1$@ 件で、推論が決まった位置で止まりました";
 "Too few to tell" = "データ不足";
-"Possibly weakened" = "性能低下の疑い";
-"Normal" = "正常";
 "None found" = "見つかりません";
 "%@ more" = "ほか %@ 件";
 "Checked %@ sessions." = "%@ 件のセッションを確認しました。";
 "Read from this Mac's Codex records; nothing is sent." = "この Mac の Codex の記録だけを読み取り、リクエストは一切送りません。";
-"Reasoning cut off: the model's reasoning stopped at exactly 516, 1,034, 1,552… tokens, as if cut off. Only about 0.2% of replies would stop there by chance." = "推論の打ち切り：モデルの推論が 516、1,034、1,552… トークンでぴたりと止まり、強制的に切られたように見えるものです。偶然ここで止まる応答は約 0.2% しかありません。";
-"Settings quietly lowered: a turn ran on a worse model, lower reasoning or a smaller context than you chose, without you changing anything." = "知らないうちの設定ダウン：あなたが選んだものより劣るモデル、低い推論レベル、短いコンテキストで実行されたターンです。あなたは設定を変えていません。";
+"Reasoning stopped at fixed points: the reasoning ended at exactly 516, 1,034, 1,552… tokens. The cause has not been published, and each model has its own usual share, so the share alone does not show that a model was weakened." = "決まった位置で止まった推論：推論がちょうど 516、1,034、1,552… トークンで終わったものです。原因は公表されておらず、割合はモデルごとにもともと異なるため、割合だけでは性能が落とされたかどうかを判断できません。";
+"Settings quietly lowered: a turn ran on a worse model or lower reasoning than you chose, without you changing anything." = "知らないうちの設定ダウン：あなたが選んだものより劣るモデル、または低い推論レベルで実行されたターンです。あなたは設定を変えていません。";
 "These are signs, not proof: Codex doesn't record which model the server actually used." = "これは兆候であって確証ではありません。サーバーが実際にどのモデルを使ったかは Codex に記録されません。";
-"Reasoning cut off" = "推論の打ち切り";
+"Reasoning stopped at fixed points" = "決まった位置で止まった推論";
 "%@ replies in all" = "全 %@ 件の応答";
 "Settings quietly lowered" = "知らないうちの設定ダウン";
 "Model: %@ swapped for %@" = "モデル：%@ が %@ に置き換えられた";
 "Reasoning: %@ lowered to %@" = "推論レベル：%@ が %@ に下げられた";
-"Context: %@ cut to %@" = "コンテキスト：%@ が %@ に縮められた";
-"Checked %@ sessions: the model, reasoning and context you chose were never changed." = "%@ 件のセッションを確認しました。選んだモデル・推論レベル・コンテキストは一度も変えられていません。";
+"Checked %@ sessions: the model and reasoning you chose were never changed." = "%@ 件のセッションを確認しました。選んだモデルと推論レベルは一度も変えられていません。";
 "%@ other sessions can't be checked: older than Codex 0.144, or run by Codex itself." = "ほか %@ 件のセッションは判断できません：Codex 0.144 より前のもの、または Codex 自身が動かしたものです。";
 "Service status" = "サービスの状態";
 "Operational" = "正常";
@@ -993,10 +1040,12 @@
 "Status page" = "ステータスページ";
 "As %@ reports it on its status page, read when this page opens and every five minutes while it stays open." = "%@ がステータスページで公表している内容です。このページを開いたときに読み込み、開いている間は 5 分ごとに更新します。";
 "90 days ago" = "90 日前";
+"%@ days ago" = "%@ 日前";
+"Now" = "現在";
 "%@ uptime" = "稼働率 %@";
 "No data" = "データなし";
 "When a service is down" = "サービスに障害が起きたとき";
-"Codex, Claude Code and DeepSeek, from their own status pages — only the ones you have switched on." = "Codex・Claude Code・DeepSeek のそれぞれのステータスページに基づき、オンにしているものだけ通知します。";
+"From each provider's own status page, for the providers you have switched on and only about what their accounts run on." = "各サービスのステータスページに基づき、オンにしているサービスについて、アカウントが実際に使う部分だけを通知します。";
 "%@ reports %@." = "%@ の発表：%@。";
 "Back to normal: %@." = "復旧しました：%@。";
 "%@ (%@)" = "%@（%@）";
@@ -1075,10 +1124,8 @@
 // Recap window, entry points and notification
 "Monthly Recap" = "月間まとめ";
 "Yearly Recap" = "年間まとめ";
-"Monthly and Yearly Recap" = "月間まとめ・年間まとめ";
-"View %@ recap" = "%@のまとめを見る";
-"View %@ yearly recap" = "%@年の年間まとめを見る";
-"Shareable cards for a month or a year, from this Mac's records." = "この Mac の記録から、1 か月または 1 年分の共有用カードを作ります。";
+"Usage recaps" = "使用量のまとめ";
+"Shareable cards for a day, a week, a month or a year, from this Mac's records." = "この Mac の記録から、1 日・1 週間・1 か月・1 年分の共有用カードを作ります。";
 "When a recap is ready" = "まとめができたとき";
 "Last month's recap, at the start of the month. Needs Token spend reading." = "月初に、先月のまとめができたことを知らせます。「ローカルの使用量記録を読み取る」がオンのときだけ使えます。";
 "Your %@ recap is ready" = "%@のまとめができました";
@@ -1166,6 +1213,63 @@
 "These records do not report this token category separately." = "この種類のトークンは個別に記録されていません。";
 "Reported tokens without a usable category breakdown." = "トークン数は記録されていますが、利用できる分類の内訳がありません。";
 
+// Currency (Settings → General)
+"Currency" = "通貨";
+"Show estimates in" = "推定額の通貨";
+"Money worked out from API prices: Token spend, estimated value, usage history and the recap. Balances and charges a service reports stay in the currency it gives." = "API 価格から計算した金額をこの通貨で表示します（トークン使用量、使った分の推定額、使用量の履歴、まとめ）。サービスが報告する残高や請求額は、そのサービスの通貨のまま表示します。";
+"Exchange rate" = "為替レート";
+"Rate source" = "レートの提供元";
+"Your rate is used. Clear the field to use the day's rate." = "入力したレートを使っています。空欄にするとその日のレートに戻ります。";
+"The day's rate, updated %@. Type a rate to use your own." = "その日のレートです（%@ 更新）。自分のレートを入力することもできます。";
+"No rate yet, so estimates stay in US dollars. Type a rate, or wait for the day's." = "まだレートがないため、推定額は米ドルのまま表示しています。レートを入力するか、その日のレートの取得を待ってください。";
+"US dollar" = "米ドル";
+"Chinese yuan" = "人民元";
+"Hong Kong dollar" = "香港ドル";
+"New Taiwan dollar" = "新台湾ドル";
+"Japanese yen" = "日本円";
+"South Korean won" = "韓国ウォン";
+"Russian rouble" = "ロシア・ルーブル";
+
+// Connection diagnostics: server replies
+"Server replies" = "サーバーの応答";
+"Copy replies" = "応答をコピー";
+"No reply" = "応答なし";
+"Credentials are hidden. A reply can still show the account's email, plan or balance, so it is not in the shared diagnostics. Kept until the next check." = "認証情報は伏せています。応答にはアカウントのメールアドレス、プラン、残高が含まれることがあるため、共有用の診断情報には含めません。次のチェックで置き換わります。";
+"%@ bytes, not text" = "%@ バイト（テキストではありません）";
+
+// Service status: why a read failed
+"No request was made." = "リクエストは送られていません。";
+"The page answered, but not with anything Pulse reads for this provider." = "ステータスページは応答しましたが、Pulse がこのサービスについて読み取れる内容はありませんでした。";
+"The page answered HTTP %@." = "ステータスページは HTTP %@ を返しました。";
+
+// Recap: day and week
+"Daily Recap" = "1 日のまとめ";
+"Weekly Recap" = "週間まとめ";
+"Day" = "日";
+"Week" = "週";
+"Earlier" = "前へ";
+"Later" = "次へ";
+"On %@, you and AI worked through" = "%@、あなたと AI が処理したのは";
+"Over %@, you and AI worked through" = "%@の 1 週間、あなたと AI が処理したのは";
+"On %@," = "%@、";
+"Over %@," = "%@の 1 週間、";
+"Check back when the day is over" = "今日が終わったら、また見に来てください";
+"See you tomorrow" = "また明日";
+"Check back when the week is over" = "今週が終わったら、また見に来てください";
+"See you next week" = "また来週";
+"vs the day before" = "前日比";
+"vs the same days last week" = "先週同期比";
+"vs the week before" = "前週比";
+"per day vs the week before" = "1 日平均・前週比";
+"That was your day." = "これが、あなたの 1 日。";
+"So far, this is your day." = "今のところ、\nこれがあなたの 1 日。";
+"That was your week." = "これが、あなたの 1 週間。";
+"So far, this is your week." = "今のところ、\nこれがあなたの 1 週間。";
+"Tokens · so far today" = "トークン · 現在まで";
+"Top tool" = "メインのツール";
+"Tokens · token share" = "トークン数 · トークンの割合";
+"The plan price is the monthly price prorated by the days of this period." = "プランの料金は、月額をこの期間の日数で日割りにしています。";
+
 /* Agent Wallet additions */
 "Monthly spend" = "月間支出";
 "Monthly budget" = "月間予算";
@@ -1189,6 +1293,10 @@
 "Optional monthly spend budget in USD. When set, shows remaining credit against this limit." = "米ドル建ての任意の月間支出予算。設定すると、この予算に対する残りクレジットが表示されます。";
 "Olympic dual-track layout" = "オリンピック五輪デュアルトラック配置";
 "Arrange quota and balance rings in a compact Olympic 5-ring dual track." = "クォータと残高リングをコンパクトなオリンピック五輪デュアルトラックで配置します。";
+"Rail columns" = "列レイアウト";
+"Single column" = "1列";
+"Dual column" = "2列";
+"Single column separates percentage and balance groups in one compact line; dual column staggers them side by side." = "1列ではコンパクトな単一行内でパーセントと残高をグループ分けして表示し、2列では左右に交互に並べて表示します。";
 "Agent Wallet Settings" = "Agent Wallet 設定";
 "Sign in to DeepSeek Platform in one Chrome profile, or add an API key in Settings." = "Chrome のプロファイルの 1 つで DeepSeek プラットフォームにサインインするか、設定で API キーを追加してください。";
 "Add an OpenAI Platform session in Settings." = "設定で OpenAI Platform セッションを追加してください。";

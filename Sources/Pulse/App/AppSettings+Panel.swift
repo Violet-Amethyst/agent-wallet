@@ -20,7 +20,9 @@ import Foundation
 extension AppSettings.Key {
     static let panelVisible = "settings.panelVisible"
     static let hidesInFullScreen = "settings.hidesInFullScreen"
+    static let hidesFromScreenCapture = "settings.hidesFromScreenCapture"
     static let followsActiveDisplay = "settings.followsActiveDisplay"
+    static let snapsToEdges = "settings.snapsToEdges"
     static let panelSize = "settings.panelSize"
     static let railSpacing = "settings.railSpacing"
     static let topRailShowsPercentages = "settings.topRailShowsPercentages"
@@ -30,6 +32,7 @@ extension AppSettings.Key {
     static let usesRoundEnds = "settings.usesRoundEnds"
     static let showsWindowClock = "settings.showsWindowClock"
     static let showsForecast = "settings.showsForecast"
+    static let usageBarStyle = "settings.usageBarStyle"
     static let detailedCards = "settings.detailedCards"
     static let usesGlass = "settings.usesGlass"
     static let glassTransparency = "settings.glassTransparency"
@@ -42,7 +45,9 @@ extension AppSettings.Key {
 extension AppSettings.Default {
     static let isPanelVisible = true
     static let hidesInFullScreen = true
+    static let hidesFromScreenCapture = false
     static let followsActiveDisplay = false
+    static let snapsToEdges = true
     static let topRailShowsPercentages = false
     static let sideRailShowsPercentages = true
     static let labelAboveRing = false
@@ -70,9 +75,23 @@ extension AppSettings {
         onLayoutChange?()
     }
 
+    func hidesFromScreenCaptureChanged(from old: Bool) {
+        guard hidesFromScreenCapture != old else { return }
+        defaults.set(hidesFromScreenCapture, forKey: Key.hidesFromScreenCapture)
+        onLayoutChange?()
+    }
+
     func followsActiveDisplayChanged(from old: Bool) {
         guard followsActiveDisplay != old else { return }
         defaults.set(followsActiveDisplay, forKey: Key.followsActiveDisplay)
+        onLayoutChange?()
+    }
+
+    /// Re-places the panel: a free upright rail is kept off the sides only
+    /// while snapping is on (`PanelPlacement.sideMargin`).
+    func snapsToEdgesChanged(from old: Bool) {
+        guard snapsToEdges != old else { return }
+        defaults.set(snapsToEdges, forKey: Key.snapsToEdges)
         onLayoutChange?()
     }
 
@@ -131,6 +150,13 @@ extension AppSettings {
         guard showsWindowClock != old else { return }
         if drivesPanelMetrics { PanelMetrics.showWindowClock(showsWindowClock) }
         defaults.set(showsWindowClock, forKey: Key.showsWindowClock)
+        onLayoutChange?()
+    }
+
+    func usageBarStyleChanged(from old: UsageBarStyle) {
+        guard usageBarStyle != old else { return }
+        if drivesPanelMetrics { PanelMetrics.use(usageBarStyle) }
+        defaults.set(usageBarStyle.rawValue, forKey: Key.usageBarStyle)
         onLayoutChange?()
     }
 
@@ -245,6 +271,7 @@ extension AppSettings {
         PanelMetrics.showWindowClock(showsWindowClock)
         PanelMetrics.useRoundEnds(usesRoundEnds)
         PanelMetrics.showForecast(showsForecast)
+        PanelMetrics.use(usageBarStyle)
         PanelMetrics.showDetailedCard(!detailedCards.isEmpty)
     }
 

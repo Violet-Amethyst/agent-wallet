@@ -14,6 +14,25 @@ struct AppearancePane: View {
 
             SettingsGroup {
                 SettingsRow(
+                    String.localized("Rail columns"),
+                    subtitle: String.localized("Single column separates percentage and balance groups in one compact line; dual column staggers them side by side.")
+                ) {
+                    Picker("", selection: Binding(
+                        get: { settings.usesDualTrackDock },
+                        set: { settings.usesDualTrackDock = $0 }
+                    )) {
+                        Text(localized: "Single column").tag(false)
+                        Text(localized: "Dual column").tag(true)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
+                    .disabled(!settings.isPanelVisible)
+                }
+
+                SettingsRowDivider()
+
+                SettingsRow(
                     String.localized("Size"),
                     subtitle: String.localized("Size of the rail on screen.")
                 ) {
@@ -26,7 +45,7 @@ struct AppearancePane: View {
                         }
                     }
                     .labelsHidden()
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
                     .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
                     .disabled(!settings.isPanelVisible)
                 }
@@ -46,7 +65,7 @@ struct AppearancePane: View {
                         }
                     }
                     .labelsHidden()
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
                     .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
                     .disabled(!settings.isPanelVisible)
                 }
@@ -68,6 +87,27 @@ struct AppearancePane: View {
 
                 SettingsRowDivider()
 
+                // Not greyed out with the panel hidden: the menu's bars
+                // follow it too.
+                SettingsRow(
+                    String.localized("Progress bars"),
+                    subtitle: String.localized("How limit bars are drawn on the card and in the menu.")
+                ) {
+                    Picker("", selection: Binding(
+                        get: { settings.usageBarStyle },
+                        set: { settings.usageBarStyle = $0 }
+                    )) {
+                        ForEach(UsageBarStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
+                }
+
+                SettingsRowDivider()
+
                 // Always shown, and greyed out under glass rather than
                 // hidden: glass is always drawn dark (`AppSettings.usesLightPanel`),
                 // and a row that vanishes is one nobody finds again.
@@ -83,7 +123,7 @@ struct AppearancePane: View {
                         Text(localized: "Light").tag(true)
                     }
                     .labelsHidden()
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
                     .frame(width: SettingsLayout.controlWidth, alignment: .trailing)
                     .disabled(!settings.isPanelVisible || settings.usesGlass)
                 }
@@ -110,7 +150,7 @@ struct AppearancePane: View {
 
                     SettingsRow(
                         String.localized("Transparency"),
-                        subtitle: String.localized("Clearer to the right. Darker reads better over bright pages.")
+                        subtitle: String.localized("Clearer to the right, and the text turns from white to black. Black text is hard to read over dark windows.")
                     ) {
                         Slider(
                             value: Binding(

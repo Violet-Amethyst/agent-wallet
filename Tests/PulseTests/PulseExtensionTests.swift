@@ -283,6 +283,110 @@ struct ExtensionReportTests {
         #expect(usage.windows.map(\.name) == ["First"])
     }
 
+    @Test("Metrics are read in the program's own words, units and order")
+    func metrics() throws {
+        let usage = reading(#"""
+        {"schemaVersion": 1, "balance": {"amount": 16.33, "currency": "USD"},
+         "metrics": [
+          {"id": "ttft", "label": " 首字时间 ", "value": 320, "unit": "ms", "history": [
+            {"t": "2026-10-12T16:00:00+08:00", "v": 320},
+            {"t": "2026-10-12T14:00:00+08:00", "v": 410},
+            {"t": "2026-10-12T15:00:00.500+08:00", "v": 355}
+          ]},
+          {"label": "Output rate", "value": 87.4, "unit": "tok/s"},
+          {"id": "ok", "label": "Success", "value": -0.5}
+        ]}
+        """#)
+
+        #expect(usage.state == .live)
+        #expect(usage.creditRemaining == .init(amount: 16.33, currency: "USD"))
+        #expect(usage.metrics.map(\.id) == ["ttft", "1", "ok"])
+        #expect(usage.metrics.map(\.label) == ["首字时间", "Output rate", "Success"])
+        #expect(usage.metrics.map(\.value) == [320, 87.4, -0.5])
+        #expect(usage.metrics.map(\.unit) == ["ms", "tok/s", nil])
+        let ttft = usage.metrics[0]
+        // Oldest first, whatever order they were printed in.
+        #expect(ttft.history.map(\.value) == [410, 355, 320])
+        #expect(ttft.hasTrend)
+        #expect(!usage.metrics[1].hasTrend)
+    }
+
+    @Test("A metric Pulse can't use is left off, and takes nothing else with it")
+    func unusableMetrics() {
+        let usage = reading(#"""
+        {"schemaVersion": 1, "limits": [{"label": "Daily", "usedPercent": 30}], "metrics": [
+          {"label": "Text value", "value": "320"},
+          {"label": "No value"},
+          {"value": 5},
+          {"label": "  ", "value": 5},
+          "not an object",
+          {"id": "a", "label": "Kept", "value": 1},
+          {"id": "a", "label": "Same id", "value": 2}
+        ]}
+        """#)
+        #expect(usage.windows.map(\.name) == ["Daily"])
+        #expect(usage.metrics.map(\.label) == ["Kept"])
+
+        let notAList = reading(#"{"schemaVersion": 1, "limits": [{"label": "x", "usedPercent": 1}], "metrics": {"a": 1}}"#)
+        #expect(notAList.windows.count == 1)
+        #expect(notAList.metrics.isEmpty)
+    }
+
+    @Test("Metrics alone are not a reading: they have no ring to draw")
+    func metricsAlone() {
+        let usage = reading(#"{"schemaVersion": 1, "metrics": [{"label": "Rate", "value": 1}]}"#)
+        #expect(usage.state == .unavailable(.noLimitsReported))
+    }
+
+    @Test("At most four metrics, and the newest points of a long series")
+    func metricBounds() {
+        let five = (0..<5).map { #"{"label": "M\#($0)", "value": \#($0)}"# }.joined(separator: ",")
+        let points = (0..<200).map { minute in
+            #"{"t": "2026-10-12T\#(String(format: "%02d:%02d", minute / 60, minute % 60)):00Z", "v": \#(minute)}"#
+        }.joined(separator: ",")
+        let usage = reading(#"""
+        {"schemaVersion": 1, "balance": {"amount": 1, "currency": "USD"}, "metrics": [
+          {"label": "Series", "value": 1, "history": [\#(points),
+            {"t": "not a time", "v": 1}, {"t": "2026-10-12T00:00:00Z", "v": 999}]},
+          \#(five)
+        ]}
+        """#)
+        #expect(usage.metrics.count == ExtensionReport.metricLimit)
+        #expect(usage.metrics.map(\.label) == ["Series", "M0", "M1", "M2"])
+        let history = usage.metrics[0].history
+        #expect(history.count == ExtensionReport.historyLimit)
+        // The newest kept, never thinned or averaged.
+        #expect(history.first?.value == 80)
+        #expect(history.last?.value == 199)
+    }
+
+    @Test("A metric's figure is rounded for display, never zeroed or converted")
+    func metricText() {
+        let locale = Locale(identifier: "en_US")
+        #expect(UsageMetric.number(320, locale: locale) == "320")
+        #expect(UsageMetric.number(87.4321, locale: locale) == "87.43")
+        #expect(UsageMetric.number(12345, locale: locale) == "12,345")
+        #expect(UsageMetric.number(0.0042, locale: locale) == "0.0042")
+        #expect(UsageMetric.number(0, locale: locale) == "0")
+    }
+
+    @Test("Metrics survive the cache")
+    func metricsRoundTrip() async throws {
+        let file = FileManager.default.temporaryDirectory.appending(path: "PulseExtensionTests-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let cache = UsageCache(file: file)
+        let fresh = ExtensionReport.reading(from: Data(#"""
+        {"schemaVersion": 1, "balance": {"amount": 3, "currency": "USD"}, "metrics": [
+          {"id": "ttft", "label": "TTFT", "value": 320, "unit": "ms", "history": [
+            {"t": "2026-10-12T14:00:00Z", "v": 410}, {"t": "2026-10-12T15:00:00Z", "v": 320}]}]}
+        """#.utf8), for: account)
+        _ = await cache.reconciled(fresh)
+
+        let restored = try #require(await cache.lastReading(for: account))
+        #expect(restored.state == .stale)
+        #expect(restored.metrics == fresh.metrics)
+    }
+
     @Test("A label survives the cache")
     func labelRoundTrip() throws {
         let window = UsageWindow(id: "extension.0", kind: .other(seconds: 0), scope: nil,
@@ -358,15 +462,25 @@ struct ExtensionRunTests {
 
     @Test("A program that never answers is stopped at its time limit")
     func timeout() async throws {
-        let (service, sandbox) = try service("#!/bin/sh\nsleep 30\n", timeout: 1)
+        let watch = ProcessDeathWatch()
+        let (service, sandbox) = try service(
+            "#!/bin/sh\necho $$ > '\(watch.pidFile.path)'\nexec sleep 300\n", timeout: 1
+        )
         defer { sandbox.remove() }
 
-        let started = Date()
+        let started = ContinuousClock.now
         let usage = await service.fetch()
+        let returned = started.duration(to: .now)
         #expect(usage.state == .unavailable(.extensionTimedOut))
-        // The time limit plus the stop's own grace, and nowhere near the
-        // thirty seconds the program asked for.
-        #expect(Date().timeIntervalSince(started) < 10)
+        // Killed within the time limit plus the stop's own grace — about six
+        // seconds on an idle machine — timed from the program's side. Both
+        // bounds sit far below the five minutes the program asked for: the
+        // kill and the caller's resume each wait for a cooperative thread,
+        // and on a loaded CI runner that took 14–20s with the program long
+        // dead. See `ProcessDeathWatch`.
+        let killed = try #require(await watch.death, "the program outlived the run")
+        #expect(started.duration(to: killed) < .seconds(60))
+        #expect(returned < .seconds(120))
     }
 
     @Test("A program deleted since the scan is reported missing")

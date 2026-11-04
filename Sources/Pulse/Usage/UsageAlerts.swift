@@ -390,7 +390,7 @@ struct AlertMemory: Codable, Sendable, Equatable {
     static func standing(of reason: ProviderUsage.Unavailability) -> Standing {
         switch reason {
         case .claudeLoginExpired, .claudeDesktopKeyRefused, .claudeDesktopSessionExpired,
-             .cursorLoginExpired, .grokLoginExpired, .signedOut, .apiKeyRefused,
+             .cursorLoginExpired, .cursorKeyRefused, .grokLoginExpired, .signedOut, .apiKeyRefused,
              .ollamaSessionExpired, .ollamaPageChanged, .xiaomiSessionExpired,
              .qoderSessionExpired, .stepFunSessionExpired, .openAIWebSessionExpired,
              .unreachable, .unreadableReply, .rateLimited, .serverError,
@@ -432,11 +432,16 @@ struct AlertMemory: Codable, Sendable, Equatable {
              .cursorSignInRequired, .grokSignInRequired, .notSignedIn,
              .deepSeekWebLoginRequired, .openAIWebLoginRequired, .xaiWebLoginRequired,
              .ollamaSessionMissing, .xiaomiSessionMissing, .qoderSessionMissing, .stepFunSessionMissing,
-             .apiKeyMissing, .volcengineCLIMissing,
+             .apiKeyMissing, .volcengineCLIMissing, .antigravityCLIMissing, .antigravityCLIOutdated,
              .volcengineSignInRequired,
              // A program taken out of its folder is a setup change somebody
              // made, not an outage.
              .extensionMissing,
+             // "System Proxy Only" holding back because the proxy app was
+             // quit: Pulse chose not to ask, so nothing about the provider is
+             // known, and every account announcing an outage at once would
+             // be a notification about a switch.
+             .systemProxyOff,
              // Nothing set up yet, for a profiled provider.
              .sessionMissing, .localLoginMissing, .localAppMissing,
              // An app that was never installed or never signed in, which is
@@ -669,24 +674,27 @@ final class UsageAlerts {
             forgetOutages(except: [])
             return
         }
-        let inUse = Set(settings.shownAccounts.compactMap(\.provider.statusPage))
-        forgetOutages(except: inUse)
+        let pages = Array(Set(settings.shownAccounts.map(\.provider)))
+            .compactMap(settings.statusPage(for:))
+            .sorted { $0.id < $1.id }
+        forgetOutages(except: Set(pages))
         guard outageCheck == nil, authorizationRequest == nil,
               !Self.isSupported || authorization != .notDetermined else { return }
-        let pages = StatusPage.allCases.filter(inUse.contains)
         guard !pages.isEmpty else { return }
+        // A company's page read once for every provider on it.
+        let feeds = Set(pages.map(\.feed))
 
         outageCheck = Task {
-            let read = await withTaskGroup(of: (StatusPage, [ServiceStatus.Component]?).self) { group in
-                for page in pages {
-                    group.addTask { (page, await ServiceStatus.current(page)) }
+            let read = await withTaskGroup(of: (StatusFeed, [ServiceStatus.Component]?).self) { group in
+                for feed in feeds {
+                    group.addTask { (feed, await ServiceStatus.current(feed)) }
                 }
-                var read: [StatusPage: [ServiceStatus.Component]] = [:]
-                for await (page, components) in group { read[page] = components }
+                var read: [StatusFeed: [ServiceStatus.Component]] = [:]
+                for await (feed, components) in group { read[feed] = components }
                 return read
             }
             for page in pages {
-                guard let components = read[page] else { continue }
+                guard let components = read[page.feed] else { continue }
                 consider(components.filter(page.notifiesAbout), from: page)
             }
             outageCheck = nil

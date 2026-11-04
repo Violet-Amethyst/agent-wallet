@@ -317,13 +317,25 @@ actor ModelPrices {
         }
 
         // Devin's CLI writes the version with dashes and an effort on the end:
-        // `gpt-5-6-sol-medium` is OpenAI's `gpt-5.6-sol`.
-        for effort in ["-medium", "-high", "-low", "-minimal"] where model.hasSuffix(effort) {
+        // `gpt-5-6-sol-medium` is OpenAI's `gpt-5.6-sol`. Antigravity's
+        // lowest Flash effort is `-extra-low`, which `-low` alone would leave
+        // as `gemini-3.5-flash-extra`, a model nobody prices (#90).
+        for effort in ["-medium", "-high", "-extra-low", "-low", "-minimal"] where model.hasSuffix(effort) {
             let base = String(model.dropLast(effort.count))
             candidates.append(base)
             candidates.append(Self.dotted(base))
         }
         candidates.append(Self.dotted(model))
+
+        // Antigravity writes `gemini-3.8-flash-n`, `-control` and `-xpe` beside
+        // `gemini-3.8-flash` for the same Flash, and Google publishes one rate
+        // for it (#90). `-n` was seen in a real store; the other two are as
+        // reported on the issue. Only on a Gemini id, and only these three.
+        if model.hasPrefix("gemini-") {
+            for tag in ["-n", "-control", "-xpe"] where model.hasSuffix(tag) {
+                candidates.append(String(model.dropLast(tag.count)))
+            }
+        }
 
         // A context window on the end is the same model with more room:
         // `k3-256k` is `kimi-k3`, and it is billed at `k3`'s rates.
@@ -440,10 +452,11 @@ enum PulseStorage {
             || isOlder(name, prefix: "ledger-", than: ledgerVersion)
     }
 
-    /// `<prefix><n>-<name>.json` with `n` below `current`. A name without the
-    /// number — `ledger-codex.json` — is not this rule's to judge.
+    /// `<prefix><n>-<name>.json` (or `.bin`, the transcript cache's bytes)
+    /// with `n` below `current`. A name without the number —
+    /// `ledger-codex.json` — is not this rule's to judge.
     private static func isOlder(_ name: String, prefix: String, than current: Int) -> Bool {
-        guard name.hasPrefix(prefix), name.hasSuffix(".json") else { return false }
+        guard name.hasPrefix(prefix), name.hasSuffix(".json") || name.hasSuffix(".bin") else { return false }
         let rest = name.dropFirst(prefix.count)
         guard let dash = rest.firstIndex(of: "-"), let number = Int(rest[..<dash]) else { return false }
         return number < current

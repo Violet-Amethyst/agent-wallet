@@ -26,6 +26,11 @@ struct FloatingUsagePanelContent: View {
     /// A moment's grace before hiding, so clipping a corner of the panel on
     /// the way somewhere else doesn't make it flinch.
     @State private var hideAfterDelay: Task<Void, Never>?
+    /// The pointer has arrived on a collapsed notch's housing and the rail
+    /// opens if it is still there when this finishes (`PanelIntent.notchDwell`).
+    @State private var notchDwell: Task<Void, Never>?
+    /// Where the pointer is right now, for the end of that wait.
+    @State private var pointerProbe = PointerProbe()
 
     /// This Mac's records for the detailed card, read as its cards open.
     @State private var cardLedgers = CardLedgers()
@@ -46,13 +51,13 @@ struct FloatingUsagePanelContent: View {
                 // the content. Tracking a position rather than enter/exit
                 // events means crossing from a ring to the card, or between
                 // two rings, never interrupts anything.
-                PanelPointerWatcher(onChange: pointerMoved)
+                PanelPointerWatcher(onChange: pointerMoved, probe: pointerProbe)
             )
             .overlay(alignment: .topLeading) {
                 if let target = notchTarget {
                     Color.clear
                         .frame(width: target.width, height: target.height)
-                        .background(PointerEntryReporter(onEnter: show))
+                        .background(PointerEntryReporter(onEnter: armNotch))
                         .allowsHitTesting(false)
                         .offset(x: target.minX, y: target.minY)
                 }
@@ -124,10 +129,12 @@ struct FloatingUsagePanelContent: View {
                             edge: placement.edge,
                             showsRemaining: settings.showsRemaining,
                             showsForecast: settings.showsForecast,
+                            showsAmounts: selected.account.provider == .qoder && settings.qoderShowsAmounts,
                             resetCredits: selected.account == AccountKey(.codex) ? store.codexResetCredits : nil,
                             isDetailed: settings.showsDetailedCard(for: selected.account),
                             spend: showsSpend(for: selected.account)
                                 ? cardLedgers.spend(for: selected.account.provider) : nil,
+                            qoderCredits: selected.provider == .qoder ? cardLedgers.qoderCredits : nil,
                             promptCache: showsSpend(for: selected.account)
                                 ? cardLedgers.promptCache[selected.account.provider] : nil,
                             usedElsewhere: Set(selected.windows.filter {
@@ -181,11 +188,18 @@ struct FloatingUsagePanelContent: View {
             // whether the rail is drawn out, which only this side knows.
             .onChange(of: isExpanded, initial: true) { _, expanded in
                 placement.isRailExpanded = expanded
+                placement.railOpenedAt = expanded ? Date() : nil
+                if expanded { cancelNotchDwell() }
             }
             // A card left open under a panel being carried across the screen
             // is noise; the pointer is sweeping the rings, not reading them.
             .onChange(of: placement.isDragging) { _, dragging in
-                if dragging { deselect() }
+                if dragging { deselect() } else { pointerProbe.reportAgain() }
+            }
+            // While the menu is up nothing hides (`scheduleHide`); a pointer
+            // that stays where it closed the menu must still be asked about.
+            .onChange(of: placement.isMenuOpen) { _, open in
+                if !open { pointerProbe.reportAgain() }
             }
             // The detailed card's history, read when a card that shows it opens.
             .onChange(of: selectedSlot) {
@@ -194,6 +208,13 @@ struct FloatingUsagePanelContent: View {
                     cardLedgers.read(account.provider, from: source)
                     if source.readsThisMac { cardLedgers.readPromptCache(account.provider) }
                 }
+                // Qoder's month, from its records: asked as its detailed card
+                // opens, never on the refresh timer (issue #88).
+                if let account = selectedUsage?.account, account.provider == .qoder,
+                   settings.showsDetailedCard(for: account),
+                   let cookie = APIKeyStore.key(for: .qoder) {
+                    cardLedgers.readQoderCredits(cookie: cookie, site: settings.qoderSite)
+                }
             }
             .onChange(of: isNotchHeld) { _, held in
                 if !held && placement.notch != nil { pointerMoved(pointerPoint) }
@@ -201,6 +222,7 @@ struct FloatingUsagePanelContent: View {
             .onDisappear {
                 hideAfterDelay?.cancel()
                 hideAfterDelay = nil
+                cancelNotchDwell()
             }
             // Pinned dark on both surfaces, and pinned through the
             // *environment* rather than `preferredColorScheme` — the latter is
@@ -214,7 +236,15 @@ struct FloatingUsagePanelContent: View {
             // over `PanelGlass.dim` does, which is Apple's own answer for the clear
             // variant. Following the system scheme instead left dark text
             // vanishing over dark windows.
-            .environment(\.colorScheme, .dark)
+            //
+            // The light panel (#74) is the one exception, and only on the
+            // solid surface: `panelScheme`.
+            // On glass the text follows the Transparency slider from white
+            // to black (`PanelGlass.ink`), and past `schemeTurns` the scheme
+            // follows it. Always an `AnyShapeStyle`, so switching it never
+            // changes the tree's identity.
+            .foregroundStyle(panelInk)
+            .environment(\.colorScheme, panelScheme)
             .environment(\.glassTransparency, settings.glassTransparency)
             // Where red begins, for every ring, bar and figure below here at
             // once. Read off `settings` in one place so they cannot disagree.
@@ -227,9 +257,24 @@ struct FloatingUsagePanelContent: View {
             // change. The last one is easy to forget and changes the rail's
             // *thickness*, so leaving it out draws the rings at one size in a
             // berth built for the other.
-            .id("\(settings.language.rawValue)-\(settings.panelSize.rawValue)-\(settings.topRailShowsPercentages)-\(settings.sideRailShowsPercentages)-\(settings.railSpacing.rawValue)-\(settings.labelAboveRing)-\(settings.freeAcrossFiguresBeside)-\(settings.showsWindowClock)-\(settings.showsForecast)-\(settings.detailedCards.isEmpty)-\(settings.usesRoundEnds)")
+            .id("\(settings.language.rawValue)-\(settings.panelSize.rawValue)-\(settings.topRailShowsPercentages)-\(settings.sideRailShowsPercentages)-\(settings.railSpacing.rawValue)-\(settings.labelAboveRing)-\(settings.freeAcrossFiguresBeside)-\(settings.showsWindowClock)-\(settings.showsForecast)-\(settings.detailedCards.isEmpty)-\(settings.usesRoundEnds)-\(settings.usageBarStyle.rawValue)-\(settings.usesDualTrackDock)-\(settings.moneyIdentity)")
     }
 
+    /// Light only for the solid surface, notch included; dark under glass,
+    /// for the reasons on `AppSettings.usesLightPanel`. `PanelSurface`
+    /// reads its fill off this, and the usage colours deepen with it, so the
+    /// surface and everything drawn on it change together.
+    private var panelScheme: ColorScheme {
+        if settings.usesGlass { return PanelGlass.scheme(transparency: settings.glassTransparency) }
+        return settings.usesLightPanel ? .light : .dark
+    }
+
+    private var panelInk: AnyShapeStyle {
+        guard settings.usesGlass, let ink = PanelGlass.ink(transparency: settings.glassTransparency) else {
+            return AnyShapeStyle(.primary)
+        }
+        return AnyShapeStyle(ink)
+    }
     /// Whether the rail is drawn out in full.
     ///
     /// Hiding is only for the docked panel. Against the side of the screen the
@@ -252,9 +297,10 @@ struct FloatingUsagePanelContent: View {
     /// The hardware target in the watcher's flipped, panel-local coordinates.
     private var notchTarget: CGRect? {
         placement.notch.map {
-            CGRect(x: railLeading + railSize.width / 2 - $0.width / 2,
-                   y: railTop - $0.height,
-                   width: $0.width, height: $0.height)
+            PanelIntent.notchHousing(
+                rail: CGRect(x: railLeading, y: railTop, width: railSize.width, height: railSize.height),
+                notchSize: $0.size
+            )
         }
     }
 
@@ -450,9 +496,18 @@ struct FloatingUsagePanelContent: View {
     }
 
     /// Opens a provider's details when the pointer arrives on its ring.
+    ///
+    /// An enter that arrives after the pointer has gone again — queued
+    /// behind a busy main thread — opens nothing: the pointer is read
+    /// **now**. Refusing to open closes nothing, so this cannot start the
+    /// open/close loop the enter-only rule prevents. A card that does open
+    /// asks the sampler for a fresh report (`PointerProbe.reportAgain`), so a
+    /// pointer that leaves before the next sample still closes it.
     private func select(_ entry: RailEntry) {
         guard !placement.isDragging, selectedSlot != entry.id else { return }
+        guard let point = pointerProbe.current(), isOverContent(point) else { return }
         selectedSlot = entry.id
+        pointerProbe.reportAgain()
 
         // Opening a card is the clearest sign these numbers are being read,
         // which is what the automatic refresh interval paces itself against.
@@ -468,6 +523,34 @@ struct FloatingUsagePanelContent: View {
         hideAfterDelay = nil
         guard !isHovered else { return }
         isHovered = true
+        // The same late enter can draw the rail out after the pointer left.
+        pointerProbe.reportAgain()
+    }
+
+    /// The pointer arrived on a collapsed notch's housing: open if it is
+    /// still there once `PanelIntent.notchDwell` has passed.
+    ///
+    /// Armed by the housing's tracking area and by the sampler alike, so a
+    /// pointer that was already there when the area was installed still
+    /// counts. Checked against the pointer **now** (`pointerProbe`), not the
+    /// last sample, or a pointer that crossed and left would still read as
+    /// inside. A pointer that is gone simply leaves the rail as it was:
+    /// nothing here ever closes anything, so it cannot start the open/close
+    /// loop the enter-only rule exists to prevent.
+    private func armNotch() {
+        guard placement.notch != nil, !isExpanded, notchDwell == nil else { return }
+        notchDwell = Task { @MainActor in
+            try? await Task.sleep(for: PanelIntent.notchDwell)
+            guard !Task.isCancelled else { return }
+            notchDwell = nil
+            guard let point = pointerProbe.current(), notchTarget?.contains(point) == true else { return }
+            show()
+        }
+    }
+
+    private func cancelNotchDwell() {
+        notchDwell?.cancel()
+        notchDwell = nil
     }
 
     /// Closes the details, and eventually the rail itself, once the pointer is
@@ -477,6 +560,13 @@ struct FloatingUsagePanelContent: View {
         // should follow it across the gaps between rings too. `nil` is the
         // pointer leaving the panel altogether.
         if pointerPoint != point { pointerPoint = point }
+
+        // Collapsed at a notch, the housing is not content yet: the pointer
+        // being there only starts the wait (`armNotch`), and leaving it
+        // calls the wait off.
+        if placement.notch != nil, !isExpanded {
+            if let point, notchTarget?.contains(point) == true { armNotch() } else { cancelNotchDwell() }
+        }
 
         if let point, isOverContent(point) {
             hoveredAction = action(at: point)
@@ -536,7 +626,9 @@ struct FloatingUsagePanelContent: View {
             // while it is being carried across the screen. Nor while the
             // panel's own menu is up, for the same reason — the pointer is on
             // the menu, which is not the panel. Both re-arm: `hideAfterDelay`
-            // is already nil here, so the watcher's next tick asks again.
+            // is already nil here, and the end of either asks the sampler to
+            // report again, since a pointer that has not moved is otherwise
+            // never reported twice.
             guard !placement.isDragging, !placement.isMenuOpen, !isNotchHeld else { return }
             isHovered = false
         }
@@ -549,7 +641,6 @@ struct FloatingUsagePanelContent: View {
     /// simply asking whether the pointer is inside the window would hold the
     /// card open across a large blank area well away from it.
     private func isOverContent(_ point: CGPoint) -> Bool {
-        if notchTarget?.contains(point) == true { return true }
         let edge = placement.edge
 
         // Collapsed, only the sliver's own target counts. Testing the rail's
@@ -562,6 +653,8 @@ struct FloatingUsagePanelContent: View {
                 .contains(point)
         }
 
+        // Open, the housing holds the rail as the rest of its surface does.
+        if notchTarget?.contains(point) == true { return true }
         let rail = PanelHitArea.rail(edge: edge, railSize: railSize, railTop: railTop, railLeading: railLeading)
         if let notch = placement.notch {
             let surface = PanelHitArea.notchSurface(rail: rail, notchSize: notch.size)

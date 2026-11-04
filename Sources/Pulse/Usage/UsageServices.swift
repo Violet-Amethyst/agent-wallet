@@ -50,7 +50,7 @@ final class LiveUsageServices: UsageServiceFactory {
     }
 
     func storedKey(for provider: Provider) -> String? {
-        APIKeyStore.key(for: provider)
+        APIKeyStore.key(for: provider, slot: settings.keySlot(for: provider))
     }
 
     func fetch(for account: AccountKey, key: String?) -> UsageFetch {
@@ -88,7 +88,7 @@ final class LiveUsageServices: UsageServiceFactory {
             return { await claudeCode.fetch(source: source) }
         case .antigravity:
             let antigravity = self.antigravity
-            return { await antigravity.fetch() }
+            return { await antigravity.fetch(source: source) }
         case .cursor:
             let cursor = self.cursor
             return { await cursor.fetch() }
@@ -107,8 +107,8 @@ final class LiveUsageServices: UsageServiceFactory {
         case .zai, .glmCoding:
             let service = ZaiUsageService(provider: provider, enteredKey: key)
             return { await service.fetch() }
-        case .minimax, .minimaxCN:
-            let service = MiniMaxUsageService(provider: provider, enteredKey: key)
+        case .minimax:
+            let service = MiniMaxUsageService(site: settings.minimaxSite, enteredKey: key)
             return { await service.fetch() }
         case .copilot:
             let service = CopilotUsageService(token: key)
@@ -150,7 +150,11 @@ final class LiveUsageServices: UsageServiceFactory {
             let service = V2EXUsageService(enteredKey: key)
             return { await service.fetch() }
         case .qoder:
-            let service = QoderUsageService(cookie: key, site: settings.qoderSite)
+            let site: QoderSite = (key == nil && settings.qoderSite == .international && QoderCNSession.isInstalled)
+                ? .china
+                : settings.qoderSite
+            let service = QoderUsageService(cookie: key, site: site,
+                                            showsParts: settings.qoderShowsParts)
             return { await service.fetch() }
         case .stepFun:
             let service = StepFunUsageService(cookie: key, site: settings.stepFunSite)
@@ -227,7 +231,7 @@ final class LiveUsageServices: UsageServiceFactory {
         case .grok: await grok.fetch(account: account, token: credentials.accessToken)
         case .grokBot: await grokBot.fetch(account: account, token: credentials.accessToken)
         case .kiro, .antigravity, .cursor, .openCodeGo, .kimiCode, .ollamaCloud,
-             .zai, .glmCoding, .minimax, .minimaxCN, .copilot, .volcengine,
+             .zai, .glmCoding, .minimax, .copilot, .volcengine,
              .commandCode, .deepSeek, .devin, .xiaomiMiMo, .sub2api, .newAPI,
              .v2ex, .qoder, .stepFun, .openAI, .xai, .pulseExtension:
             .unavailable(account, reason: .loading)

@@ -47,7 +47,7 @@ final class ProviderCredentialModel {
             savedKey = ""
             return
         }
-        apiKey = APIKeyStore.key(for: shown) ?? ""
+        apiKey = APIKeyStore.key(for: shown, slot: settings.keySlot(for: shown)) ?? ""
         savedKey = apiKey
     }
 
@@ -103,27 +103,27 @@ final class ProviderCredentialModel {
             // find nothing and say so in that provider's own pane — the
             // failure `Provider.soleRoute` was made exhaustive to prevent,
             // where Grok's pane described Antigravity's language server.
-            let host: String
+            let hosts: [String]
             let keep: @Sendable (String) -> String?
             if let written = account.provider.handWritten {
                 switch written {
                 case .ollamaCloud:
-                    host = "ollama.com"
+                    hosts = ["ollama.com"]
                     keep = { try? OllamaSessionCookie.normalize($0) }
                 case .xiaomiMiMo:
-                    host = XiaomiMiMoClient.host
+                    hosts = [XiaomiMiMoClient.host]
                     keep = { try? XiaomiMiMoCookie.normalize($0) }
                 // The chosen site's host and no other: `qoder.com.cn`'s session
                 // is not `qoder.com`'s, and is never read on its behalf.
                 case .qoder:
-                    host = settings.qoderSite.host
+                    hosts = settings.qoderSite.hosts
                     keep = { try? QoderCookie.normalize($0) }
                 // Likewise StepFun: the chosen console's host only.
                 case .stepFun:
-                    host = settings.stepFunSite.host
+                    hosts = [settings.stepFunSite.host]
                     keep = { try? StepFunCookie.normalize($0) }
                 case .claudeCode, .codex, .kiro, .antigravity, .cursor, .openCodeGo,
-                     .kimiCode, .zai, .glmCoding, .minimax, .minimaxCN, .copilot,
+                     .kimiCode, .zai, .glmCoding, .minimax, .copilot,
                      .grok, .grokBot, .volcengine, .commandCode, .deepSeek, .devin,
                      .sub2api, .newAPI, .v2ex, .pulseExtension, .openAI, .xai:
                     // Not session-based: `readSession` sends those to
@@ -134,12 +134,18 @@ final class ProviderCredentialModel {
                 // The profile names the host and the cookies worth keeping.
                 guard case .sessionCookie(let profileHost, let cookies) = account.provider.profile?.credential
                 else { return }
-                host = profileHost
+                hosts = [profileHost]
                 keep = { ProviderProfile.keep($0, cookies: cookies) }
             }
+            let host = hosts.first ?? ""
 
             let found = await Task.detached(priority: .userInitiated) {
-                BrowserCookies.session(forHost: host, allowing: browsers, keep: keep)
+                for candidateHost in hosts {
+                    if let session = BrowserCookies.session(forHost: candidateHost, allowing: browsers, keep: keep) {
+                        return Optional(session)
+                    }
+                }
+                return nil
             }.value
 
             if let found {
@@ -239,7 +245,7 @@ final class ProviderCredentialModel {
     func saveKey(for account: AccountKey) {
         // Only call it saved if it was. Otherwise the Save button greys out
         // over a key that never reached disk.
-        guard APIKeyStore.setKey(apiKey, for: account.provider) else { return }
+        guard APIKeyStore.setKey(apiKey, for: account.provider, slot: settings.keySlot(for: account.provider)) else { return }
         savedKey = apiKey
         // The store keeps keys for the life of the launch, so it has to be
         // told; otherwise the key is saved and nothing uses it until restart.
