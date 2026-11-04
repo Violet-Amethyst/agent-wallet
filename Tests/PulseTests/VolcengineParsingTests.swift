@@ -221,12 +221,13 @@ struct VolcengineProcessTests {
     /// is timed from the child's side by `ProcessDeathWatch`: the one-second
     /// deadline, up to two seconds waiting for an exit after the pipes close,
     /// the two-second SIGTERM grace, and five seconds of margin. It is ~3s on
-    /// an idle machine. **Returns within** is the call as the caller sees it,
-    /// which also waits for a free cooperative thread — 19 seconds of that on
-    /// a loaded CI runner failed the old `< 20` with the child long dead — so
-    /// it only has to prove the call did not wait out a child that would
-    /// otherwise live five minutes.
-    private static let killedWithin: Duration = .seconds(10)
+    /// an idle machine, but a loaded CI runner took 17–19s here too — the kill
+    /// itself waits for a free cooperative thread — which failed the old
+    /// `< 10`. So both bounds only have to prove the child was not waited out
+    /// for the five minutes it would otherwise live. **Returns within** is the
+    /// call as the caller sees it, which waits for a thread as well (19s
+    /// failed the older `< 20` with the child long dead).
+    private static let killedWithin: Duration = .seconds(60)
     private static let returnsWithin: Duration = .seconds(120)
     private static let childLifetime = 300
 

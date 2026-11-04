@@ -473,13 +473,13 @@ struct ExtensionRunTests {
         let returned = started.duration(to: .now)
         #expect(usage.state == .unavailable(.extensionTimedOut))
         // Killed within the time limit plus the stop's own grace — about six
-        // seconds at most, ten with margin — timed from the program's side.
-        // The return is bounded only far below the five minutes the program
-        // asked for: the caller resumes on a cooperative thread, and on a
-        // loaded CI runner waiting for one took 16–20s with the program long
+        // seconds on an idle machine — timed from the program's side. Both
+        // bounds sit far below the five minutes the program asked for: the
+        // kill and the caller's resume each wait for a cooperative thread,
+        // and on a loaded CI runner that took 14–20s with the program long
         // dead. See `ProcessDeathWatch`.
         let killed = try #require(await watch.death, "the program outlived the run")
-        #expect(started.duration(to: killed) < .seconds(10))
+        #expect(started.duration(to: killed) < .seconds(60))
         #expect(returned < .seconds(120))
     }
 
